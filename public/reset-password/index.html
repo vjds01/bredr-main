@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Breedr Password Reset</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Arial, Helvetica, sans-serif;
+      }
+
+      body {
+        align-items: center;
+        background: #fff7fa;
+        color: #333;
+        display: flex;
+        justify-content: center;
+        margin: 0;
+        min-height: 100vh;
+      }
+
+      main {
+        max-width: 360px;
+        padding: 28px;
+        text-align: center;
+      }
+
+      h1 {
+        color: #fe5062;
+        font-size: 28px;
+        margin: 0 0 12px;
+      }
+
+      p {
+        color: #666;
+        font-size: 15px;
+        line-height: 1.45;
+        margin: 0 0 22px;
+      }
+
+      a {
+        background: #fe5062;
+        border-radius: 28px;
+        color: white;
+        display: inline-block;
+        font-weight: 700;
+        padding: 14px 28px;
+        text-decoration: none;
+      }
+
+      .hint {
+        color: #999;
+        font-size: 12px;
+        margin-top: 18px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Opening Breedr...</h1>
+      <p id="message">
+        Please wait while we open the password reset screen.
+      </p>
+      <a id="openApp" href="#">Open Breedr</a>
+      <p class="hint">
+        If Breedr does not open, make sure the app is installed on this device.
+      </p>
+    </main>
+
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const mode = params.get("mode");
+      const oobCode = params.get("oobCode") || params.get("code");
+      const apiKey = params.get("apiKey");
+      const lang = params.get("lang");
+      const message = document.getElementById("message");
+      const openApp = document.getElementById("openApp");
+
+      if (mode !== "resetPassword" || !oobCode) {
+        message.textContent = "This password reset link is invalid or incomplete.";
+        openApp.style.display = "none";
+      } else {
+        const appParams = new URLSearchParams();
+        appParams.set("mode", mode);
+        appParams.set("oobCode", oobCode);
+        if (apiKey) appParams.set("apiKey", apiKey);
+        if (lang) appParams.set("lang", lang);
+
+        const appUrl = `breedr://reset-password?${appParams.toString()}`;
+        openApp.href = appUrl;
+        window.setTimeout(() => {
+          window.location.href = appUrl;
+        }, 250);
+      }
+    </script>
+  </body>
+</html>

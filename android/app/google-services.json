@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "727589976733",
+    "firebase_url": "https://breedr-3c5dc-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "breedr-3c5dc",
+    "storage_bucket": "breedr-3c5dc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:727589976733:android:08aed596ccf1922e153274",
+        "android_client_info": {
+          "package_name": "com.example.breedr"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "727589976733-s553cgind71sd7qsnv5c2mg60kscft1i.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.breedr",
+            "certificate_hash": "36a47944262b540797414755354cbbe6f72b90d2"
+          }
+        },
+        {
+          "client_id": "727589976733-8t902lckvith5f1dp5sk2omn5q8d7bcm.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCAqDn8anoYzrVLDe_9cDNdl1UG6Ymp-Qg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "727589976733-8t902lckvith5f1dp5sk2omn5q8d7bcm.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "727589976733-h9n92s1f7uueaabfo5sm8ha8aoavaau2.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.breedr"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
