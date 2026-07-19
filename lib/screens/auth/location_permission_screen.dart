@@ -100,11 +100,13 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen> {
         ),
       );
     } catch (e) {
+      debugPrint('Location detection error: $e');
+
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Unable to get your location: $e'),
+          content: Text(_locationErrorMessage(e)),
         ),
       );
     } finally {
@@ -112,6 +114,22 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen> {
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  String _locationErrorMessage(Object error) {
+    final message = error.toString().toLowerCase();
+
+    if (message.contains('permission')) {
+      return 'Location permission is required to continue.';
+    }
+    if (message.contains('service') || message.contains('disabled')) {
+      return 'Please enable GPS, then try again.';
+    }
+    if (message.contains('network') || message.contains('timed out')) {
+      return 'Unable to detect your location. Please check your connection and try again.';
+    }
+
+    return 'Unable to detect your location right now. Please try again.';
   }
 
   @override

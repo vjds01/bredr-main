@@ -5,6 +5,7 @@ import '../../models/adoption_models.dart';
 import '../../services/adoption_service.dart';
 import '../../services/user_session_service.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/breedr_network_image.dart';
 import 'adoption_application_screen.dart';
 import 'owner_profile_screen.dart';
 
@@ -710,12 +711,12 @@ class _HealthRecordRow extends StatelessWidget {
               else
                 ClipRRect(
                   borderRadius: BorderRadius.circular(7),
-                  child: Image.network(
-                    fileUrl,
+                  child: BreedrNetworkImage(
+                    imageUrl: fileUrl,
                     width: double.infinity,
                     height: 300,
                     fit: BoxFit.contain,
-                    errorBuilder: (_, _, _) => const _InlineEmpty(
+                    fallback: const _InlineEmpty(
                       icon: Icons.broken_image_outlined,
                       text: 'The document preview could not be loaded.',
                     ),
@@ -1126,11 +1127,10 @@ class _NetworkPetImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (url.isEmpty) return _PetPlaceholder(species: species);
-    return Image.network(
-      url,
+    return BreedrNetworkImage(
+      imageUrl: url,
       fit: BoxFit.cover,
-      errorBuilder: (_, _, _) => _PetPlaceholder(species: species),
+      fallback: _PetPlaceholder(species: species),
     );
   }
 }

@@ -16,7 +16,7 @@ class AdoptionService {
   AdoptionService._();
 
   static final AdoptionService instance = AdoptionService._();
-  static const Duration protectionWindowDuration = Duration(minutes: 2);
+  static const Duration protectionWindowDuration = Duration(minutes: 30);
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
@@ -1044,6 +1044,7 @@ class AdoptionService {
         data['adoptionProcess'] as Map? ?? const {},
       );
       if (process['status'] != 'protection_active') return;
+      if (process['returnStatus'] == 'requested') return;
 
       final protectionEndsAt = process['protectionEndsAt'] as Timestamp?;
       if (protectionEndsAt == null ||
@@ -1053,6 +1054,75 @@ class AdoptionService {
 
       final petIds =
           (data['petIds'] as List?)?.cast<String>() ?? const <String>[];
+      final petId = petIds.isEmpty ? '' : petIds.first;
+      final requestId = data['requestId'] as String? ?? '';
+      final petNames = Map<String, dynamic>.from(
+        data['petNames'] as Map? ?? const {},
+      );
+      final petName = petNames.values.firstOrNull?.toString() ?? 'this pet';
+
+      process['status'] = 'ready_to_complete';
+      process['currentStep'] = 'done';
+      process['protectionCompletedAt'] = FieldValue.serverTimestamp();
+
+      transaction.update(reference, {
+        'adoptionProcess': process,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      for (final participantId in participantIds) {
+        final notification = _firestore.collection('notifications').doc();
+        transaction.set(notification, {
+          'notificationId': notification.id,
+          'recipientId': participantId,
+          'type': 'adoption_ready_to_complete',
+          'title': 'Adoption ready to complete',
+          'message':
+              'The protection window for $petName has ended. Complete the adoption when ready.',
+          'matchId': conversationId,
+          'conversationId': conversationId,
+          'requestId': requestId,
+          'isRead': false,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+    });
+  }
+
+  Future<void> completeAdoptionProcess(String conversationId) async {
+    final user = UserSessionService.instance.currentUser;
+    if (user == null) {
+      throw const AdoptionServiceException('Please sign in again.');
+    }
+
+    final reference = _firestore.collection('conversations').doc(conversationId);
+    await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(reference);
+      final data = snapshot.data();
+      if (data == null || data['purpose'] != 'adoption') {
+        throw const AdoptionServiceException(
+          'This adoption chat could not be found.',
+        );
+      }
+      final participantIds =
+          (data['participantIds'] as List?)?.cast<String>() ?? const <String>[];
+      if (!participantIds.contains(user.uid)) {
+        throw const AdoptionServiceException(
+          'You are not part of this adoption chat.',
+        );
+      }
+
+      final process = Map<String, dynamic>.from(
+        data['adoptionProcess'] as Map? ?? const {},
+      );
+      if (process['status'] != 'ready_to_complete' &&
+          process['status'] != 'completed') {
+        throw const AdoptionServiceException(
+          'The protection window must finish before completing this adoption.',
+        );
+      }
+      if (process['status'] == 'completed') return;
+
+      final petIds = (data['petIds'] as List?)?.cast<String>() ?? const <String>[];
       final petId = petIds.isEmpty ? '' : petIds.first;
       final requestId = data['requestId'] as String? ?? '';
       final petNames = Map<String, dynamic>.from(
@@ -1081,12 +1151,11 @@ class AdoptionService {
         });
       }
       if (requestId.isNotEmpty) {
-        transaction
-            .update(_firestore.collection('adoptionRequests').doc(requestId), {
-              'status': 'completed',
-              'completedAt': FieldValue.serverTimestamp(),
-              'updatedAt': FieldValue.serverTimestamp(),
-            });
+        transaction.update(_firestore.collection('adoptionRequests').doc(requestId), {
+          'status': 'completed',
+          'completedAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
       }
       for (final participantId in participantIds) {
         final notification = _firestore.collection('notifications').doc();
@@ -1104,6 +1173,465 @@ class AdoptionService {
           'createdAt': FieldValue.serverTimestamp(),
         });
       }
+    });
+  }
+
+  Future<void> requestAdoptionUpdate({
+    required String conversationId,
+    required String requestType,
+    required String requestText,
+  }) async {
+    final user = UserSessionService.instance.currentUser;
+    if (user == null) {
+      throw const AdoptionServiceException('Please sign in again.');
+    }
+    final trimmed = requestText.trim();
+    if (trimmed.isEmpty) {
+      throw const AdoptionServiceException('Please choose an update request.');
+    }
+
+    final conversation =
+        _firestore.collection('conversations').doc(conversationId);
+    final requestRef = conversation.collection('adoptionUpdateRequests').doc();
+    final messageRef = conversation.collection('messages').doc();
+    final notification = _firestore.collection('notifications').doc();
+
+    await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(conversation);
+      final data = snapshot.data();
+      if (data == null || data['purpose'] != 'adoption') {
+        throw const AdoptionServiceException(
+          'This adoption chat could not be found.',
+        );
+      }
+      final participantIds =
+          (data['participantIds'] as List?)?.cast<String>() ?? const <String>[];
+      if (!participantIds.contains(user.uid)) {
+        throw const AdoptionServiceException(
+          'You are not part of this adoption chat.',
+        );
+      }
+      final petOwners = Map<String, dynamic>.from(
+        data['petOwners'] as Map? ?? const {},
+      );
+      if (!petOwners.values.contains(user.uid)) {
+        throw const AdoptionServiceException(
+          'Only the original pet owner can request updates.',
+        );
+      }
+      final process = Map<String, dynamic>.from(
+        data['adoptionProcess'] as Map? ?? const {},
+      );
+      if (process['status'] != 'protection_active') {
+        throw const AdoptionServiceException(
+          'Updates can only be requested during the protection window.',
+        );
+      }
+      final recipientId =
+          participantIds.firstWhere((id) => id != user.uid, orElse: () => '');
+      if (recipientId.isEmpty) return;
+
+      final petNames = Map<String, dynamic>.from(
+        data['petNames'] as Map? ?? const {},
+      );
+      final petName = petNames.values.firstOrNull?.toString() ?? 'this pet';
+      final unreadCounts = Map<String, dynamic>.from(
+        data['unreadCounts'] as Map? ?? const <String, dynamic>{},
+      );
+      unreadCounts[recipientId] =
+          ((unreadCounts[recipientId] as num?)?.toInt() ?? 0) + 1;
+      unreadCounts[user.uid] = 0;
+
+      final payload = {
+        'requestId': requestRef.id,
+        'conversationId': conversationId,
+        'requestedBy': user.uid,
+        'recipientId': recipientId,
+        'petName': petName,
+        'requestType': requestType,
+        'requestText': trimmed,
+        'status': 'pending',
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      transaction.set(requestRef, payload);
+      transaction.set(messageRef, {
+        'messageId': messageRef.id,
+        'senderId': user.uid,
+        'text': trimmed,
+        'type': 'adoption_update_request',
+        'adoptionUpdateRequestId': requestRef.id,
+        'requestType': requestType,
+        'requestStatus': 'pending',
+        'readBy': [user.uid],
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      transaction.update(conversation, {
+        'lastMessage': 'Update requested for $petName',
+        'lastMessageAt': FieldValue.serverTimestamp(),
+        'lastSenderId': user.uid,
+        'unreadCounts': unreadCounts,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      transaction.set(notification, {
+        'notificationId': notification.id,
+        'recipientId': recipientId,
+        'type': 'adoption_update_requested',
+        'title': 'Update requested',
+        'message': 'The original owner requested a photo update for $petName.',
+        'purpose': 'adoption',
+        'matchId': conversationId,
+        'conversationId': conversationId,
+        'requestId': data['requestId'],
+        'isRead': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    });
+  }
+
+  Future<void> respondToAdoptionUpdate({
+    required String conversationId,
+    required String updateRequestId,
+    required String photoUrl,
+  }) async {
+    final user = UserSessionService.instance.currentUser;
+    if (user == null) {
+      throw const AdoptionServiceException('Please sign in again.');
+    }
+    if (photoUrl.trim().isEmpty) {
+      throw const AdoptionServiceException('Please upload a photo first.');
+    }
+
+    final conversation =
+        _firestore.collection('conversations').doc(conversationId);
+    final updateRef =
+        conversation.collection('adoptionUpdateRequests').doc(updateRequestId);
+    final messageRef = conversation.collection('messages').doc();
+    final notification = _firestore.collection('notifications').doc();
+
+    await _firestore.runTransaction((transaction) async {
+      final conversationSnapshot = await transaction.get(conversation);
+      final data = conversationSnapshot.data();
+      if (data == null || data['purpose'] != 'adoption') {
+        throw const AdoptionServiceException(
+          'This adoption chat could not be found.',
+        );
+      }
+      final participantIds =
+          (data['participantIds'] as List?)?.cast<String>() ?? const <String>[];
+      if (!participantIds.contains(user.uid)) {
+        throw const AdoptionServiceException(
+          'You are not part of this adoption chat.',
+        );
+      }
+      final updateSnapshot = await transaction.get(updateRef);
+      final updateData = updateSnapshot.data();
+      if (updateData == null) {
+        throw const AdoptionServiceException(
+          'This update request could not be found.',
+        );
+      }
+      if (updateData['recipientId'] != user.uid) {
+        throw const AdoptionServiceException(
+          'Only the adopter can respond to this update request.',
+        );
+      }
+      final recipientId = updateData['requestedBy'] as String? ?? '';
+      if (recipientId.isEmpty) return;
+      final petName = updateData['petName'] as String? ?? 'this pet';
+      final unreadCounts = Map<String, dynamic>.from(
+        data['unreadCounts'] as Map? ?? const <String, dynamic>{},
+      );
+      unreadCounts[recipientId] =
+          ((unreadCounts[recipientId] as num?)?.toInt() ?? 0) + 1;
+      unreadCounts[user.uid] = 0;
+
+      transaction.update(updateRef, {
+        'status': 'responded',
+        'responsePhotoUrl': photoUrl,
+        'respondedBy': user.uid,
+        'respondedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      transaction.set(messageRef, {
+        'messageId': messageRef.id,
+        'senderId': user.uid,
+        'text': 'Photo update for $petName',
+        'type': 'adoption_update_response',
+        'adoptionUpdateRequestId': updateRequestId,
+        'photoUrl': photoUrl,
+        'readBy': [user.uid],
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      transaction.update(conversation, {
+        'lastMessage': 'Photo update sent for $petName',
+        'lastMessageAt': FieldValue.serverTimestamp(),
+        'lastSenderId': user.uid,
+        'unreadCounts': unreadCounts,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      transaction.set(notification, {
+        'notificationId': notification.id,
+        'recipientId': recipientId,
+        'type': 'adoption_update_received',
+        'title': 'Photo update received',
+        'message': 'The adopter sent a photo update for $petName.',
+        'purpose': 'adoption',
+        'matchId': conversationId,
+        'conversationId': conversationId,
+        'requestId': data['requestId'],
+        'isRead': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    });
+  }
+
+  Future<void> confirmAdoptionUpdate({
+    required String conversationId,
+    required String updateRequestId,
+  }) async {
+    await _updateAdoptionUpdateStatus(
+      conversationId: conversationId,
+      updateRequestId: updateRequestId,
+      nextStatus: 'confirmed',
+      message: 'Photo update confirmed.',
+    );
+  }
+
+  Future<void> requestAnotherAdoptionUpdate({
+    required String conversationId,
+    required String updateRequestId,
+    required String reason,
+  }) async {
+    await _updateAdoptionUpdateStatus(
+      conversationId: conversationId,
+      updateRequestId: updateRequestId,
+      nextStatus: 'requested_again',
+      message: reason,
+      createMessage: true,
+    );
+  }
+
+  Future<void> _updateAdoptionUpdateStatus({
+    required String conversationId,
+    required String updateRequestId,
+    required String nextStatus,
+    required String message,
+    bool createMessage = false,
+  }) async {
+    final user = UserSessionService.instance.currentUser;
+    if (user == null) {
+      throw const AdoptionServiceException('Please sign in again.');
+    }
+    final conversation =
+        _firestore.collection('conversations').doc(conversationId);
+    final updateRef =
+        conversation.collection('adoptionUpdateRequests').doc(updateRequestId);
+    final messageRef = conversation.collection('messages').doc();
+
+    await _firestore.runTransaction((transaction) async {
+      final conversationSnapshot = await transaction.get(conversation);
+      final conversationData = conversationSnapshot.data();
+      if (conversationData == null || conversationData['purpose'] != 'adoption') {
+        throw const AdoptionServiceException(
+          'This adoption chat could not be found.',
+        );
+      }
+      final participantIds =
+          (conversationData['participantIds'] as List?)?.cast<String>() ??
+              const <String>[];
+      if (!participantIds.contains(user.uid)) {
+        throw const AdoptionServiceException(
+          'You are not part of this adoption chat.',
+        );
+      }
+      final updateSnapshot = await transaction.get(updateRef);
+      final updateData = updateSnapshot.data();
+      if (updateData == null) {
+        throw const AdoptionServiceException(
+          'This update request could not be found.',
+        );
+      }
+      if (updateData['requestedBy'] != user.uid) {
+        throw const AdoptionServiceException(
+          'Only the original pet owner can update this request.',
+        );
+      }
+      final updatePayload = <String, dynamic>{
+        'status': nextStatus,
+        'followUpReason': createMessage ? message : updateData['followUpReason'],
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      if (nextStatus == 'confirmed') {
+        updatePayload['confirmedAt'] = FieldValue.serverTimestamp();
+      }
+      transaction.update(updateRef, updatePayload);
+      if (createMessage) {
+        final recipientId = updateData['recipientId'] as String? ?? '';
+        final unreadCounts = Map<String, dynamic>.from(
+          conversationData['unreadCounts'] as Map? ??
+              const <String, dynamic>{},
+        );
+        if (recipientId.isNotEmpty) {
+          unreadCounts[recipientId] =
+              ((unreadCounts[recipientId] as num?)?.toInt() ?? 0) + 1;
+        }
+        unreadCounts[user.uid] = 0;
+        transaction.set(messageRef, {
+          'messageId': messageRef.id,
+          'senderId': user.uid,
+          'text': message,
+          'type': 'adoption_update_follow_up',
+          'adoptionUpdateRequestId': updateRequestId,
+          'readBy': [user.uid],
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+        transaction.update(conversation, {
+          'lastMessage': 'Another update requested',
+          'lastMessageAt': FieldValue.serverTimestamp(),
+          'lastSenderId': user.uid,
+          'unreadCounts': unreadCounts,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        if (recipientId.isNotEmpty) {
+          final notification = _firestore.collection('notifications').doc();
+          final petName = updateData['petName'] as String? ?? 'this pet';
+          transaction.set(notification, {
+            'notificationId': notification.id,
+            'recipientId': recipientId,
+            'type': 'adoption_update_requested',
+            'title': 'Another update requested',
+            'message':
+                'The original owner requested another photo update for $petName.',
+            'purpose': 'adoption',
+            'matchId': conversationId,
+            'conversationId': conversationId,
+            'requestId': conversationData['requestId'],
+            'isRead': false,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        }
+      }
+    });
+  }
+
+  Future<void> fileAdoptionReturnRequest({
+    required String conversationId,
+    required String reason,
+    required String description,
+    required List<String> evidenceUrls,
+  }) async {
+    final user = UserSessionService.instance.currentUser;
+    if (user == null) {
+      throw const AdoptionServiceException('Please sign in again.');
+    }
+    if (reason.trim().isEmpty) {
+      throw const AdoptionServiceException('Please choose a return reason.');
+    }
+    if (description.trim().length < 50) {
+      throw const AdoptionServiceException(
+        'Please describe what happened in at least 50 characters.',
+      );
+    }
+
+    final conversation =
+        _firestore.collection('conversations').doc(conversationId);
+    final returnRef = conversation.collection('adoptionReturnRequests').doc();
+    final messageRef = conversation.collection('messages').doc();
+    final notification = _firestore.collection('notifications').doc();
+
+    await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(conversation);
+      final data = snapshot.data();
+      if (data == null || data['purpose'] != 'adoption') {
+        throw const AdoptionServiceException(
+          'This adoption chat could not be found.',
+        );
+      }
+      final participantIds =
+          (data['participantIds'] as List?)?.cast<String>() ?? const <String>[];
+      if (!participantIds.contains(user.uid)) {
+        throw const AdoptionServiceException(
+          'You are not part of this adoption chat.',
+        );
+      }
+      final petOwners = Map<String, dynamic>.from(
+        data['petOwners'] as Map? ?? const {},
+      );
+      if (petOwners.values.contains(user.uid)) {
+        throw const AdoptionServiceException(
+          'The adopter files return requests during the protection window.',
+        );
+      }
+      final process = Map<String, dynamic>.from(
+        data['adoptionProcess'] as Map? ?? const {},
+      );
+      if (process['status'] != 'protection_active') {
+        throw const AdoptionServiceException(
+          'Return requests can only be filed during the protection window.',
+        );
+      }
+      final ownerId = petOwners.values.firstOrNull?.toString() ?? '';
+      if (ownerId.isEmpty) return;
+      final petNames = Map<String, dynamic>.from(
+        data['petNames'] as Map? ?? const {},
+      );
+      final petName = petNames.values.firstOrNull?.toString() ?? 'this pet';
+      final unreadCounts = Map<String, dynamic>.from(
+        data['unreadCounts'] as Map? ?? const <String, dynamic>{},
+      );
+      unreadCounts[ownerId] =
+          ((unreadCounts[ownerId] as num?)?.toInt() ?? 0) + 1;
+      unreadCounts[user.uid] = 0;
+
+      transaction.set(returnRef, {
+        'returnRequestId': returnRef.id,
+        'conversationId': conversationId,
+        'petName': petName,
+        'filedBy': user.uid,
+        'ownerId': ownerId,
+        'reason': reason,
+        'description': description.trim(),
+        'evidenceUrls': evidenceUrls,
+        'status': 'pending',
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      process['returnStatus'] = 'requested';
+      process['returnRequestId'] = returnRef.id;
+      transaction.update(conversation, {
+        'adoptionProcess': process,
+        'lastMessage': 'Return request filed for $petName',
+        'lastMessageAt': FieldValue.serverTimestamp(),
+        'lastSenderId': user.uid,
+        'unreadCounts': unreadCounts,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      transaction.set(messageRef, {
+        'messageId': messageRef.id,
+        'senderId': user.uid,
+        'text': 'Return request filed: $reason',
+        'type': 'adoption_return_request',
+        'adoptionReturnRequestId': returnRef.id,
+        'reason': reason,
+        'description': description.trim(),
+        'evidenceUrls': evidenceUrls,
+        'readBy': [user.uid],
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      transaction.set(notification, {
+        'notificationId': notification.id,
+        'recipientId': ownerId,
+        'type': 'adoption_return_requested',
+        'title': 'Return request filed',
+        'message': 'The adopter filed a return request for $petName.',
+        'purpose': 'adoption',
+        'matchId': conversationId,
+        'conversationId': conversationId,
+        'requestId': data['requestId'],
+        'isRead': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
     });
   }
 

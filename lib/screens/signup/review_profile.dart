@@ -127,14 +127,61 @@ class _Step3WelcomeState extends State<Step3Welcome> {
         ),
         (route) => false,
       );
-    } catch (e) {
-      debugPrint('Firestore save error: $e');
+    } on FirebaseAuthException catch (e) {
+      debugPrint('Account auth error: ${e.code} ${e.message}');
 
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to create account: $e'),
+          content: Text(_accountCreationMessage(e)),
         ),
       );
+    } on FirebaseException catch (e) {
+      debugPrint('Account profile save error: ${e.code} ${e.message}');
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_profileSaveMessage(e)),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Account creation error: $e');
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Unable to create your account right now. Please try again.',
+          ),
+        ),
+      );
+    }
+  }
+
+  String _accountCreationMessage(FirebaseAuthException error) {
+    switch (error.code) {
+      case 'email-already-in-use':
+        return 'An account with this email already exists. Please log in instead.';
+      case 'invalid-email':
+        return 'Please enter a valid email address.';
+      case 'weak-password':
+        return 'Please use a stronger password.';
+      case 'network-request-failed':
+        return 'Please check your internet connection and try again.';
+      default:
+        return 'Unable to create your account right now. Please try again.';
+    }
+  }
+
+  String _profileSaveMessage(FirebaseException error) {
+    switch (error.code) {
+      case 'permission-denied':
+        return 'Your account was created, but the profile could not be saved. Please contact support.';
+      case 'unavailable':
+        return 'The server is unavailable right now. Please try again in a moment.';
+      default:
+        return 'Unable to save your profile right now. Please try again.';
     }
   }
 

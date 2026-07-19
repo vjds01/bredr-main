@@ -1,9 +1,11 @@
 import 'dart:io';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import '../../models/pet_listing_data.dart';
 import '../../services/pet_service.dart';
+import '../../widgets/breedr_network_image.dart';
 import 'pet_published_screen.dart';
 
 const _blue = Color(0xFF5399F0);
@@ -52,16 +54,41 @@ class _PetReviewScreenState extends State<PetReviewScreen> {
         (route) => false,
       );
     } catch (e) {
+      debugPrint('Pet publish error: $e');
+
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to publish pet: $e')),
+        SnackBar(content: Text(_publishErrorMessage(e))),
       );
     } finally {
       if (mounted) {
         setState(() => _isPublishing = false);
       }
     }
+  }
+
+  String _publishErrorMessage(Object error) {
+    if (error is FirebaseException) {
+      switch (error.code) {
+        case 'permission-denied':
+          return 'Unable to publish this pet because your account does not have permission.';
+        case 'unavailable':
+          return 'The server is unavailable right now. Please try again in a moment.';
+        case 'network-request-failed':
+          return 'Please check your internet connection and try again.';
+      }
+    }
+
+    final message = error.toString().toLowerCase();
+    if (message.contains('logged in') || message.contains('sign in')) {
+      return 'Please sign in again before publishing your pet.';
+    }
+    if (message.contains('network') || message.contains('socket')) {
+      return 'Please check your internet connection and try again.';
+    }
+
+    return 'Unable to publish your pet right now. Please try again.';
   }
 
   @override
@@ -822,10 +849,24 @@ class _HealthRecordRow extends StatelessWidget {
               const SizedBox(height: 14),
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: imageFile != null
-                    ? Image.file(imageFile!, fit: BoxFit.cover)
-                    : fileUrl.isNotEmpty
-                        ? Image.network(fileUrl, fit: BoxFit.cover)
+                    child: imageFile != null
+                        ? Image.file(imageFile!, fit: BoxFit.cover)
+                        : fileUrl.isNotEmpty
+                        ? BreedrNetworkImage(
+                            imageUrl: fileUrl,
+                            fit: BoxFit.cover,
+                            fallback: Container(
+                              height: 180,
+                              color: const Color(0xFFEAF3FF),
+                              child: const Center(
+                                child: Icon(
+                                  Icons.description_outlined,
+                                  size: 54,
+                                  color: _blue,
+                                ),
+                              ),
+                            ),
+                          )
                         : Container(
                             height: 180,
                             color: const Color(0xFFEAF3FF),

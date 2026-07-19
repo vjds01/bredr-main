@@ -5,9 +5,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/adoption_models.dart';
+import '../../models/breed_options.dart';
 import '../../services/adoption_service.dart';
 import '../../services/user_session_service.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/breedr_network_image.dart';
 import 'adoption_request_detail_screen.dart';
 import 'owner_adoption_request_detail_screen.dart';
 import 'pet_adoption_profile_screen.dart';
@@ -491,21 +493,16 @@ class _AdoptionLocationSearch extends StatelessWidget {
                       ),
                     ),
                     clipBehavior: Clip.antiAlias,
-                    child: photo.isEmpty
-                        ? const Icon(
-                            Icons.person,
-                            size: 66,
-                            color: Colors.white,
-                          )
-                        : Image.network(
-                            photo,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) => const Icon(
-                              Icons.person,
-                              size: 66,
-                              color: Colors.white,
-                            ),
-                          ),
+                    child: BreedrNetworkImage(
+                      imageUrl: photo,
+                      width: 132,
+                      height: 132,
+                      fallback: const Icon(
+                        Icons.person,
+                        size: 66,
+                        color: Colors.white,
+                      ),
+                    ),
                   );
                 },
               ),
@@ -1814,8 +1811,12 @@ class _AdoptionFilterSheetState extends State<_AdoptionFilterSheet> {
         .where((listing) =>
             species == 'all' ||
             listing.species.toLowerCase() == species.toLowerCase())
-        .map((listing) => listing.breed.trim())
-        .where((breed) => breed.isNotEmpty)
+        .expand((listing) => [
+              listing.breed,
+              ...listing.breedTags,
+            ])
+        .map((breed) => breed.trim())
+        .where((breed) => breed.isNotEmpty && breed != 'Mixed Breed')
         .toSet()
         .toList()
       ..sort();
@@ -2343,9 +2344,17 @@ class _AdoptionFilter {
         listing.species.toLowerCase() != species.toLowerCase()) {
       return false;
     }
-    if (breed != null &&
-        listing.breed.toLowerCase() != breed!.toLowerCase()) {
-      return false;
+    if (breed != null) {
+      final target = breed!.toLowerCase();
+      final listingBreeds = [
+        listing.breed,
+        ...listing.breedTags,
+      ].map((value) => value.trim().toLowerCase()).toSet();
+      final matchesBreed = listingBreeds.contains(target) ||
+          listingBreeds.any(
+            (value) => value.contains(target) || target.contains(value),
+          );
+      if (!matchesBreed) return false;
     }
     final ageWeeks = _parseAgeInWeeks(listing.age);
     if (minAgeWeeks != null &&
@@ -2475,11 +2484,10 @@ class _PetImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (url.isEmpty) return _PetPlaceholder(species: species);
-    return Image.network(
-      url,
+    return BreedrNetworkImage(
+      imageUrl: url,
       fit: BoxFit.cover,
-      errorBuilder: (_, _, _) => _PetPlaceholder(species: species),
+      fallback: _PetPlaceholder(species: species),
     );
   }
 }
@@ -2579,14 +2587,12 @@ class _OwnerAvatar extends StatelessWidget {
         color: Color(0xFFFFDDE5),
       ),
       clipBehavior: Clip.antiAlias,
-      child: url.isEmpty
-          ? const Icon(Icons.person, color: AppColors.primary)
-          : Image.network(
-              url,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) =>
-                  const Icon(Icons.person, color: AppColors.primary),
-            ),
+      child: BreedrNetworkImage(
+        imageUrl: url,
+        width: size,
+        height: size,
+        fallback: const Icon(Icons.person, color: AppColors.primary),
+      ),
     );
   }
 }
@@ -2798,30 +2804,6 @@ String _formatPrice(num value) {
   return buffer.toString();
 }
 
-const _dogBreeds = [
-  'American Shih Tzu',
-  'Aspin',
-  'Beagle',
-  'Chihuahua',
-  'Dachshund',
-  'German Shepherd',
-  'Golden Retriever',
-  'Husky',
-  'Labrador Retriever',
-  'Pomeranian',
-  'Poodle',
-  'Pug',
-  'Shiba Inu',
-];
+const _dogBreeds = dogBreedOptions;
 
-const _catBreeds = [
-  'Bengal',
-  'British Shorthair',
-  'Maine Coon',
-  'Persian',
-  'Persian Cat',
-  'Ragdoll',
-  'Russian Blue',
-  'Siamese',
-  'Sphynx',
-];
+const _catBreeds = catBreedOptions;

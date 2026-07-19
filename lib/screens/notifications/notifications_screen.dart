@@ -61,6 +61,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
     final data = document.data();
     final type = data['type'] as String? ?? '';
+    if (type == 'breeding_like_received') return;
+
     final requestId = data['requestId'] as String?;
     final opensOwnerRequest = type == 'adoption_request_received';
     if (opensOwnerRequest && requestId != null && requestId.isNotEmpty) {
@@ -164,7 +166,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
 
     return SafeArea(
-      child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance
+            .collection('users')
+            .doc(userId)
+            .snapshots(),
+        builder: (context, userSnapshot) {
+          final preferences = Map<String, dynamic>.from(
+            userSnapshot.data?.data()?['notificationPreferences'] as Map? ??
+                const <String, dynamic>{},
+          );
+
+          return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
             .collection('notifications')
             .where('recipientId', isEqualTo: userId)
@@ -186,6 +199,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
           final visibleNotifications = notifications
               .where((document) => _matchesFilter(document.data()))
+              .where((document) => _matchesPreferences(
+                    document.data(),
+                    preferences,
+                  ))
               .toList();
 
           return Column(
@@ -271,16 +288,27 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             ],
           );
         },
+      );
+        },
       ),
     );
   }
 
   bool _matchesFilter(Map<String, dynamic> data) {
     if (_filter == _NotificationFilter.all) return true;
-    final purpose = _purposeForType(data['type'] as String? ?? '');
+    final purpose = _purposeForNotification(data);
     return _filter == _NotificationFilter.breeding
         ? purpose == 'breeding'
         : purpose == 'adoption';
+  }
+
+  bool _matchesPreferences(
+    Map<String, dynamic> data,
+    Map<String, dynamic> preferences,
+  ) {
+    final key = _preferenceKeyForType(data['type'] as String? ?? '');
+    if (key == null) return true;
+    return preferences[key] as bool? ?? true;
   }
 }
 
@@ -360,7 +388,7 @@ class _NotificationCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final type = data['type'] as String? ?? '';
-    final purpose = _purposeForType(type);
+    final purpose = _purposeForNotification(data);
     final isRead = data['isRead'] == true;
     final createdAt = data['createdAt'] as Timestamp?;
     final profile = _NotificationProfile.forType(type);
@@ -737,6 +765,27 @@ class _NotificationProfile {
         actionColor: Color(0xFF2389E8),
       );
     }
+    if (type == 'adoption_ready_to_complete') {
+      return const _NotificationProfile(
+        icon: Icons.check_circle_outline,
+        actionLabel: 'COMPLETE',
+        actionColor: AppColors.primary,
+      );
+    }
+    if (type.startsWith('adoption_update')) {
+      return const _NotificationProfile(
+        icon: Icons.photo_camera_outlined,
+        actionLabel: 'OPEN CHAT',
+        actionColor: AppColors.primary,
+      );
+    }
+    if (type == 'adoption_return_requested') {
+      return const _NotificationProfile(
+        icon: Icons.warning_amber_rounded,
+        actionLabel: 'OPEN CHAT',
+        actionColor: AppColors.primary,
+      );
+    }
     if (type.contains('completion') || type.contains('completed')) {
       return const _NotificationProfile(
         icon: Icons.check_circle_outline,
@@ -747,6 +796,13 @@ class _NotificationProfile {
     if (type == 'match_ended') {
       return const _NotificationProfile(
         icon: Icons.heart_broken_outlined,
+        actionLabel: '',
+        actionColor: AppColors.primary,
+      );
+    }
+    if (type == 'breeding_like_received') {
+      return const _NotificationProfile(
+        icon: Icons.favorite_outline,
         actionLabel: '',
         actionColor: AppColors.primary,
       );
@@ -762,6 +818,37 @@ class _NotificationProfile {
 String _purposeForType(String type) {
   if (type.startsWith('adoption')) return 'adoption';
   return 'breeding';
+}
+
+String _purposeForNotification(Map<String, dynamic> data) {
+  final purpose = (data['purpose'] as String?)?.trim().toLowerCase();
+  if (purpose == 'adoption' || purpose == 'breeding') return purpose!;
+  return _purposeForType(data['type'] as String? ?? '');
+}
+
+String? _preferenceKeyForType(String type) {
+  if (type == 'breeding_like_received' ||
+      type == 'breeding_match_created' ||
+      type.startsWith('breeding_completion') ||
+      type == 'breeding_completed' ||
+      type == 'breeding_auto_completed' ||
+      type == 'match_ended') {
+    return 'breedingLikes';
+  }
+  if (type.startsWith('adoption_request') ||
+      type.startsWith('adoption_process') ||
+      type == 'adoption_ready_to_complete' ||
+      type.startsWith('adoption_update') ||
+      type == 'adoption_return_requested') {
+    return 'adoptionRequests';
+  }
+  if (type == 'new_message') {
+    return 'newMessages';
+  }
+  if (type.startsWith('pet_health')) {
+    return 'petHealth';
+  }
+  return null;
 }
 
 String _relativeTime(DateTime? date) {

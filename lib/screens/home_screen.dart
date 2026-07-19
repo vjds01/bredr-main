@@ -10,12 +10,15 @@ import '../services/breeding_match_service.dart';
 import '../services/presence_service.dart';
 import '../services/user_session_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/breedr_network_image.dart';
 import 'adoption/adoption_browse_screen.dart';
 import 'auth/get_started_screen.dart';
 import 'breeding/breeding_screen.dart';
 import 'chat/chats_screen.dart';
 import 'notifications/notifications_screen.dart';
 import 'owner/owner_ratings_screen.dart';
+import 'pet/health_vault_screen.dart';
+import 'pet/location_settings_screen.dart';
 import 'pet/pet_registration_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -344,13 +347,10 @@ class _ProfileHero extends StatelessWidget {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                backgroundUrl.isNotEmpty
-                    ? Image.network(
-                        backgroundUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => const _ProfileCoverFallback(),
-                      )
-                    : const _ProfileCoverFallback(),
+                BreedrNetworkImage(
+                  imageUrl: backgroundUrl,
+                  fallback: const _ProfileCoverFallback(),
+                ),
                 Positioned(
                   right: 14,
                   top: 14,
@@ -855,12 +855,20 @@ class _SettingsScreen extends StatelessWidget {
               _SettingsTile(
                 icon: Icons.local_hospital,
                 label: 'Health Vault',
-                onTap: () {},
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const HealthVaultScreen()),
+                ),
               ),
               _SettingsTile(
                 icon: Icons.location_on,
                 label: 'Location',
-                onTap: () {},
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const LocationSettingsScreen(),
+                  ),
+                ),
               ),
               _SettingsTile(
                 icon: Icons.storefront,
@@ -869,10 +877,42 @@ class _SettingsScreen extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               const _SettingsSectionLabel('NOTIFICATION'),
-              const _SettingSwitch(title: 'Breeding Likes', subtitle: 'When someone likes your pet'),
-              const _SettingSwitch(title: 'Adoption Requests', subtitle: 'When an adopter answers your questions'),
-              const _SettingSwitch(title: 'New Messages', subtitle: 'Chat notifications'),
-              const _SettingSwitch(title: 'Pet Health', subtitle: 'Vaccination & document renewals'),
+              _SettingSwitch(
+                preferenceKey: 'breedingLikes',
+                title: 'Breeding Likes',
+                subtitle: 'When someone likes your pet',
+                initialValue: _notificationPreference(
+                  data,
+                  'breedingLikes',
+                ),
+              ),
+              _SettingSwitch(
+                preferenceKey: 'adoptionRequests',
+                title: 'Adoption Requests',
+                subtitle: 'When an adopter answers your questions',
+                initialValue: _notificationPreference(
+                  data,
+                  'adoptionRequests',
+                ),
+              ),
+              _SettingSwitch(
+                preferenceKey: 'newMessages',
+                title: 'New Messages',
+                subtitle: 'Chat notifications',
+                initialValue: _notificationPreference(
+                  data,
+                  'newMessages',
+                ),
+              ),
+              _SettingSwitch(
+                preferenceKey: 'petHealth',
+                title: 'Pet Health',
+                subtitle: 'Vaccination & document renewals',
+                initialValue: _notificationPreference(
+                  data,
+                  'petHealth',
+                ),
+              ),
               const SizedBox(height: 10),
               const _SettingsSectionLabel('PRIVACY'),
               _ActivityStatusSwitch(
@@ -905,6 +945,16 @@ class _SettingsScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+bool _notificationPreference(
+  Map<String, dynamic>? data,
+  String key,
+) {
+  final preferences = Map<String, dynamic>.from(
+    data?['notificationPreferences'] as Map? ?? const <String, dynamic>{},
+  );
+  return preferences[key] as bool? ?? true;
 }
 
 class _EditProfileScreen extends StatefulWidget {
@@ -1712,15 +1762,10 @@ class _ProfilePhotoPreview extends StatelessWidget {
       return Image.file(photoFile!, fit: BoxFit.cover);
     }
 
-    if (photoUrl.isNotEmpty) {
-      return Image.network(
-        photoUrl,
-        fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => const _ProfileFallbackIcon(),
-      );
-    }
-
-    return const Icon(Icons.person, color: Colors.white, size: 48);
+    return BreedrNetworkImage(
+      imageUrl: photoUrl,
+      fallback: const Icon(Icons.person, color: Colors.white, size: 48),
+    );
   }
 }
 
@@ -1854,10 +1899,9 @@ class _EditableAdditionalPhotoCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(16),
               child: imageFile != null
                   ? Image.file(imageFile!, fit: BoxFit.cover)
-                  : Image.network(
-                      imageUrl ?? '',
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => const _ProfileCoverFallback(),
+                  : BreedrNetworkImage(
+                      imageUrl: imageUrl ?? '',
+                      fallback: const _ProfileCoverFallback(),
                     ),
             ),
           ),
@@ -2260,9 +2304,10 @@ class _MyPetPreviewScreen extends StatelessWidget {
                     child: SizedBox(
                       height: purpose == 'adoption' ? 250 : 420,
                       width: double.infinity,
-                      child: photoUrl.isNotEmpty
-                          ? Image.network(photoUrl, fit: BoxFit.cover)
-                          : const _PetProfileFallbackBlock(),
+                      child: BreedrNetworkImage(
+                        imageUrl: photoUrl,
+                        fallback: const _PetProfileFallbackBlock(),
+                      ),
                     ),
                   ),
                   if (purpose == 'adoption' && price != null)
@@ -2347,7 +2392,7 @@ class _MyPetPreviewScreen extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(18),
-                        child: Image.network(images[index], fit: BoxFit.cover),
+                        child: BreedrNetworkImage(imageUrl: images[index]),
                       ),
                     ),
                   ),
@@ -2569,14 +2614,11 @@ class _PreviewHealthRow extends StatelessWidget {
               const SizedBox(height: 14),
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: fileUrl.isNotEmpty
-                    ? Image.network(
-                        fileUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) =>
-                            const _HealthPreviewFallback(),
-                      )
-                    : const _HealthPreviewFallback(),
+                child: BreedrNetworkImage(
+                  imageUrl: fileUrl,
+                  fit: BoxFit.cover,
+                  fallback: const _HealthPreviewFallback(),
+                ),
               ),
             ],
           ),
@@ -2652,13 +2694,12 @@ class _ProfileAvatar extends StatelessWidget {
         border: Border.all(color: AppColors.primary, width: 3),
       ),
       child: ClipOval(
-        child: photoUrl.isNotEmpty
-            ? Image.network(
-                photoUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => const _ProfileFallbackIcon(),
-              )
-            : const _ProfileFallbackIcon(),
+        child: BreedrNetworkImage(
+          imageUrl: photoUrl,
+          width: size,
+          height: size,
+          fallback: const _ProfileFallbackIcon(),
+        ),
       ),
     );
   }
@@ -2682,13 +2723,12 @@ class _PetAvatar extends StatelessWidget {
         border: Border.all(color: AppColors.primary, width: 2),
       ),
       child: ClipOval(
-        child: photoUrl.isNotEmpty
-            ? Image.network(
-                photoUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => const _PetFallbackIcon(),
-              )
-            : const _PetFallbackIcon(),
+        child: BreedrNetworkImage(
+          imageUrl: photoUrl,
+          width: 72,
+          height: 72,
+          fallback: const _PetFallbackIcon(),
+        ),
       ),
     );
   }
@@ -2879,10 +2919,9 @@ class _MoreUserPhotos extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(14),
-              child: Image.network(
-                images[index],
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => const _ProfileCoverFallback(),
+              child: BreedrNetworkImage(
+                imageUrl: images[index],
+                fallback: const _ProfileCoverFallback(),
               ),
             ),
           );
@@ -2972,12 +3011,16 @@ class _SettingsTile extends StatelessWidget {
 }
 
 class _SettingSwitch extends StatefulWidget {
+  final String preferenceKey;
   final String title;
   final String subtitle;
+  final bool initialValue;
 
   const _SettingSwitch({
+    required this.preferenceKey,
     required this.title,
     required this.subtitle,
+    required this.initialValue,
   });
 
   @override
@@ -2985,7 +3028,54 @@ class _SettingSwitch extends StatefulWidget {
 }
 
 class _SettingSwitchState extends State<_SettingSwitch> {
-  bool value = true;
+  late bool _value;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _value = widget.initialValue;
+  }
+
+  Future<void> _update(bool next) async {
+    if (_saving) return;
+
+    final user = UserSessionService.instance.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please sign in again.')),
+      );
+      return;
+    }
+
+    setState(() {
+      _value = next;
+      _saving = true;
+    });
+
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set(
+        {
+          'notificationPreferences': {
+            widget.preferenceKey: next,
+          },
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    } catch (error) {
+      debugPrint('Notification preference update failed: $error');
+      if (!mounted) return;
+      setState(() => _value = !next);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to update notification settings.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -3009,8 +3099,8 @@ class _SettingSwitchState extends State<_SettingSwitch> {
           fontStyle: FontStyle.italic,
         ),
       ),
-      value: value,
-      onChanged: (next) => setState(() => value = next),
+      value: _value,
+      onChanged: _saving ? null : _update,
     );
   }
 }

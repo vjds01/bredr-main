@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:breedr/models/onboarding_data.dart';
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/breedr_network_image.dart';
 import '../signup/about_you.dart';
 
 // enum _WelcomeStep { greeting, withPhoto, loading }
@@ -507,7 +508,15 @@ class _StarburstAvatar extends StatelessWidget {
               width: size * 0.76,
               height: size * 0.76,
               child: photoUrl != null
-                  ? Image.network(photoUrl!, fit: BoxFit.cover)
+                  ? BreedrNetworkImage(
+                      imageUrl: photoUrl!,
+                      width: size * 0.76,
+                      height: size * 0.76,
+                      fallback: Image.asset(
+                        'assets/images/profile.png',
+                        fit: BoxFit.cover,
+                      ),
+                    )
                   : Image.asset(
                       'assets/images/profile.png',
                       fit: BoxFit.cover,

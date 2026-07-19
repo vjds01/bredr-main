@@ -121,9 +121,11 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       debugPrint('Unexpected login error: $e');
 
+      if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error: $e'),
+          content: Text(_loginErrorMessage(e)),
         ),
       );
     } finally {
@@ -168,9 +170,11 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       if (!mounted) return;
 
+      debugPrint('Google login error: $e');
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Google login failed: $e'),
+          content: Text(_googleSignInMessage(e)),
         ),
       );
     } finally {
@@ -180,6 +184,45 @@ class _LoginScreenState extends State<LoginScreen> {
         });
       }
     }
+  }
+
+  String _loginErrorMessage(Object error) {
+    final message = error.toString().toLowerCase();
+
+    if (message.contains('no breedr account')) {
+      return 'No Breedr account was found. Please sign up first.';
+    }
+    if (message.contains('network')) {
+      return 'Please check your internet connection and try again.';
+    }
+
+    return 'Unable to log in right now. Please try again.';
+  }
+
+  String _googleSignInMessage(Object error) {
+    final message = error.toString().toLowerCase();
+    if (message.contains('canceled') || message.contains('cancelled')) {
+      return 'Google login was cancelled.';
+    }
+    if (message.contains('clientconfigurationerror') ||
+        message.contains('providerconfigurationerror') ||
+        message.contains('developer console')) {
+      return 'Google login is not configured correctly yet. Please contact support.';
+    }
+    if (message.contains('uiunavailable')) {
+      return 'Google login is unavailable on this device. Please try email login.';
+    }
+    if (message.contains('usermismatch')) {
+      return 'Please use the same Google account and try again.';
+    }
+    if (message.contains('no breedr account')) {
+      return 'No Breedr account was found. Please sign up first.';
+    }
+    if (message.contains('network')) {
+      return 'Please check your internet connection and try again.';
+    }
+
+    return 'Google login could not be completed. Please try again.';
   }
 
   @override

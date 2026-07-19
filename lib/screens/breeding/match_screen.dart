@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/breedr_network_image.dart';
 
 class MatchScreen extends StatelessWidget {
   final String matchedPetName;
@@ -225,14 +226,10 @@ class _PhotoCard extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
-        child: photoUrl.isNotEmpty
-            ? Image.network(
-                photoUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) =>
-                    _PetPhotoPlaceholder(species: species),
-              )
-            : _PetPhotoPlaceholder(species: species),
+        child: BreedrNetworkImage(
+          imageUrl: photoUrl,
+          fallback: _PetPhotoPlaceholder(species: species),
+        ),
       ),
     );
   }

@@ -134,9 +134,11 @@ Navigator.push(
     } catch (e) {
       if (!mounted) return;
 
+      debugPrint('Google sign up error: $e');
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Google sign in failed: $e'),
+          content: Text(_googleSignInMessage(e, signingUp: true)),
         ),
       );
     } finally {
@@ -150,6 +152,34 @@ Navigator.push(
     final name = email.split('@').first.toLowerCase();
     final cleaned = name.replaceAll(RegExp(r'[^a-z0-9_]'), '_');
     return cleaned.isEmpty ? 'breedr_user' : cleaned;
+  }
+
+  String _googleSignInMessage(Object error, {required bool signingUp}) {
+    final action = signingUp ? 'sign-up' : 'login';
+    final message = error.toString().toLowerCase();
+
+    if (message.contains('canceled') || message.contains('cancelled')) {
+      return 'Google $action was cancelled.';
+    }
+    if (message.contains('clientconfigurationerror') ||
+        message.contains('providerconfigurationerror') ||
+        message.contains('developer console')) {
+      return 'Google $action is not configured correctly yet. Please contact support.';
+    }
+    if (message.contains('uiunavailable')) {
+      return 'Google $action is unavailable on this device. Please try email sign-up.';
+    }
+    if (message.contains('usermismatch')) {
+      return 'Please use the same Google account and try again.';
+    }
+    if (message.contains('no breedr account')) {
+      return 'No Breedr account was found. Please sign up first.';
+    }
+    if (message.contains('network')) {
+      return 'Please check your internet connection and try again.';
+    }
+
+    return 'Google $action could not be completed. Please try again.';
   }
 
   @override

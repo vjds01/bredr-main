@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import '../../models/pet_listing_data.dart';
+import '../../widgets/breedr_network_image.dart';
 import '../home_screen.dart';
 import 'pet_registration_screen.dart';
 
@@ -69,11 +70,11 @@ class PetPublishedScreen extends StatelessWidget {
                           ),
                           child: ClipOval(
                             child: profilePhotoUrl.isNotEmpty
-                                ? Image.network(
-                                    profilePhotoUrl,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, _, _) =>
-                                        const _PublishedPetPlaceholder(),
+                                ? BreedrNetworkImage(
+                                    imageUrl: profilePhotoUrl,
+                                    width: 120,
+                                    height: 120,
+                                    fallback: const _PublishedPetPlaceholder(),
                                   )
                                 : petData.profilePhotoFile != null
                                     ? Image.file(

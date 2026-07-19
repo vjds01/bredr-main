@@ -14,6 +14,7 @@ import '../../services/cloudinary_service.dart';
 import '../../services/presence_service.dart';
 import '../../services/user_session_service.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/breedr_network_image.dart';
 
 bool _shouldShowConversation(Map<String, dynamic> data, String currentUserId) {
   final isArchived =
@@ -682,14 +683,12 @@ class _PetSelectorAvatar extends StatelessWidget {
         border: Border.all(color: AppColors.primary, width: 2),
       ),
       child: ClipOval(
-        child: pet.photoUrl.isNotEmpty
-            ? Image.network(
-                pet.photoUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) =>
-                    _PetSpeciesPlaceholder(species: pet.species),
-              )
-            : _PetSpeciesPlaceholder(species: pet.species),
+        child: BreedrNetworkImage(
+          imageUrl: pet.photoUrl,
+          width: 82,
+          height: 82,
+          fallback: _PetSpeciesPlaceholder(species: pet.species),
+        ),
       ),
     );
   }
@@ -1290,14 +1289,12 @@ class _OwnerAvatar extends StatelessWidget {
         color: Color(0xFFFFDDE6),
       ),
       clipBehavior: Clip.antiAlias,
-      child: photoUrl.isNotEmpty
-          ? Image.network(
-              photoUrl,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) =>
-                  const Icon(Icons.person, color: AppColors.primary),
-            )
-          : const Icon(Icons.person, color: AppColors.primary),
+      child: BreedrNetworkImage(
+        imageUrl: photoUrl,
+        width: size,
+        height: size,
+        fallback: const Icon(Icons.person, color: AppColors.primary),
+      ),
     );
   }
 }
@@ -1367,6 +1364,76 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     } finally {
       if (mounted) setState(() => _sending = false);
     }
+  }
+
+  Future<void> _respondToAdoptionUpdate(String updateRequestId) async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 75,
+    );
+    if (picked == null || !mounted) return;
+
+    setState(() => _sending = true);
+    try {
+      final url = await CloudinaryService().uploadImageOrThrow(
+        File(picked.path),
+      );
+      await AdoptionService.instance.respondToAdoptionUpdate(
+        conversationId: widget.matchId,
+        updateRequestId: updateRequestId,
+        photoUrl: url,
+      );
+    } on AdoptionServiceException catch (error) {
+      if (mounted) _showSnack(error.message);
+    } catch (_) {
+      if (mounted) _showSnack('Unable to send the photo update.');
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _confirmAdoptionUpdate(String updateRequestId) async {
+    try {
+      await AdoptionService.instance.confirmAdoptionUpdate(
+        conversationId: widget.matchId,
+        updateRequestId: updateRequestId,
+      );
+      if (mounted) _showSnack('Photo update confirmed.');
+    } on AdoptionServiceException catch (error) {
+      if (mounted) _showSnack(error.message);
+    } catch (_) {
+      if (mounted) _showSnack('Unable to confirm this update.');
+    }
+  }
+
+  Future<void> _requestAnotherAdoptionUpdate(String updateRequestId) async {
+    final reason = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (_) => const _RequestAnotherPhotoSheet(),
+    );
+    if (reason == null || !mounted) return;
+
+    try {
+      await AdoptionService.instance.requestAnotherAdoptionUpdate(
+        conversationId: widget.matchId,
+        updateRequestId: updateRequestId,
+        reason: reason,
+      );
+    } on AdoptionServiceException catch (error) {
+      if (mounted) _showSnack(error.message);
+    } catch (_) {
+      if (mounted) _showSnack('Unable to request another update.');
+    }
+  }
+
+  void _showSnack(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   Future<void> _markRead() async {
@@ -1655,7 +1722,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                                     ),
                                   ),
                                 _MessageBubble(
-                                  text: data['text'] as String? ?? '',
+                                  data: data,
                                   mine: mine,
                                   createdAt: createdAt,
                                   showReceipt:
@@ -1663,6 +1730,10 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                                       index == lastOwnIndex &&
                                       createdAt != null,
                                   isRead: isRead,
+                                  onRespondToUpdate: _respondToAdoptionUpdate,
+                                  onConfirmUpdate: _confirmAdoptionUpdate,
+                                  onRequestAnotherUpdate:
+                                      _requestAnotherAdoptionUpdate,
                                 ),
                               ],
                             );
@@ -1981,6 +2052,7 @@ class _AdoptionProcessPanelState extends State<_AdoptionProcessPanel> {
     required String status,
   }) {
     if (status == 'completed') return 'Adoption completed';
+    if (status == 'ready_to_complete') return 'Adoption ready to complete';
     if (status == 'protection_active') return _adoptionProtectionTitle();
     if (status == 'handover_pending') {
       return handoverConfirmedByMe
@@ -2007,6 +2079,9 @@ class _AdoptionProcessPanelState extends State<_AdoptionProcessPanel> {
   }) {
     if (status == 'completed') {
       return 'This adoption is recorded as completed. You can now leave a review.';
+    }
+    if (status == 'ready_to_complete') {
+      return 'The protection window has ended. Complete the adoption to make it official.';
     }
     if (status == 'protection_active') {
       final remaining = protectionEndsAt?.toDate().difference(_now);
@@ -2043,6 +2118,7 @@ class _AdoptionProcessPanelState extends State<_AdoptionProcessPanel> {
     if (status == 'completed') {
       return ownReviewSubmitted ? 'Reviewed' : 'Leave Review';
     }
+    if (status == 'ready_to_complete') return 'Complete';
     if (status == 'protection_active') return 'View Process';
     if (status == 'handover_pending') {
       return handoverConfirmedByMe ? 'View Process' : 'Confirm';
@@ -2067,6 +2143,7 @@ class _AdoptionProcessPanelState extends State<_AdoptionProcessPanel> {
     if (status == 'completed') {
       return ownReviewSubmitted ? _openProcess : _openReview;
     }
+    if (status == 'ready_to_complete') return _completeAdoption;
     if (status == 'protection_active') return _openProcess;
     if (status == 'handover_pending') {
       return handoverConfirmedByMe ? _openProcess : _confirmHandover;
@@ -2137,6 +2214,21 @@ class _AdoptionProcessPanelState extends State<_AdoptionProcessPanel> {
         ),
       ),
     );
+  }
+
+  Future<void> _completeAdoption() async {
+    setState(() => _busy = true);
+    try {
+      await AdoptionService.instance.completeAdoptionProcess(
+        widget.conversationId,
+      );
+    } on AdoptionServiceException catch (error) {
+      if (mounted) _showError(error.message);
+    } on FirebaseException catch (error) {
+      if (mounted) _showError(_chatFirebaseMessage(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   void _openProcess() {
@@ -2213,7 +2305,7 @@ class _AdoptionProcessPanelState extends State<_AdoptionProcessPanel> {
 }
 
 int _adoptionProcessStep(String status, {required bool bothSigned}) {
-  if (status == 'completed') return 4;
+  if (status == 'completed' || status == 'ready_to_complete') return 4;
   if (status == 'protection_active') return 3;
   if (status == 'handover_pending' || bothSigned) return 2;
   return 1;
@@ -2420,6 +2512,10 @@ class _AdoptionProcessScreenState extends State<_AdoptionProcessScreen> {
           final participantIds =
               (data['participantIds'] as List?)?.cast<String>() ??
               const <String>[];
+          final petOwners = Map<String, dynamic>.from(
+            data['petOwners'] as Map? ?? const {},
+          );
+          final isOwner = petOwners.values.contains(widget.currentUserId);
           final petName = petNames.values.firstOrNull?.toString() ?? 'Pet';
           final signatures = Map<String, dynamic>.from(
             process['contractSignatures'] as Map? ?? const {},
@@ -2507,11 +2603,13 @@ class _AdoptionProcessScreenState extends State<_AdoptionProcessScreen> {
                                   ? 'Your confirmation is recorded. Waiting for the other party.'
                                   : 'Meetup details are arranged in chat. Confirm once the handover is done.'
                             : status == 'protection_active' ||
+                                  status == 'ready_to_complete' ||
                                   status == 'completed'
                             ? 'Handover confirmed by both parties.'
                             : 'Complete previous steps first.',
                         state:
                             status == 'protection_active' ||
+                                status == 'ready_to_complete' ||
                                 status == 'completed'
                             ? _ProcessCardState.done
                             : status == 'handover_pending'
@@ -2523,10 +2621,13 @@ class _AdoptionProcessScreenState extends State<_AdoptionProcessScreen> {
                         subtitle: 'Step 3 of 4',
                         message: status == 'protection_active'
                             ? 'Test mode remaining: ${_durationLabel((process['protectionEndsAt'] as Timestamp?)?.toDate().difference(_now))}.'
-                            : status == 'completed'
+                            : status == 'ready_to_complete' ||
+                                  status == 'completed'
                             ? 'Completed the protection window.'
                             : _adoptionProtectionGuideMessage(),
-                        state: status == 'completed'
+                        state:
+                            status == 'ready_to_complete' ||
+                                status == 'completed'
                             ? _ProcessCardState.done
                             : status == 'protection_active'
                             ? _ProcessCardState.inProgress
@@ -2537,12 +2638,31 @@ class _AdoptionProcessScreenState extends State<_AdoptionProcessScreen> {
                         subtitle: 'Step 4 of 4',
                         message: status == 'completed'
                             ? 'This adoption is complete and recorded permanently.'
+                            : status == 'ready_to_complete'
+                            ? 'The protection window has ended. Complete the adoption to make it official.'
                             : 'Reviews become available after completion.',
                         state: status == 'completed'
+                            ? _ProcessCardState.done
+                            : status == 'ready_to_complete'
                             ? _ProcessCardState.inProgress
                             : _ProcessCardState.locked,
                       ),
                       const SizedBox(height: 10),
+                      if (status == 'protection_active') ...[
+                        _ProtectionActionPanel(
+                          isOwner: isOwner,
+                          petName: petName,
+                          protectionEndsAt:
+                              process['protectionEndsAt'] as Timestamp?,
+                          onViewDetails: () =>
+                              _openProtectionDetails(process, petName),
+                          onRequestUpdate:
+                              isOwner ? () => _requestUpdate(petName) : null,
+                          onFileReturn:
+                              isOwner ? null : () => _fileReturnRequest(),
+                        ),
+                        const SizedBox(height: 10),
+                      ],
                       const _AdoptionContractNotice(),
                     ],
                   ),
@@ -2624,6 +2744,7 @@ class _AdoptionProcessScreenState extends State<_AdoptionProcessScreen> {
     if (status == 'handover_pending' && !handoverConfirmedByMe) {
       return _confirmHandover;
     }
+    if (status == 'ready_to_complete') return _completeAdoption;
     if (status == 'completed' && !ownReviewSubmitted) return _openReview;
     return null;
   }
@@ -2643,6 +2764,7 @@ class _AdoptionProcessScreenState extends State<_AdoptionProcessScreen> {
           : 'Confirm Handover';
     }
     if (status == 'protection_active') return 'Protection Window Active';
+    if (status == 'ready_to_complete') return 'Complete Adoption';
     if (status == 'completed') {
       return ownReviewSubmitted ? 'Review Submitted' : 'Leave a Review';
     }
@@ -2668,6 +2790,88 @@ class _AdoptionProcessScreenState extends State<_AdoptionProcessScreen> {
         builder: (_) => _AdoptionHandoverScreen(
           conversationId: widget.conversationId,
           currentUserId: widget.currentUserId,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _completeAdoption() async {
+    setState(() => _busy = true);
+    try {
+      await AdoptionService.instance.completeAdoptionProcess(
+        widget.conversationId,
+      );
+    } on AdoptionServiceException catch (error) {
+      if (mounted) _showError(error.message);
+    } on FirebaseException catch (error) {
+      if (mounted) _showError(_chatFirebaseMessage(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _requestUpdate(String petName) async {
+    final result = await showModalBottomSheet<_UpdateRequestChoice>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (_) => _RequestUpdateSheet(petName: petName),
+    );
+    if (result == null || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      await AdoptionService.instance.requestAdoptionUpdate(
+        conversationId: widget.conversationId,
+        requestType: result.type,
+        requestText: result.text,
+      );
+      if (mounted) _showSnack('Update request sent.');
+    } on AdoptionServiceException catch (error) {
+      if (mounted) _showError(error.message);
+    } on FirebaseException catch (error) {
+      if (mounted) _showError(_chatFirebaseMessage(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _fileReturnRequest() async {
+    final request = await Navigator.push<_ReturnRequestDraft>(
+      context,
+      MaterialPageRoute(builder: (_) => const _ReturnRequestScreen()),
+    );
+    if (request == null || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      await AdoptionService.instance.fileAdoptionReturnRequest(
+        conversationId: widget.conversationId,
+        reason: request.reason,
+        description: request.description,
+        evidenceUrls: request.evidenceUrls,
+      );
+      if (mounted) _showSnack('Return request submitted.');
+    } on AdoptionServiceException catch (error) {
+      if (mounted) _showError(error.message);
+    } on FirebaseException catch (error) {
+      if (mounted) _showError(_chatFirebaseMessage(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  void _openProtectionDetails(Map<String, dynamic> process, String petName) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _ProtectionWindowScreen(
+          petName: petName,
+          protectionStartedAt: process['protectionStartedAt'] as Timestamp?,
+          protectionEndsAt: process['protectionEndsAt'] as Timestamp?,
         ),
       ),
     );
@@ -2751,6 +2955,510 @@ class _AdoptionProcessScreenState extends State<_AdoptionProcessScreen> {
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
   }
+
+  void _showSnack(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+}
+
+class _ProtectionActionPanel extends StatelessWidget {
+  final bool isOwner;
+  final String petName;
+  final Timestamp? protectionEndsAt;
+  final VoidCallback onViewDetails;
+  final VoidCallback? onRequestUpdate;
+  final VoidCallback? onFileReturn;
+
+  const _ProtectionActionPanel({
+    required this.isOwner,
+    required this.petName,
+    required this.protectionEndsAt,
+    required this.onViewDetails,
+    required this.onRequestUpdate,
+    required this.onFileReturn,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final remaining = protectionEndsAt?.toDate().difference(DateTime.now().toUtc());
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFDDE6),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primary),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            isOwner ? "It's time for a check-in" : '30-day protection window',
+            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            isOwner
+                ? 'Request a fresh photo update of $petName during the protection window.'
+                : 'You can file a valid return request while the protection window is active.',
+            style: const TextStyle(fontSize: 11, color: Color(0xFF555555)),
+          ),
+          if (remaining != null) ...[
+            const SizedBox(height: 5),
+            Text(
+              '${_durationLabel(remaining)} remaining',
+              style: const TextStyle(
+                color: AppColors.primary,
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: onViewDetails,
+                  child: const Text('View Details'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton(
+                  onPressed: isOwner ? onRequestUpdate : onFileReturn,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                  ),
+                  child: Text(isOwner ? 'Request Update' : 'File Return'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RequestUpdateSheet extends StatelessWidget {
+  final String petName;
+
+  const _RequestUpdateSheet({required this.petName});
+
+  @override
+  Widget build(BuildContext context) {
+    final options = [
+      _UpdateRequestChoice(
+        type: 'responding_to_name',
+        title: '$petName responding to their name',
+        text: 'Can you send a photo update of $petName responding to their name?',
+        icon: Icons.record_voice_over_outlined,
+      ),
+      _UpdateRequestChoice(
+        type: 'today_date',
+        title: "$petName with today's date",
+        text: 'Can you send a photo of $petName with today\'s date visible?',
+        icon: Icons.calendar_month_outlined,
+      ),
+      _UpdateRequestChoice(
+        type: 'playing_or_walk',
+        title: '$petName playing or on a walk',
+        text: 'Can you send a recent photo of $petName playing or on a walk?',
+        icon: Icons.directions_walk,
+      ),
+      _UpdateRequestChoice(
+        type: 'general',
+        title: 'General update',
+        text: 'Can you send a photo or video update of $petName whenever you get a chance?',
+        icon: Icons.photo_camera_outlined,
+      ),
+    ];
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(22, 20, 22, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Request Photo Update',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close),
+                ),
+              ],
+            ),
+            const Text(
+              'Ask the adopter for a fresh update during the protection window.',
+              style: TextStyle(color: Color(0xFF666666)),
+            ),
+            const SizedBox(height: 16),
+            ...options.map(
+              (option) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: InkWell(
+                  onTap: () => Navigator.pop(context, option),
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: AppColors.primary),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(option.icon, color: AppColors.primary),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            option.title,
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _UpdateRequestChoice {
+  final String type;
+  final String title;
+  final String text;
+  final IconData icon;
+
+  const _UpdateRequestChoice({
+    required this.type,
+    required this.title,
+    required this.text,
+    required this.icon,
+  });
+}
+
+class _ProtectionWindowScreen extends StatelessWidget {
+  final String petName;
+  final Timestamp? protectionStartedAt;
+  final Timestamp? protectionEndsAt;
+
+  const _ProtectionWindowScreen({
+    required this.petName,
+    required this.protectionStartedAt,
+    required this.protectionEndsAt,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final remaining = protectionEndsAt?.toDate().difference(DateTime.now().toUtc());
+    return Scaffold(
+      backgroundColor: const Color(0xFFFFF7FA),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFFFFF7FA),
+        foregroundColor: AppColors.primary,
+        elevation: 0,
+        title: const Text(
+          '30-Day Window',
+          style: TextStyle(color: Color(0xFF111111), fontWeight: FontWeight.w900),
+        ),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(22),
+        child: ListView(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFDDE6),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '30-Day Protection Window',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 10),
+                  LinearProgressIndicator(
+                    value: protectionEndsAt == null
+                        ? 0.0
+                        : 1 - ((remaining?.inSeconds ?? 0) /
+                                AdoptionService.protectionWindowDuration.inSeconds)
+                            .clamp(0.0, 1.0),
+                    color: AppColors.primary,
+                    backgroundColor: Colors.white,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    '$petName is now in the adopter\'s care. The adopter may file a valid return request during this window if an issue is discovered.',
+                    style: const TextStyle(fontSize: 12, height: 1.4),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            _ProtectionInfoCard(
+              color: AppColors.primary,
+              title: remaining == null
+                  ? 'Protection window active'
+                  : '${_durationLabel(remaining)} remaining',
+              message:
+                  'After this window, the adoption can be completed and recorded permanently.',
+            ),
+            const SizedBox(height: 16),
+            const _ProtectionInfoCard(
+              color: Color(0xFFFFF3C4),
+              title: 'Return may be valid for:',
+              message:
+                  'Undisclosed illness, violent behavior not disclosed, severe incompatibility, or inaccurate listing details.',
+            ),
+            const SizedBox(height: 16),
+            const _ProtectionInfoCard(
+              color: Color(0xFFE8F6FF),
+              title: 'Photo updates happen in chat',
+              message:
+                  'The original owner can request updates. The adopter can respond with a recent photo.',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ProtectionInfoCard extends StatelessWidget {
+  final Color color;
+  final String title;
+  final String message;
+
+  const _ProtectionInfoCard({
+    required this.color,
+    required this.title,
+    required this.message,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+          const SizedBox(height: 6),
+          Text(message, style: const TextStyle(fontSize: 12, height: 1.4)),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReturnRequestScreen extends StatefulWidget {
+  const _ReturnRequestScreen();
+
+  @override
+  State<_ReturnRequestScreen> createState() => _ReturnRequestScreenState();
+}
+
+class _ReturnRequestScreenState extends State<_ReturnRequestScreen> {
+  final _descriptionController = TextEditingController();
+  final _evidenceFiles = <File>[];
+  String _reason = 'Violent or aggressive behavior';
+  bool _uploading = false;
+
+  static const _reasons = [
+    ('Violent or aggressive behavior', 'Not disclosed before adoption'),
+    ('Undisclosed illness or condition', 'Pet is sick with unknown condition'),
+    ('Severe incompatibility', 'Allergies, other pets, household conflicts'),
+    ('Listing was misrepresented', 'Breed, age, or details were inaccurate'),
+  ];
+
+  @override
+  void dispose() {
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickEvidence() async {
+    final picked = await ImagePicker().pickMultiImage(imageQuality: 75);
+    if (picked.isEmpty || !mounted) return;
+    setState(() {
+      _evidenceFiles
+        ..clear()
+        ..addAll(picked.take(3).map((file) => File(file.path)));
+    });
+  }
+
+  Future<void> _submit() async {
+    final description = _descriptionController.text.trim();
+    if (description.length < 50) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please describe what happened in at least 50 characters.'),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _uploading = true);
+    try {
+      final urls = <String>[];
+      for (final file in _evidenceFiles) {
+        urls.add(await CloudinaryService().uploadImageOrThrow(file));
+      }
+      if (!mounted) return;
+      Navigator.pop(
+        context,
+        _ReturnRequestDraft(
+          reason: _reason,
+          description: description,
+          evidenceUrls: urls,
+        ),
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Unable to upload evidence right now.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFFFF7FA),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFFFFF7FA),
+        foregroundColor: AppColors.primary,
+        elevation: 0,
+        title: const Text(
+          'Return Request',
+          style: TextStyle(color: Color(0xFF111111), fontWeight: FontWeight.w900),
+        ),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(22, 16, 22, 24),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFE1E8),
+              border: Border.all(color: AppColors.primary),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Text(
+              'Only valid reasons within the protection window are accepted. The owner will be notified.',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+          const SizedBox(height: 18),
+          const Text('Reason for Return *', style: TextStyle(fontWeight: FontWeight.w900)),
+          const SizedBox(height: 10),
+          ..._reasons.map(
+            (reason) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: InkWell(
+                onTap: () => setState(() => _reason = reason.$1),
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: _reason == reason.$1 ? const Color(0xFFFFE1E8) : Colors.white,
+                    border: Border.all(color: AppColors.primary),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(reason.$1, style: const TextStyle(fontWeight: FontWeight.w900)),
+                      Text(reason.$2, style: const TextStyle(fontSize: 12)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          const Text('Describe what happened *', style: TextStyle(fontWeight: FontWeight.w900)),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _descriptionController,
+            minLines: 4,
+            maxLines: 6,
+            decoration: InputDecoration(
+              hintText: 'Describe the issue in detail (min 50 characters)',
+              filled: true,
+              fillColor: const Color(0xFFFFE8EE),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: AppColors.primary),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+            onPressed: _uploading ? null : _pickEvidence,
+            icon: const Icon(Icons.attach_file),
+            label: Text(
+              _evidenceFiles.isEmpty
+                  ? 'Upload Evidence - Optional'
+                  : '${_evidenceFiles.length} photo(s) selected',
+            ),
+          ),
+          const SizedBox(height: 22),
+          FilledButton(
+            onPressed: _uploading ? null : _submit,
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              minimumSize: const Size.fromHeight(52),
+            ),
+            child: Text(_uploading ? 'Uploading...' : 'Submit Return Request'),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton(
+            onPressed: _uploading ? null : () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReturnRequestDraft {
+  final String reason;
+  final String description;
+  final List<String> evidenceUrls;
+
+  const _ReturnRequestDraft({
+    required this.reason,
+    required this.description,
+    required this.evidenceUrls,
+  });
 }
 
 class _AdoptionContractScreen extends StatefulWidget {
@@ -4553,22 +5261,54 @@ class _StarRating extends StatelessWidget {
 }
 
 class _MessageBubble extends StatelessWidget {
-  final String text;
+  final Map<String, dynamic> data;
   final bool mine;
   final Timestamp? createdAt;
   final bool showReceipt;
   final bool isRead;
+  final ValueChanged<String> onRespondToUpdate;
+  final ValueChanged<String> onConfirmUpdate;
+  final ValueChanged<String> onRequestAnotherUpdate;
 
   const _MessageBubble({
-    required this.text,
+    required this.data,
     required this.mine,
     required this.createdAt,
     required this.showReceipt,
     required this.isRead,
+    required this.onRespondToUpdate,
+    required this.onConfirmUpdate,
+    required this.onRequestAnotherUpdate,
   });
 
   @override
   Widget build(BuildContext context) {
+    final type = data['type'] as String? ?? 'text';
+    final text = data['text'] as String? ?? '';
+    final card = switch (type) {
+      'adoption_update_request' => _AdoptionUpdateRequestBubble(
+          data: data,
+          mine: mine,
+          onRespond: onRespondToUpdate,
+        ),
+      'adoption_update_response' => _AdoptionUpdateResponseBubble(
+          data: data,
+          mine: mine,
+          onConfirm: onConfirmUpdate,
+          onRequestAnother: onRequestAnotherUpdate,
+        ),
+      'adoption_update_follow_up' => _AdoptionInfoBubble(
+          title: 'Another update requested',
+          message: text,
+          mine: mine,
+        ),
+      'adoption_return_request' => _AdoptionReturnRequestBubble(
+          data: data,
+          mine: mine,
+        ),
+      _ => null,
+    };
+
     return Align(
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
       child: Column(
@@ -4576,20 +5316,24 @@ class _MessageBubble extends StatelessWidget {
             ? CrossAxisAlignment.end
             : CrossAxisAlignment.start,
         children: [
-          Container(
-            constraints: const BoxConstraints(maxWidth: 280),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: mine ? AppColors.primary : Colors.white,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Text(
-              text,
-              style: TextStyle(
-                color: mine ? Colors.white : const Color(0xFF222222),
+          card ??
+              Container(
+                constraints: const BoxConstraints(maxWidth: 280),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: mine ? AppColors.primary : Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(
+                  text,
+                  style: TextStyle(
+                    color: mine ? Colors.white : const Color(0xFF222222),
+                  ),
+                ),
               ),
-            ),
-          ),
           const SizedBox(height: 3),
           Row(
             mainAxisSize: MainAxisSize.min,
@@ -4624,6 +5368,288 @@ class _MessageBubble extends StatelessWidget {
           ),
           const SizedBox(height: 8),
         ],
+      ),
+    );
+  }
+}
+
+class _AdoptionUpdateRequestBubble extends StatelessWidget {
+  final Map<String, dynamic> data;
+  final bool mine;
+  final ValueChanged<String> onRespond;
+
+  const _AdoptionUpdateRequestBubble({
+    required this.data,
+    required this.mine,
+    required this.onRespond,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final updateRequestId = data['adoptionUpdateRequestId'] as String? ?? '';
+    final text = data['text'] as String? ?? 'Please send a photo update.';
+    return _AdoptionMessageCard(
+      mine: mine,
+      title: mine ? 'You requested an update' : 'Update requested',
+      icon: Icons.photo_camera_outlined,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(text, style: const TextStyle(fontSize: 12, height: 1.35)),
+          if (!mine && updateRequestId.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () => onRespond(updateRequestId),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                ),
+                icon: const Icon(Icons.upload_file, size: 18),
+                label: const Text('Reply with Photo'),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _AdoptionUpdateResponseBubble extends StatelessWidget {
+  final Map<String, dynamic> data;
+  final bool mine;
+  final ValueChanged<String> onConfirm;
+  final ValueChanged<String> onRequestAnother;
+
+  const _AdoptionUpdateResponseBubble({
+    required this.data,
+    required this.mine,
+    required this.onConfirm,
+    required this.onRequestAnother,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final updateRequestId = data['adoptionUpdateRequestId'] as String? ?? '';
+    final photoUrl = data['photoUrl'] as String? ?? '';
+    return _AdoptionMessageCard(
+      mine: mine,
+      title: mine ? 'Photo update sent' : 'Photo update received',
+      icon: Icons.image_outlined,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (photoUrl.isNotEmpty)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: BreedrNetworkImage(
+                imageUrl: photoUrl,
+                width: 170,
+                height: 190,
+                fit: BoxFit.cover,
+                fallback: Container(
+                  width: 170,
+                  height: 140,
+                  color: const Color(0xFFFFEEF3),
+                  child: const Icon(Icons.broken_image_outlined),
+                ),
+              ),
+            ),
+          if (!mine && updateRequestId.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            FilledButton(
+              onPressed: () => onConfirm(updateRequestId),
+              style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
+              child: const Text("Confirm It's Them"),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton(
+              onPressed: () => onRequestAnother(updateRequestId),
+              child: const Text('Request Another Photo'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _AdoptionReturnRequestBubble extends StatelessWidget {
+  final Map<String, dynamic> data;
+  final bool mine;
+
+  const _AdoptionReturnRequestBubble({
+    required this.data,
+    required this.mine,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final reason = data['reason'] as String? ?? 'Return request';
+    final description = data['description'] as String? ?? '';
+    return _AdoptionMessageCard(
+      mine: mine,
+      title: mine ? 'You filed a return request' : 'Return request filed',
+      icon: Icons.warning_amber_rounded,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(reason, style: const TextStyle(fontWeight: FontWeight.w900)),
+          if (description.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(description, style: const TextStyle(fontSize: 12)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _AdoptionInfoBubble extends StatelessWidget {
+  final String title;
+  final String message;
+  final bool mine;
+
+  const _AdoptionInfoBubble({
+    required this.title,
+    required this.message,
+    required this.mine,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _AdoptionMessageCard(
+      mine: mine,
+      title: title,
+      icon: Icons.info_outline,
+      child: Text(message, style: const TextStyle(fontSize: 12)),
+    );
+  }
+}
+
+class _AdoptionMessageCard extends StatelessWidget {
+  final bool mine;
+  final String title;
+  final IconData icon;
+  final Widget child;
+
+  const _AdoptionMessageCard({
+    required this.mine,
+    required this.title,
+    required this.icon,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 310),
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: mine ? const Color(0xFFFFE1E8) : Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.75)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: AppColors.primary, size: 18),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _RequestAnotherPhotoSheet extends StatelessWidget {
+  const _RequestAnotherPhotoSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    const options = [
+      ('Too blurry', "Can't see the pet clearly"),
+      ('Too dark / hard to see', 'Lighting made it unclear'),
+      ("Doesn't look like the pet", 'Just want to double check'),
+      ('Just want another photo', 'No particular reason'),
+      ('Please send another update when you can.', 'Custom general request'),
+    ];
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(22, 20, 22, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Request Another Photo',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close),
+                ),
+              ],
+            ),
+            const Text(
+              "This isn't a report. Let them know what wasn't quite right.",
+              style: TextStyle(color: Color(0xFF666666)),
+            ),
+            const SizedBox(height: 16),
+            ...options.map(
+              (option) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: InkWell(
+                  onTap: () => Navigator.pop(
+                    context,
+                    '${option.$1}: ${option.$2}',
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: AppColors.primary),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          option.$1,
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        Text(
+                          option.$2,
+                          style: const TextStyle(color: Color(0xFF666666)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -4721,14 +5747,10 @@ class _ChatAvatar extends StatelessWidget {
                 color: Color(0xFFFFDDE6),
               ),
               child: ClipOval(
-                child: photoUrl.isNotEmpty
-                    ? Image.network(
-                        photoUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) =>
-                            const Icon(Icons.pets, color: AppColors.primary),
-                      )
-                    : const Icon(Icons.pets, color: AppColors.primary),
+                child: BreedrNetworkImage(
+                  imageUrl: photoUrl,
+                  fallback: const Icon(Icons.pets, color: AppColors.primary),
+                ),
               ),
             ),
           ),

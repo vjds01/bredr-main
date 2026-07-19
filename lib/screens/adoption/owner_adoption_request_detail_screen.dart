@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../models/adoption_models.dart';
 import '../../services/adoption_service.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/breedr_network_image.dart';
 import '../chat/chats_screen.dart';
 import 'owner_profile_screen.dart';
 
@@ -776,14 +777,12 @@ class _Avatar extends StatelessWidget {
         color: Color(0xFFFFDDE5),
       ),
       clipBehavior: Clip.antiAlias,
-      child: url.isEmpty
-          ? Icon(fallback, color: AppColors.primary)
-          : Image.network(
-              url,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) =>
-                  Icon(fallback, color: AppColors.primary),
-            ),
+      child: BreedrNetworkImage(
+        imageUrl: url,
+        width: size,
+        height: size,
+        fallback: Icon(fallback, color: AppColors.primary),
+      ),
     );
   }
 }

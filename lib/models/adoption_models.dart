@@ -140,6 +140,10 @@ class AdoptionListing {
   final String name;
   final String species;
   final String breed;
+  final String primaryBreed;
+  final String secondaryBreed;
+  final bool isMixedBreed;
+  final List<String> breedTags;
   final String breedSize;
   final String age;
   final String gender;
@@ -171,6 +175,10 @@ class AdoptionListing {
     required this.name,
     required this.species,
     required this.breed,
+    required this.primaryBreed,
+    required this.secondaryBreed,
+    required this.isMixedBreed,
+    required this.breedTags,
     required this.breedSize,
     required this.age,
     required this.gender,
@@ -226,6 +234,11 @@ class AdoptionListing {
       name: data['name'] as String? ?? 'Pet',
       species: data['species'] as String? ?? '',
       breed: data['breed'] as String? ?? '',
+      primaryBreed: data['primaryBreed'] as String? ?? '',
+      secondaryBreed: data['secondaryBreed'] as String? ?? '',
+      isMixedBreed: data['isMixedBreed'] as bool? ?? false,
+      breedTags:
+          (data['breedTags'] as List?)?.whereType<String>().toList() ?? const [],
       breedSize: data['breedSize'] as String? ?? '',
       age: data['age'] as String? ?? '',
       gender: data['gender'] as String? ?? '',
@@ -294,6 +307,10 @@ class AdoptionListing {
       'name': name,
       'species': species,
       'breed': breed,
+      'primaryBreed': primaryBreed,
+      'secondaryBreed': secondaryBreed,
+      'isMixedBreed': isMixedBreed,
+      'breedTags': breedTags,
       'breedSize': breedSize,
       'age': age,
       'gender': gender,

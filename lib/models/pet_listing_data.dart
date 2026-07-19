@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'breed_options.dart';
+
 class PetListingData {
   final String? ownerId;
   final String? ownerName;
@@ -10,6 +12,9 @@ class PetListingData {
   final String name;
   final String species;
   final String breed;
+  final String primaryBreed;
+  final String secondaryBreed;
+  final bool isMixedBreed;
   final String breedSize;
   final String age;
   final String gender;
@@ -40,6 +45,9 @@ class PetListingData {
     this.name = '',
     this.species = 'Dog',
     this.breed = '',
+    this.primaryBreed = '',
+    this.secondaryBreed = '',
+    this.isMixedBreed = false,
     this.breedSize = 'Small',
     this.age = '',
     this.gender = 'Male',
@@ -74,6 +82,9 @@ class PetListingData {
     String? name,
     String? species,
     String? breed,
+    String? primaryBreed,
+    String? secondaryBreed,
+    bool? isMixedBreed,
     String? breedSize,
     String? age,
     String? gender,
@@ -102,6 +113,9 @@ class PetListingData {
       name: name ?? this.name,
       species: species ?? this.species,
       breed: breed ?? this.breed,
+      primaryBreed: primaryBreed ?? this.primaryBreed,
+      secondaryBreed: secondaryBreed ?? this.secondaryBreed,
+      isMixedBreed: isMixedBreed ?? this.isMixedBreed,
       breedSize: breedSize ?? this.breedSize,
       age: age ?? this.age,
       gender: gender ?? this.gender,
@@ -130,13 +144,28 @@ class PetListingData {
     String profilePhotoUrl = '',
     List<String> additionalImageUrls = const [],
   }) {
+    final displayBreed = mixedBreedDisplayName(
+      isMixedBreed: isMixedBreed,
+      primaryBreed: primaryBreed.isNotEmpty ? primaryBreed : breed,
+      secondaryBreed: secondaryBreed,
+    );
+    final tags = breedTagsFor(
+      isMixedBreed: isMixedBreed,
+      primaryBreed: primaryBreed.isNotEmpty ? primaryBreed : breed,
+      secondaryBreed: secondaryBreed,
+    );
+
     return {
       'ownerId': ownerId,
       'ownerName': ownerName,
       'ownerPhoto': ownerPhoto,
       'name': name,
       'species': species,
-      'breed': breed,
+      'breed': displayBreed,
+      'primaryBreed': primaryBreed.isNotEmpty ? primaryBreed : breed,
+      'secondaryBreed': isMixedBreed ? secondaryBreed : '',
+      'isMixedBreed': isMixedBreed,
+      'breedTags': tags,
       'breedSize': breedSize,
       'age': age,
       'gender': gender,

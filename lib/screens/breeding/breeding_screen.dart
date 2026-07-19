@@ -4,9 +4,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../models/breed_options.dart';
 import '../../services/breeding_match_service.dart';
 import '../../services/user_session_service.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/breedr_network_image.dart';
 import '../chat/chats_screen.dart';
 import '../owner/owner_ratings_screen.dart';
 import 'match_screen.dart';
@@ -75,6 +77,25 @@ class _BreedingScreenState extends State<BreedingScreen> {
     });
   }
 
+  bool _isEligibleBreedingCandidate(
+    _BreedingPet pet,
+    _BreedingPet selectedPet,
+    String currentUserId,
+  ) {
+    final ownerId = pet.ownerId.trim();
+    final selectedOwnerId = selectedPet.ownerId.trim();
+
+    if (pet.id == selectedPet.id) return false;
+    if (ownerId.isEmpty) return false;
+    if (ownerId == currentUserId) return false;
+    if (selectedOwnerId.isNotEmpty && ownerId == selectedOwnerId) return false;
+    if (pet.species.toLowerCase() != selectedPet.species.toLowerCase()) {
+      return false;
+    }
+
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
     final uid = UserSessionService.instance.currentUser?.uid;
@@ -131,10 +152,13 @@ class _BreedingScreenState extends State<BreedingScreen> {
             final compatibleCandidates = selectedPet == null
                 ? const <_BreedingPet>[]
                 : pets
-                    .where((pet) => pet.ownerId.trim() != uid)
-                    .where((pet) =>
-                        pet.species.toLowerCase() ==
-                        selectedPet.species.toLowerCase())
+                    .where(
+                      (pet) => _isEligibleBreedingCandidate(
+                        pet,
+                        selectedPet,
+                        uid,
+                      ),
+                    )
                     .where(_filter.matches)
                     .toList();
             if (selectedPet != null) {
@@ -154,6 +178,11 @@ class _BreedingScreenState extends State<BreedingScreen> {
               builder: (context, swipeSnapshot) {
                 final swipedIds = swipeSnapshot.data ?? const <String>{};
                 final candidates = compatibleCandidates
+                    .where(
+                      (pet) => selectedPet == null
+                          ? false
+                          : _isEligibleBreedingCandidate(pet, selectedPet, uid),
+                    )
                     .where((pet) => !swipedIds.contains(pet.id))
                     .toList();
 
@@ -414,6 +443,7 @@ class _BreedingPet {
   final String name;
   final String species;
   final String breed;
+  final List<String> breedTags;
   final String age;
   final String gender;
   final String color;
@@ -438,6 +468,7 @@ class _BreedingPet {
     required this.name,
     required this.species,
     required this.breed,
+    required this.breedTags,
     required this.age,
     required this.gender,
     required this.color,
@@ -467,6 +498,8 @@ class _BreedingPet {
       name: data['name'] as String? ?? 'Pet',
       species: data['species'] as String? ?? '',
       breed: data['breed'] as String? ?? '',
+      breedTags:
+          (data['breedTags'] as List?)?.whereType<String>().toList() ?? const [],
       age: data['age'] as String? ?? '',
       gender: data['gender'] as String? ?? '',
       color: data['color'] as String? ?? '',
@@ -596,9 +629,15 @@ class _BreedingFilter {
   });
 
   bool matches(_BreedingPet pet) {
-    if (breed != 'Any Breed' &&
-        pet.breed.trim().toLowerCase() != breed.trim().toLowerCase()) {
-      return false;
+    if (breed != 'Any Breed') {
+      final target = breed.trim().toLowerCase();
+      final petBreeds = [
+        pet.breed,
+        ...pet.breedTags,
+      ].map((value) => value.trim().toLowerCase()).toSet();
+      final matchesBreed = petBreeds.contains(target) ||
+          petBreeds.any((value) => value.contains(target) || target.contains(value));
+      if (!matchesBreed) return false;
     }
 
     final age = pet.ageInMonths;
@@ -843,14 +882,12 @@ class _LocationSearchView extends StatelessWidget {
                   ],
                 ),
                 child: ClipOval(
-                  child: swipingAs.ownerPhoto.isNotEmpty
-                      ? Image.network(
-                          swipingAs.ownerPhoto,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) =>
-                              const _OwnerPlaceholder(),
-                        )
-                      : const _OwnerPlaceholder(),
+                  child: BreedrNetworkImage(
+                    imageUrl: swipingAs.ownerPhoto,
+                    width: 122,
+                    height: 122,
+                    fallback: const _OwnerPlaceholder(),
+                  ),
                 ),
               ),
               const SizedBox(height: 22),
@@ -1230,13 +1267,10 @@ class _PhotoHero extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        pet.photoUrl.isNotEmpty
-            ? Image.network(
-                pet.photoUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => const _PetFallbackBlock(),
-              )
-            : const _PetFallbackBlock(),
+        BreedrNetworkImage(
+          imageUrl: pet.photoUrl,
+          fallback: const _PetFallbackBlock(),
+        ),
         const Positioned(
           top: 18,
           left: 46,
@@ -1960,12 +1994,12 @@ class _HealthRecordRow extends StatelessWidget {
               if (fileUrl.isNotEmpty)
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
-                  child: Image.network(
-                    fileUrl,
+                  child: BreedrNetworkImage(
+                    imageUrl: fileUrl,
                     height: 260,
                     width: double.infinity,
                     fit: BoxFit.contain,
-                    errorBuilder: (_, _, _) => const _RecordFallback(),
+                    fallback: const _RecordFallback(),
                   ),
                 )
               else
@@ -2082,21 +2116,16 @@ class _CircleNetworkImage extends StatelessWidget {
         border: Border.all(color: Colors.white, width: 2),
       ),
       child: ClipOval(
-        child: url.isNotEmpty
-            ? Image.network(
-                url,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => Icon(
-                  fallbackIcon,
-                  color: AppColors.primary,
-                  size: size * 0.48,
-                ),
-              )
-            : Icon(
-                fallbackIcon,
-                color: AppColors.primary,
-                size: size * 0.48,
-              ),
+        child: BreedrNetworkImage(
+          imageUrl: url,
+          width: size,
+          height: size,
+          fallback: Icon(
+            fallbackIcon,
+            color: AppColors.primary,
+            size: size * 0.48,
+          ),
+        ),
       ),
     );
   }
@@ -2129,14 +2158,12 @@ class _SpeciesAvatar extends StatelessWidget {
         ),
       ),
       child: ClipOval(
-        child: url.isNotEmpty
-            ? Image.network(
-                url,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) =>
-                    _SpeciesPlaceholder(species: species),
-              )
-            : _SpeciesPlaceholder(species: species),
+        child: BreedrNetworkImage(
+          imageUrl: url,
+          width: size,
+          height: size,
+          fallback: _SpeciesPlaceholder(species: species),
+        ),
       ),
     );
   }
@@ -2339,9 +2366,9 @@ class _FilterSheetState extends State<_FilterSheet> {
       return [
         'Any Breed',
         'Golden Retriever',
-        'Labrador',
+        'Labrador Retriever',
         'Shih Tzu',
-        'Husky',
+        'Siberian Husky',
         'Pomeranian',
       ].where((breed) => breed == 'Any Breed' || names.contains(breed)).toList();
     }
@@ -2349,8 +2376,8 @@ class _FilterSheetState extends State<_FilterSheet> {
     return [
       'Any Breed',
       'British Shorthair',
-      'Persian Cat',
-      'Siamese Cat',
+      'Persian',
+      'Siamese',
       'Maine Coon',
     ].where((breed) => breed == 'Any Breed' || names.contains(breed)).toList();
   }
@@ -2882,22 +2909,9 @@ class _BreedOption {
 
   const _BreedOption(this.name, this.species);
 
-  static const all = [
-    _BreedOption('American Shih Tzu', 'Dog'),
-    _BreedOption('Shih Tzu', 'Dog'),
-    _BreedOption('Shiba Inu', 'Dog'),
-    _BreedOption('Irish Setter', 'Dog'),
-    _BreedOption('Golden Retriever', 'Dog'),
-    _BreedOption('Labrador', 'Dog'),
-    _BreedOption('Labrador Retriever', 'Dog'),
-    _BreedOption('Husky', 'Dog'),
-    _BreedOption('Pomeranian', 'Dog'),
-    _BreedOption('Beagle', 'Dog'),
-    _BreedOption('British Shorthair', 'Cat'),
-    _BreedOption('Persian Cat', 'Cat'),
-    _BreedOption('Persian', 'Cat'),
-    _BreedOption('Siamese Cat', 'Cat'),
-    _BreedOption('Maine Coon', 'Cat'),
+  static final all = [
+    ...dogBreedOptions.map((breed) => _BreedOption(breed, 'Dog')),
+    ...catBreedOptions.map((breed) => _BreedOption(breed, 'Cat')),
   ];
 }
 

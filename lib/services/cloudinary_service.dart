@@ -87,7 +87,10 @@ class CloudinaryService {
         'The photo upload could not connect to the server.',
       );
     } catch (e) {
-      throw CloudinaryUploadException('Photo upload failed: $e');
+      debugPrint('Unexpected Cloudinary upload error: $e');
+      throw const CloudinaryUploadException(
+        'The photo could not be uploaded right now. Please try again.',
+      );
     }
   }
 }

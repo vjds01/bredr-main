@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/breeding_match_service.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/breedr_network_image.dart';
 
 enum OwnerReviewFilter { all, adoption, breeding }
 
@@ -549,16 +550,15 @@ class _Avatar extends StatelessWidget {
         color: Color(0xFFFFCDD5),
       ),
       clipBehavior: Clip.antiAlias,
-      child: photoUrl.isNotEmpty
-          ? Image.network(
-              photoUrl,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => const Icon(
-                Icons.person,
-                color: AppColors.primary,
-              ),
-            )
-          : const Icon(Icons.person, color: AppColors.primary),
+      child: BreedrNetworkImage(
+        imageUrl: photoUrl,
+        width: size,
+        height: size,
+        fallback: const Icon(
+          Icons.person,
+          color: AppColors.primary,
+        ),
+      ),
     );
   }
 }

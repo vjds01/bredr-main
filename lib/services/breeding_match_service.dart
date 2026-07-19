@@ -51,6 +51,12 @@ class BreedingMatchService {
         _firestore.collection('matches').doc(resolvedMatchId);
     final conversationReference =
         _firestore.collection('conversations').doc(resolvedMatchId);
+    final likeNotificationReference =
+        _firestore.collection('notifications').doc();
+    final swiperMatchNotificationReference =
+        _firestore.collection('notifications').doc();
+    final targetMatchNotificationReference =
+        _firestore.collection('notifications').doc();
 
     var matched = false;
 
@@ -83,7 +89,23 @@ class BreedingMatchService {
         SetOptions(merge: true),
       );
 
-      if (!liked || !reverseLiked) return;
+      if (!liked) return;
+
+      if (!reverseLiked) {
+        transaction.set(likeNotificationReference, {
+          'notificationId': likeNotificationReference.id,
+          'recipientId': targetOwnerId,
+          'type': 'breeding_like_received',
+          'title': '$swiperPetName liked $targetPetName',
+          'message':
+              '$swiperPetName liked $targetPetName. Like them back to start a breeding chat.',
+          'matchId': resolvedMatchId,
+          'petIds': [swiperPetId, targetPetId],
+          'isRead': false,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+        return;
+      }
 
       matched = true;
       final petIds = [swiperPetId, targetPetId]..sort();
@@ -152,6 +174,30 @@ class BreedingMatchService {
         },
         SetOptions(merge: true),
       );
+      transaction.set(swiperMatchNotificationReference, {
+        'notificationId': swiperMatchNotificationReference.id,
+        'recipientId': swiperOwnerId,
+        'type': 'breeding_match_created',
+        'title': "It's a match!",
+        'message':
+            '$targetPetName also likes $swiperPetName. Chat is now open.',
+        'matchId': resolvedMatchId,
+        'petIds': petIds,
+        'isRead': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      transaction.set(targetMatchNotificationReference, {
+        'notificationId': targetMatchNotificationReference.id,
+        'recipientId': targetOwnerId,
+        'type': 'breeding_match_created',
+        'title': "It's a match!",
+        'message':
+            '$swiperPetName also likes $targetPetName. Chat is now open.',
+        'matchId': resolvedMatchId,
+        'petIds': petIds,
+        'isRead': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
     });
 
     return SwipeResult(
@@ -212,6 +258,7 @@ class BreedingMatchService {
         _firestore.collection('conversations').doc(matchId);
     final match = _firestore.collection('matches').doc(matchId);
     final message = conversation.collection('messages').doc();
+    final notification = _firestore.collection('notifications').doc();
 
     await _firestore.runTransaction((transaction) async {
       final snapshot = await transaction.get(conversation);
@@ -241,6 +288,7 @@ class BreedingMatchService {
 
       final recipientId =
           participantIds.firstWhere((participantId) => participantId != user.uid);
+      final purpose = data['purpose'] as String? ?? 'breeding';
       final unreadCounts = Map<String, dynamic>.from(
         data['unreadCounts'] as Map? ?? const <String, dynamic>{},
       );
@@ -257,6 +305,18 @@ class BreedingMatchService {
         'senderId': user.uid,
         'text': trimmed,
         'readBy': [user.uid],
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      transaction.set(notification, {
+        'notificationId': notification.id,
+        'recipientId': recipientId,
+        'type': 'new_message',
+        'title': 'New message',
+        'message': trimmed,
+        'purpose': purpose,
+        'matchId': matchId,
+        'conversationId': matchId,
+        'isRead': false,
         'createdAt': FieldValue.serverTimestamp(),
       });
       transaction.update(

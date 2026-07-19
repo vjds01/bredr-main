@@ -118,6 +118,20 @@ service cloud.firestore {
             )
           );
       }
+
+      match /adoptionUpdateRequests/{updateRequestId} {
+        allow read, create, update: if signedIn() &&
+          request.auth.uid in
+            get(/databases/$(database)/documents/conversations/$(conversationId))
+              .data.participantIds;
+      }
+
+      match /adoptionReturnRequests/{returnRequestId} {
+        allow read, create, update: if signedIn() &&
+          request.auth.uid in
+            get(/databases/$(database)/documents/conversations/$(conversationId))
+              .data.participantIds;
+      }
     }
 
     match /favorites/{favoriteId} {

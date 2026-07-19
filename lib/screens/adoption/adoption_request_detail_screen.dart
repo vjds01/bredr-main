@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../models/adoption_models.dart';
 import '../../services/adoption_service.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/breedr_network_image.dart';
 import '../chat/chats_screen.dart';
 import 'owner_profile_screen.dart';
 
@@ -863,14 +864,12 @@ class _OwnerAvatar extends StatelessWidget {
         color: Color(0xFFFFDDE5),
       ),
       clipBehavior: Clip.antiAlias,
-      child: url.isEmpty
-          ? const Icon(Icons.person, color: AppColors.primary)
-          : Image.network(
-              url,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) =>
-                  const Icon(Icons.person, color: AppColors.primary),
-            ),
+      child: BreedrNetworkImage(
+        imageUrl: url,
+        width: 56,
+        height: 56,
+        fallback: const Icon(Icons.person, color: AppColors.primary),
+      ),
     );
   }
 }
@@ -886,11 +885,10 @@ class _NetworkPetImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (url.isEmpty) return _PetPlaceholder(species: species);
-    return Image.network(
-      url,
+    return BreedrNetworkImage(
+      imageUrl: url,
       fit: BoxFit.cover,
-      errorBuilder: (_, _, _) => _PetPlaceholder(species: species),
+      fallback: _PetPlaceholder(species: species),
     );
   }
 }

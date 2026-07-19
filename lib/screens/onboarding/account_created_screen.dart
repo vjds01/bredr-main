@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/breedr_network_image.dart';
 import '../home_screen.dart';
 import '../pet/pet_registration_screen.dart';
 
@@ -196,10 +197,10 @@ class _ProfilePhoto extends StatelessWidget {
     final url = photoUrl;
 
     if (url != null && url.isNotEmpty) {
-      return Image.network(
-        url,
+      return BreedrNetworkImage(
+        imageUrl: url,
         fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => const _FallbackProfilePhoto(),
+        fallback: const _FallbackProfilePhoto(),
       );
     }
 

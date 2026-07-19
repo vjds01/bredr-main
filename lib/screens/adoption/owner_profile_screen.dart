@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/breeding_match_service.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/breedr_network_image.dart';
 import '../owner/owner_ratings_screen.dart';
 
 class OwnerProfileScreen extends StatefulWidget {
@@ -219,10 +220,10 @@ class _OwnerProfileScreenState extends State<OwnerProfileScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    images[index],
+                  child: BreedrNetworkImage(
+                    imageUrl: images[index],
                     fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => const ColoredBox(
+                    fallback: const ColoredBox(
                       color: Color(0xFFFFE4EA),
                       child: Icon(
                         Icons.broken_image_outlined,

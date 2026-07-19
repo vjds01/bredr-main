@@ -3,6 +3,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../theme/app_colors.dart';
+import '../../models/breed_options.dart';
 import '../../models/pet_listing_data.dart';
 import '../../services/location_service.dart';
 import 'pet_purpose_screen.dart';
@@ -23,20 +24,29 @@ class _PetRegistrationScreenState extends State<PetRegistrationScreen> {
   String? _gender = 'Male';
   int _age = 1;
   String _ageUnit = 'years old';
-  String _selectedBreed = 'American Shih Tzu';
+  bool _isMixedBreed = false;
+  String _primaryBreed = 'Aspin';
+  String _secondaryBreed = '';
   String _selectedBarangay = 'Sala, Cabuyao';
   File? _profilePhoto;
   final List<File> _additionalPhotos = [];
 
-  void _showBreedPicker() {
+  void _showBreedPicker({required bool secondary}) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _BreedPickerSheet(
-        selected: _selectedBreed,
+        selected: secondary ? _secondaryBreed : _primaryBreed,
         species: _species ?? 'Dog',
-        onSelect: (b) => setState(() => _selectedBreed = b),
+        onSelect: (b) => setState(() {
+          if (secondary) {
+            _secondaryBreed = b;
+          } else {
+            _primaryBreed = b;
+            if (_secondaryBreed == b) _secondaryBreed = '';
+          }
+        }),
       ),
     );
   }
@@ -46,8 +56,8 @@ class _PetRegistrationScreenState extends State<PetRegistrationScreen> {
 
     setState(() {
       _species = species;
-      _selectedBreed =
-          species == 'Cat' ? 'British Shorthair' : 'American Shih Tzu';
+      _primaryBreed = species == 'Cat' ? 'Puspin' : 'Aspin';
+      _secondaryBreed = '';
     });
   }
 
@@ -78,7 +88,14 @@ class _PetRegistrationScreenState extends State<PetRegistrationScreen> {
     final petData = PetListingData(
       name: _nameCtrl.text.trim(),
       species: _species ?? 'Dog',
-      breed: _selectedBreed,
+      breed: mixedBreedDisplayName(
+        isMixedBreed: _isMixedBreed,
+        primaryBreed: _primaryBreed,
+        secondaryBreed: _secondaryBreed,
+      ),
+      primaryBreed: _primaryBreed,
+      secondaryBreed: _secondaryBreed,
+      isMixedBreed: _isMixedBreed,
       breedSize: _breedSize ?? 'Small',
       age: '$_age $_ageUnit',
       gender: _gender ?? 'Male',
@@ -221,33 +238,35 @@ class _PetRegistrationScreenState extends State<PetRegistrationScreen> {
                     ),
                     const SizedBox(height: 20),
                     // SELECT YOUR PET BREED
-                    _FieldLabel('SELECT YOUR PET BREED'),
+                    _FieldLabel('BREED TYPE'),
                     const SizedBox(height: 8),
-                    GestureDetector(
-                      onTap: _showBreedPicker,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 14),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Row(children: [
-                          const Icon(Icons.pets,
-                              color: Color(0xFFBBBBBB), size: 20),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              _selectedBreed,
-                              style: const TextStyle(
-                                  fontSize: 14, color: Color(0xFF333333)),
-                            ),
-                          ),
-                          const Icon(Icons.search,
-                              color: Color(0xFFBBBBBB), size: 20),
-                        ]),
-                      ),
+                    _ChipGroup(
+                      options: const ['Purebred', 'Mixed Breed'],
+                      selected: _isMixedBreed ? 'Mixed Breed' : 'Purebred',
+                      onSelect: (v) => setState(() {
+                        _isMixedBreed = v == 'Mixed Breed';
+                        if (!_isMixedBreed) _secondaryBreed = '';
+                      }),
                     ),
+                    const SizedBox(height: 12),
+                    _FieldLabel(_isMixedBreed ? 'PRIMARY BREED' : 'SELECT YOUR PET BREED'),
+                    const SizedBox(height: 8),
+                    _BreedField(
+                      value: _primaryBreed,
+                      onTap: () => _showBreedPicker(secondary: false),
+                    ),
+                    if (_isMixedBreed) ...[
+                      const SizedBox(height: 12),
+                      _FieldLabel('SECONDARY BREED'),
+                      const SizedBox(height: 8),
+                      _BreedField(
+                        value: _secondaryBreed.isEmpty
+                            ? 'Optional secondary breed'
+                            : _secondaryBreed,
+                        muted: _secondaryBreed.isEmpty,
+                        onTap: () => _showBreedPicker(secondary: true),
+                      ),
+                    ],
                     const SizedBox(height: 20),
                     // BREED SIZE
                     _FieldLabel('BREED SIZE'),
@@ -1197,19 +1216,6 @@ class _BreedPickerSheetState extends State<_BreedPickerSheet> {
   String _query = '';
   late String _selected;
 
-  static const _breeds = [
-    _BreedItem('American Shih Tzu', 'Dog', '🐶'),
-    _BreedItem('Shiba Inu', 'Dog', '🐕'),
-    _BreedItem('British Shorthair', 'Cat', '🐱'),
-    _BreedItem('Irish Setter', 'Dog', '🐕'),
-    _BreedItem('Persian Cat', 'Cat', '🐈'),
-    _BreedItem('Golden Retriever', 'Dog', '🐶'),
-    _BreedItem('Siamese Cat', 'Cat', '🐱'),
-    _BreedItem('Labrador Retriever', 'Dog', '🐕'),
-    _BreedItem('Maine Coon', 'Cat', '🐈'),
-    _BreedItem('Beagle', 'Dog', '🐶'),
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -1222,13 +1228,13 @@ class _BreedPickerSheetState extends State<_BreedPickerSheet> {
     super.dispose();
   }
 
-  List<_BreedItem> get _filtered => _query.isEmpty
-      ? _breeds.where((b) => b.species == widget.species).toList()
-      : _breeds
-          .where((b) =>
-              b.species == widget.species &&
-              b.name.toLowerCase().contains(_query.toLowerCase()))
-          .toList();
+  List<_BreedItem> get _filtered {
+    final query = _query.trim().toLowerCase();
+    return breedNamesForSpecies(widget.species)
+        .where((breed) => query.isEmpty || breed.toLowerCase().contains(query))
+        .map((breed) => _BreedItem(breed, widget.species))
+        .toList();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1337,8 +1343,13 @@ class _BreedPickerSheetState extends State<_BreedPickerSheet> {
                   return ListTile(
                     leading: CircleAvatar(
                       backgroundColor: const Color(0xFFFFE0E6),
-                      child: Text(b.emoji,
-                          style: const TextStyle(fontSize: 20)),
+                      child: Icon(
+                        b.species == 'Cat'
+                            ? Icons.cruelty_free
+                            : Icons.pets,
+                        color: AppColors.primary,
+                        size: 20,
+                      ),
                     ),
                     title: _HighlightText(
                         text: b.name, query: _query),
@@ -1382,8 +1393,48 @@ class _BreedPickerSheetState extends State<_BreedPickerSheet> {
 class _BreedItem {
   final String name;
   final String species;
-  final String emoji;
-  const _BreedItem(this.name, this.species, this.emoji);
+  const _BreedItem(this.name, this.species);
+}
+
+class _BreedField extends StatelessWidget {
+  final String value;
+  final bool muted;
+  final VoidCallback onTap;
+
+  const _BreedField({
+    required this.value,
+    this.muted = false,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(children: [
+          const Icon(Icons.pets, color: Color(0xFFBBBBBB), size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 14,
+                color:
+                    muted ? const Color(0xFF999999) : const Color(0xFF333333),
+              ),
+            ),
+          ),
+          const Icon(Icons.search, color: Color(0xFFBBBBBB), size: 20),
+        ]),
+      ),
+    );
+  }
 }
 
 // Highlights matching text in search results
