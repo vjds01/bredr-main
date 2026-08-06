@@ -6,6 +6,7 @@ import '../../theme/app_colors.dart';
 import '../../models/breed_options.dart';
 import '../../models/pet_listing_data.dart';
 import '../../services/location_service.dart';
+import '../../services/pet_registration_draft_service.dart';
 import 'pet_purpose_screen.dart';
 
 class PetRegistrationScreen extends StatefulWidget {
@@ -30,62 +31,83 @@ class _PetRegistrationScreenState extends State<PetRegistrationScreen> {
   String _selectedBarangay = 'Sala, Cabuyao';
   File? _profilePhoto;
   final List<File> _additionalPhotos = [];
+  PetListingData? _restoredDraft;
+  bool _restoringDraft = true;
 
-  void _showBreedPicker({required bool secondary}) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _BreedPickerSheet(
-        selected: secondary ? _secondaryBreed : _primaryBreed,
-        species: _species ?? 'Dog',
-        onSelect: (b) => setState(() {
-          if (secondary) {
-            _secondaryBreed = b;
-          } else {
-            _primaryBreed = b;
-            if (_secondaryBreed == b) _secondaryBreed = '';
-          }
-        }),
-      ),
-    );
+  @override
+  void initState() {
+    super.initState();
+    _nameCtrl.addListener(_saveDraft);
+    _colorCtrl.addListener(_saveDraft);
+    _aboutCtrl.addListener(_saveDraft);
+    _restoreDraft();
   }
 
-  void _selectSpecies(String? species) {
-    if (species == null) return;
+  Future<void> _restoreDraft() async {
+    final draft = await PetRegistrationDraftService.instance.loadDraft();
 
-    setState(() {
-      _species = species;
-      _primaryBreed = species == 'Cat' ? 'Puspin' : 'Aspin';
-      _secondaryBreed = '';
-    });
-  }
+    if (!mounted) return;
 
-  void _showLocationPicker() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _LocationPickerSheet(
-        current: _selectedBarangay,
-        onSelect: (b) => setState(() => _selectedBarangay = b),
-      ),
-    );
-  }
+    if (draft != null && _hasDraftContent(draft)) {
+      final parsedAge = _parseAge(draft.age);
 
-  void _goNext() {
-    if (_nameCtrl.text.trim().isEmpty ||
-        _colorCtrl.text.trim().isEmpty ||
-        _aboutCtrl.text.trim().isEmpty) {
+      setState(() {
+        _restoredDraft = draft;
+        _nameCtrl.text = draft.name;
+        _colorCtrl.text = draft.color;
+        _aboutCtrl.text = draft.about;
+        _species = draft.species;
+        _breedSize = draft.breedSize;
+        _gender = draft.gender;
+        _age = parsedAge.$1;
+        _ageUnit = parsedAge.$2;
+        _isMixedBreed = draft.isMixedBreed;
+        _primaryBreed = draft.primaryBreed.isNotEmpty
+            ? draft.primaryBreed
+            : (draft.species == 'Cat' ? 'Puspin' : 'Aspin');
+        _secondaryBreed = draft.secondaryBreed;
+        _selectedBarangay = draft.locationName.isNotEmpty
+            ? draft.locationName
+            : _selectedBarangay;
+        _profilePhoto = draft.profilePhotoFile;
+        _additionalPhotos
+          ..clear()
+          ..addAll(draft.additionalPhotoFiles);
+        _restoringDraft = false;
+      });
+
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please fill in your pet name, color, and about'),
-        ),
+        const SnackBar(content: Text('Your saved pet draft was restored.')),
       );
       return;
     }
 
-    final petData = PetListingData(
+    setState(() => _restoringDraft = false);
+  }
+
+  bool _hasDraftContent(PetListingData draft) {
+    return draft.name.isNotEmpty ||
+        draft.color.isNotEmpty ||
+        draft.about.isNotEmpty ||
+        draft.profilePhotoFile != null ||
+        draft.additionalPhotoFiles.isNotEmpty ||
+        draft.purpose != null ||
+        draft.healthRecords.isNotEmpty ||
+        draft.interviewQuestions.isNotEmpty;
+  }
+
+  (int, String) _parseAge(String ageText) {
+    final match = RegExp(r'(\d+)\s+(.+)').firstMatch(ageText);
+    if (match == null) return (_age, _ageUnit);
+
+    return (
+      int.tryParse(match.group(1) ?? '') ?? _age,
+      match.group(2) ?? _ageUnit,
+    );
+  }
+
+  PetListingData _currentPetData() {
+    return (_restoredDraft ?? const PetListingData()).copyWith(
       name: _nameCtrl.text.trim(),
       species: _species ?? 'Dog',
       breed: mixedBreedDisplayName(
@@ -105,8 +127,144 @@ class _PetRegistrationScreenState extends State<PetRegistrationScreen> {
       latitude: LocationService.instance.latitude,
       longitude: LocationService.instance.longitude,
       profilePhotoFile: _profilePhoto,
-      additionalPhotoFiles: _additionalPhotos,
+      additionalPhotoFiles: List<File>.from(_additionalPhotos),
     );
+  }
+
+  Future<void> _saveDraft() async {
+    if (_restoringDraft) return;
+    await PetRegistrationDraftService.instance.saveDraft(_currentPetData());
+  }
+
+  void _addAdditionalPhotos(List<File> files) {
+    if (files.isEmpty) return;
+
+    final remaining = 10 - _additionalPhotos.length;
+    if (remaining <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You can upload up to 10 additional photos.')),
+      );
+      return;
+    }
+
+    final selected = files.take(remaining).toList();
+
+    setState(() => _additionalPhotos.addAll(selected));
+    _saveDraft();
+
+    if (files.length > remaining) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Only $remaining more photo${remaining == 1 ? '' : 's'} can be added. Extra photos were skipped.',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<bool> _confirmExit() async {
+    final hasInput = _hasDraftContent(_currentPetData());
+    if (!hasInput) return true;
+
+    final action = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Save this pet draft?'),
+        content: const Text(
+          'You can continue filling this pet profile later.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'cancel'),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'discard'),
+            child: const Text('Discard'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, 'save'),
+            child: const Text('Save Draft'),
+          ),
+        ],
+      ),
+    );
+
+    if (action == 'discard') {
+      await PetRegistrationDraftService.instance.clearDraft();
+      return true;
+    }
+
+    if (action == 'save') {
+      await _saveDraft();
+      return true;
+    }
+
+    return false;
+  }
+
+  void _showBreedPicker({required bool secondary}) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _BreedPickerSheet(
+        selected: secondary ? _secondaryBreed : _primaryBreed,
+        species: _species ?? 'Dog',
+        onSelect: (b) => setState(() {
+          if (secondary) {
+            _secondaryBreed = b;
+          } else {
+            _primaryBreed = b;
+            if (_secondaryBreed == b) _secondaryBreed = '';
+          }
+          _saveDraft();
+        }),
+      ),
+    );
+  }
+
+  void _selectSpecies(String? species) {
+    if (species == null) return;
+
+    setState(() {
+      _species = species;
+      _primaryBreed = species == 'Cat' ? 'Puspin' : 'Aspin';
+      _secondaryBreed = '';
+    });
+    _saveDraft();
+  }
+
+  void _showLocationPicker() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _LocationPickerSheet(
+        current: _selectedBarangay,
+        onSelect: (b) {
+          setState(() => _selectedBarangay = b);
+          _saveDraft();
+        },
+      ),
+    );
+  }
+
+  void _goNext() {
+    if (_nameCtrl.text.trim().isEmpty ||
+        _colorCtrl.text.trim().isEmpty ||
+        _aboutCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please fill in your pet name, color, and about'),
+        ),
+      );
+      return;
+    }
+
+    final petData = _currentPetData();
+    PetRegistrationDraftService.instance.saveDraft(petData);
 
     Navigator.push(
       context,
@@ -118,6 +276,9 @@ class _PetRegistrationScreenState extends State<PetRegistrationScreen> {
 
   @override
   void dispose() {
+    _nameCtrl.removeListener(_saveDraft);
+    _colorCtrl.removeListener(_saveDraft);
+    _aboutCtrl.removeListener(_saveDraft);
     _nameCtrl.dispose();
     _colorCtrl.dispose();
     _aboutCtrl.dispose();
@@ -126,24 +287,36 @@ class _PetRegistrationScreenState extends State<PetRegistrationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFFFF0F5),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (await _confirmExit() && context.mounted) {
+          Navigator.pop(context);
+        }
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFFFF0F5),
+        body: SafeArea(
+          child: Column(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                     // Back arrow
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
                       child: IconButton(
                         icon: const Icon(Icons.arrow_back_ios,
                             color: AppColors.primary, size: 20),
-                        onPressed: () => Navigator.pop(context),
+                        onPressed: () async {
+                          if (await _confirmExit() && context.mounted) {
+                            Navigator.pop(context);
+                          }
+                        },
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
                       ),
@@ -203,8 +376,10 @@ class _PetRegistrationScreenState extends State<PetRegistrationScreen> {
                         label: 'UPLOAD PROFILE PHOTO'),
                     const SizedBox(height: 10),
                     _PetPhotoUpload(
+                      initialImage: _profilePhoto,
                       onImageSelected: (file) {
                         setState(() => _profilePhoto = file);
+                        _saveDraft();
                       },
                     ),
                     const SizedBox(height: 20),
@@ -243,10 +418,13 @@ class _PetRegistrationScreenState extends State<PetRegistrationScreen> {
                     _ChipGroup(
                       options: const ['Purebred', 'Mixed Breed'],
                       selected: _isMixedBreed ? 'Mixed Breed' : 'Purebred',
-                      onSelect: (v) => setState(() {
-                        _isMixedBreed = v == 'Mixed Breed';
-                        if (!_isMixedBreed) _secondaryBreed = '';
-                      }),
+                      onSelect: (v) {
+                        setState(() {
+                          _isMixedBreed = v == 'Mixed Breed';
+                          if (!_isMixedBreed) _secondaryBreed = '';
+                        });
+                        _saveDraft();
+                      },
                     ),
                     const SizedBox(height: 12),
                     _FieldLabel(_isMixedBreed ? 'PRIMARY BREED' : 'SELECT YOUR PET BREED'),
@@ -274,7 +452,10 @@ class _PetRegistrationScreenState extends State<PetRegistrationScreen> {
                     _ChipGroup(
                       options: const ['Small', 'Medium', 'Large'],
                       selected: _breedSize,
-                      onSelect: (v) => setState(() => _breedSize = v),
+                      onSelect: (v) {
+                        setState(() => _breedSize = v);
+                        _saveDraft();
+                      },
                     ),
                     const SizedBox(height: 20),
                     // AGE
@@ -283,8 +464,14 @@ class _PetRegistrationScreenState extends State<PetRegistrationScreen> {
                     _AgeSelector(
                       age: _age,
                       unit: _ageUnit,
-                      onAgeChanged: (v) => setState(() => _age = v),
-                      onUnitChanged: (v) => setState(() => _ageUnit = v),
+                      onAgeChanged: (v) {
+                        setState(() => _age = v);
+                        _saveDraft();
+                      },
+                      onUnitChanged: (v) {
+                        setState(() => _ageUnit = v);
+                        _saveDraft();
+                      },
                     ),
                     const SizedBox(height: 20),
                     // GENDER
@@ -292,7 +479,10 @@ class _PetRegistrationScreenState extends State<PetRegistrationScreen> {
                     const SizedBox(height: 8),
                     _GenderSelector(
                       selected: _gender,
-                      onSelect: (v) => setState(() => _gender = v),
+                      onSelect: (v) {
+                        setState(() => _gender = v);
+                        _saveDraft();
+                      },
                     ),
                     const SizedBox(height: 20),
                     // COLOR / MARKINGS
@@ -360,13 +550,7 @@ class _PetRegistrationScreenState extends State<PetRegistrationScreen> {
                     const SizedBox(height: 12),
                     _PetAdditionalPhotosCard(
                       photos: _additionalPhotos,
-                      onImageSelected: (file) {
-                        setState(() {
-                          if (_additionalPhotos.length < 10) {
-                            _additionalPhotos.add(file);
-                          }
-                        });
-                      },
+                      onImagesSelected: _addAdditionalPhotos,
                     ),
                     const SizedBox(height: 8),
                     _InfoNote(
@@ -398,7 +582,8 @@ class _PetRegistrationScreenState extends State<PetRegistrationScreen> {
                 ),
               ),
             ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -425,6 +610,34 @@ Future<File?> _pickImageFile(BuildContext context) async {
       );
     }
     return null;
+  }
+}
+
+Future<List<File>> _pickImageFiles(BuildContext context) async {
+  try {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['jpg', 'jpeg', 'png'],
+      allowMultiple: true,
+      withData: false,
+    );
+    if (result == null) return const [];
+
+    return result.files
+        .map((file) => file.path)
+        .whereType<String>()
+        .where((path) => path.isNotEmpty)
+        .map(File.new)
+        .toList();
+  } catch (_) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to open files. Please try again.'),
+        ),
+      );
+    }
+    return const [];
   }
 }
 
@@ -775,9 +988,11 @@ class _LocationCard extends StatelessWidget {
 // Pet profile photo upload with dashed border + dog+camera icon
 class _PetPhotoUpload extends StatefulWidget {
   final ValueChanged<File> onImageSelected;
+  final File? initialImage;
 
   const _PetPhotoUpload({
     required this.onImageSelected,
+    this.initialImage,
   });
 
   @override
@@ -786,6 +1001,20 @@ class _PetPhotoUpload extends StatefulWidget {
 
 class _PetPhotoUploadState extends State<_PetPhotoUpload> {
   File? _image;
+
+  @override
+  void initState() {
+    super.initState();
+    _image = widget.initialImage;
+  }
+
+  @override
+  void didUpdateWidget(covariant _PetPhotoUpload oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialImage?.path != oldWidget.initialImage?.path) {
+      _image = widget.initialImage;
+    }
+  }
 
   Future<void> _pickCamera() async {
     final xFile =
@@ -895,11 +1124,11 @@ class _PetPhotoUploadState extends State<_PetPhotoUpload> {
 // Additional photos stacked card carousel
 class _PetAdditionalPhotosCard extends StatelessWidget {
   final List<File> photos;
-  final ValueChanged<File> onImageSelected;
+  final ValueChanged<List<File>> onImagesSelected;
 
   const _PetAdditionalPhotosCard({
     required this.photos,
-    required this.onImageSelected,
+    required this.onImagesSelected,
   });
 
   @override
@@ -919,7 +1148,7 @@ class _PetAdditionalPhotosCard extends StatelessWidget {
           return SizedBox(
             width: 220,
             child: isAddTile
-                ? _PetDashedCard(onImageSelected: onImageSelected)
+                ? _PetDashedCard(onImagesSelected: onImagesSelected)
                 : _PetAdditionalPhotoPreview(photo: photos[index]),
           );
         },
@@ -948,10 +1177,10 @@ class _PetAdditionalPhotoPreview extends StatelessWidget {
 }
 
 class _PetDashedCard extends StatefulWidget {
-  final ValueChanged<File> onImageSelected;
+  final ValueChanged<List<File>> onImagesSelected;
 
   const _PetDashedCard({
-    required this.onImageSelected,
+    required this.onImagesSelected,
   });
 
   @override
@@ -965,18 +1194,18 @@ class _PetDashedCardState extends State<_PetDashedCard> {
     final xFile =
         await ImagePicker().pickImage(source: ImageSource.camera, imageQuality: 85);
     if (xFile != null) {
-      _setImage(File(xFile.path));
+      _setImages([File(xFile.path)]);
     }
   }
 
   Future<void> _pickFile() async {
-    final file = await _pickImageFile(context);
-    if (file != null) _setImage(file);
+    final files = await _pickImageFiles(context);
+    if (files.isNotEmpty) _setImages(files);
   }
 
-  void _setImage(File file) {
-    setState(() => _image = file);
-    widget.onImageSelected(file);
+  void _setImages(List<File> files) {
+    setState(() => _image = files.first);
+    widget.onImagesSelected(files);
   }
 
   @override

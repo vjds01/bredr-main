@@ -92,7 +92,7 @@ class TermsScreen extends StatelessWidget {
       child: RichText(
         textAlign: TextAlign.justify,
         text: TextSpan(
-          style: const TextStyle(fontSize: 13, color: AppColors.textDark, height: 1.6, fontFamily: 'Poppins'),
+          style: const TextStyle(fontSize: 13, color: AppColors.textDark, height: 1.6),
           children: [
             TextSpan(text: '$title ', style: const TextStyle(fontWeight: FontWeight.bold)),
             TextSpan(text: body),

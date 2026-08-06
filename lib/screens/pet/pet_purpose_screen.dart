@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import '../../models/pet_listing_data.dart';
+import '../../services/pet_registration_draft_service.dart';
 import 'adoption_interview_screen.dart';
 import 'pet_health_record_screen.dart';
 
@@ -31,7 +32,29 @@ class _PetPurposeScreenState extends State<PetPurposeScreen> {
   final _priceCtrl = TextEditingController(text: '0.0');
 
   @override
+  void initState() {
+    super.initState();
+    _selected = _displayPurpose(widget.petData.purpose);
+    _breedingGender = widget.petData.breedingPreferredGender;
+    _sameBreedOnly = widget.petData.sameBreedOnly;
+    _vetVerifiedOnly = widget.petData.vetVerifiedOnly;
+    _adoptionType = widget.petData.adoptionType;
+    _noOtherPets = widget.petData.noOtherPets;
+    _priceNegotiable = widget.petData.priceNegotiable;
+    _priceCtrl.text = widget.petData.price.toStringAsFixed(0);
+    _priceCtrl.addListener(_saveDraft);
+  }
+
+  String? _displayPurpose(String? purpose) {
+    final normalized = purpose?.toLowerCase();
+    if (normalized == 'breeding') return 'Breeding';
+    if (normalized == 'adoption') return 'Adoption';
+    return null;
+  }
+
+  @override
   void dispose() {
+    _priceCtrl.removeListener(_saveDraft);
     _priceCtrl.dispose();
     super.dispose();
   }
@@ -52,6 +75,10 @@ class _PetPurposeScreenState extends State<PetPurposeScreen> {
     );
   }
 
+  Future<void> _saveDraft() async {
+    await PetRegistrationDraftService.instance.saveDraft(_updatedPetData());
+  }
+
   void _goNext() {
     if (_selected == null) return;
 
@@ -63,6 +90,7 @@ class _PetPurposeScreenState extends State<PetPurposeScreen> {
     }
 
     final updatedData = _updatedPetData();
+    PetRegistrationDraftService.instance.saveDraft(updatedData);
     final nextScreen = _selected == 'Breeding'
         ? PetHealthRecordScreen(petData: updatedData)
         : AdoptionInterviewScreen(petData: updatedData);
@@ -265,20 +293,28 @@ class _PetPurposeScreenState extends State<PetPurposeScreen> {
                       description:
                           '${widget.petData.name} will appear in Breeding Discover for others to swipe.',
                       isSelected: _selected == 'Breeding',
-                      onTap: () =>
-                          setState(() => _selected = 'Breeding'),
+                      onTap: () {
+                        setState(() => _selected = 'Breeding');
+                        _saveDraft();
+                      },
                       expandedContent: _selected == 'Breeding'
                           ? _BreedingPrefs(
-                            gender: _breedingGender,
+                              gender: _breedingGender,
                               petName: widget.petData.name,
                               sameBreedOnly: _sameBreedOnly,
                               vetVerifiedOnly: _vetVerifiedOnly,
-                              onGenderChanged: (v) =>
-                                  setState(() => _breedingGender = v),
-                              onSameBreedChanged: (v) =>
-                                  setState(() => _sameBreedOnly = v),
-                              onVetVerifiedChanged: (v) =>
-                                  setState(() => _vetVerifiedOnly = v),
+                              onGenderChanged: (v) {
+                                setState(() => _breedingGender = v);
+                                _saveDraft();
+                              },
+                              onSameBreedChanged: (v) {
+                                setState(() => _sameBreedOnly = v);
+                                _saveDraft();
+                              },
+                              onVetVerifiedChanged: (v) {
+                                setState(() => _vetVerifiedOnly = v);
+                                _saveDraft();
+                              },
                             )
                           : null,
                     ),
@@ -289,8 +325,10 @@ class _PetPurposeScreenState extends State<PetPurposeScreen> {
                       description:
                           '${widget.petData.name} will appear in Adoption Listings for others to browse.',
                       isSelected: _selected == 'Adoption',
-                      onTap: () =>
-                          setState(() => _selected = 'Adoption'),
+                      onTap: () {
+                        setState(() => _selected = 'Adoption');
+                        _saveDraft();
+                      },
                       expandedContent: _selected == 'Adoption'
                           ? _AdoptionPrefs(
                               adoptionType: _adoptionType,
@@ -298,12 +336,18 @@ class _PetPurposeScreenState extends State<PetPurposeScreen> {
                               noOtherPets: _noOtherPets,
                               priceNegotiable: _priceNegotiable,
                               priceCtrl: _priceCtrl,
-                              onTypeChanged: (v) =>
-                                  setState(() => _adoptionType = v),
-                              onNoOtherPetsChanged: (v) =>
-                                  setState(() => _noOtherPets = v),
-                              onNegotiableChanged: (v) =>
-                                  setState(() => _priceNegotiable = v),
+                              onTypeChanged: (v) {
+                                setState(() => _adoptionType = v);
+                                _saveDraft();
+                              },
+                              onNoOtherPetsChanged: (v) {
+                                setState(() => _noOtherPets = v);
+                                _saveDraft();
+                              },
+                              onNegotiableChanged: (v) {
+                                setState(() => _priceNegotiable = v);
+                                _saveDraft();
+                              },
                             )
                           : null,
                     ),

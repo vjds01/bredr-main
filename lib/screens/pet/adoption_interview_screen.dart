@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import '../../models/pet_listing_data.dart';
+import '../../services/pet_registration_draft_service.dart';
 import 'pet_health_record_screen.dart';
 
 // Question types
@@ -36,6 +37,14 @@ class AdoptionInterviewScreen extends StatefulWidget {
 class _AdoptionInterviewScreenState extends State<AdoptionInterviewScreen> {
   final List<InterviewQuestion> _questions = [];
 
+  @override
+  void initState() {
+    super.initState();
+    _questions.addAll(
+      widget.petData.interviewQuestions.map(_fromPetQuestion),
+    );
+  }
+
   void _openAddQuestion() {
     showModalBottomSheet(
       context: context,
@@ -57,7 +66,10 @@ class _AdoptionInterviewScreenState extends State<AdoptionInterviewScreen> {
       backgroundColor: Colors.transparent,
       builder: (_) => _QuestionEditorSheet(
         type: type,
-        onSave: (q) => setState(() => _questions.add(q)),
+        onSave: (q) {
+          setState(() => _questions.add(q));
+          _saveDraft();
+        },
       ),
     );
   }
@@ -72,21 +84,52 @@ class _AdoptionInterviewScreenState extends State<AdoptionInterviewScreen> {
       builder: (_) => _QuestionEditorSheet(
         type: question.type,
         initialQuestion: question,
-        onSave: (updated) => setState(() => _questions[index] = updated),
+        onSave: (updated) {
+          setState(() => _questions[index] = updated);
+          _saveDraft();
+        },
       ),
     );
   }
 
-  void _openStandardLibrary() {
-    Navigator.push(
+  Future<void> _openStandardLibrary() async {
+    final selected = await Navigator.push<List<InterviewQuestion>>(
       context,
       MaterialPageRoute(
-          builder: (_) => const _StandardQuestionsLibrary()),
+        builder: (_) => const _StandardQuestionsLibrary(),
+      ),
     );
+
+    if (selected == null || selected.isEmpty) return;
+
+    final remainingSlots = 10 - _questions.length;
+    if (remainingSlots <= 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You can add up to 10 questions only.')),
+      );
+      return;
+    }
+
+    final questionsToAdd = selected.take(remainingSlots).toList();
+
+    setState(() => _questions.addAll(questionsToAdd));
+    _saveDraft();
+
+    if (selected.length > questionsToAdd.length && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${questionsToAdd.length} questions added. You can add up to 10 questions only.',
+          ),
+        ),
+      );
+    }
   }
 
   void _removeQuestion(int index) {
     setState(() => _questions.removeAt(index));
+    _saveDraft();
   }
 
   String _questionTypeLabel(QuestionType type) {
@@ -102,7 +145,7 @@ class _AdoptionInterviewScreenState extends State<AdoptionInterviewScreen> {
     }
   }
 
-  void _goNext() {
+  List<PetInterviewQuestion> _petQuestions() {
     final questions = _questions
         .asMap()
         .entries
@@ -118,13 +161,49 @@ class _AdoptionInterviewScreenState extends State<AdoptionInterviewScreen> {
         )
         .toList();
 
+    return questions;
+  }
+
+  PetListingData _updatedPetData() {
+    return widget.petData.copyWith(interviewQuestions: _petQuestions());
+  }
+
+  Future<void> _saveDraft() async {
+    await PetRegistrationDraftService.instance.saveDraft(_updatedPetData());
+  }
+
+  InterviewQuestion _fromPetQuestion(PetInterviewQuestion question) {
+    return InterviewQuestion(
+      type: _questionTypeFromLabel(question.type),
+      text: question.text,
+      choices: question.choices,
+      required: question.required,
+    );
+  }
+
+  QuestionType _questionTypeFromLabel(String type) {
+    switch (type) {
+      case 'multipleChoice':
+        return QuestionType.multipleChoice;
+      case 'yesNo':
+        return QuestionType.yesNo;
+      case 'rating':
+        return QuestionType.rating;
+      case 'textAnswer':
+      default:
+        return QuestionType.textAnswer;
+    }
+  }
+
+  void _goNext() {
+    final updatedData = _updatedPetData();
+    PetRegistrationDraftService.instance.saveDraft(updatedData);
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => PetHealthRecordScreen(
-          petData: widget.petData.copyWith(
-            interviewQuestions: questions,
-          ),
+          petData: updatedData,
         ),
       ),
     );
@@ -1093,10 +1172,39 @@ class _StandardQuestionsLibrary extends StatefulWidget {
 class _StandardQuestionsLibraryState
     extends State<_StandardQuestionsLibrary> {
   String _filter = 'All';
-  final _filters = ['All', 'Living', 'Experience', 'Care', 'Commitment'];
+  final Set<int> _selectedQuestionIds = {};
+  final _filters = ['All', 'Intention', 'Experience', 'Home', 'Lifestyle'];
+
+  List<_StandardQuestion> get _visibleQuestions {
+    if (_filter == 'All') return _standardQuestions;
+    return _standardQuestions
+        .where((question) => question.category == _filter)
+        .toList();
+  }
+
+  void _toggleQuestion(_StandardQuestion question) {
+    setState(() {
+      if (_selectedQuestionIds.contains(question.id)) {
+        _selectedQuestionIds.remove(question.id);
+      } else {
+        _selectedQuestionIds.add(question.id);
+      }
+    });
+  }
+
+  void _addSelectedQuestions() {
+    final questions = _standardQuestions
+        .where((question) => _selectedQuestionIds.contains(question.id))
+        .map((question) => question.toInterviewQuestion())
+        .toList();
+
+    Navigator.pop(context, questions);
+  }
 
   @override
   Widget build(BuildContext context) {
+    final visibleQuestions = _visibleQuestions;
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -1180,6 +1288,12 @@ class _StandardQuestionsLibraryState
                     ),
                   ),
                   const SizedBox(height: 16),
+                  Text('${_standardQuestions.length} questions',
+                      style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF777777),
+                          fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 12),
                   // Filter chips
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
@@ -1219,23 +1333,42 @@ class _StandardQuestionsLibraryState
                 ],
               ),
             ),
-            const Spacer(),
+            const SizedBox(height: 12),
+            Expanded(
+              child: ListView.separated(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                itemBuilder: (context, index) {
+                  final question = visibleQuestions[index];
+                  return _StandardQuestionCard(
+                    question: question,
+                    selected: _selectedQuestionIds.contains(question.id),
+                    onTap: () => _toggleQuestion(question),
+                  );
+                },
+                separatorBuilder: (_, _) => const SizedBox(height: 10),
+                itemCount: visibleQuestions.length,
+              ),
+            ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               child: SizedBox(
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed:
+                      _selectedQuestionIds.isEmpty ? null : _addSelectedQuestions,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,
+                    disabledBackgroundColor:
+                        AppColors.primary.withValues(alpha: 0.45),
+                    disabledForegroundColor: Colors.white,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
                   ),
-                  child: const Text('Continue to next step →',
-                      style: TextStyle(
+                  child: Text('View Selected  ${_selectedQuestionIds.length}',
+                      style: const TextStyle(
                           fontSize: 16, fontWeight: FontWeight.w600)),
                 ),
               ),
@@ -1248,6 +1381,456 @@ class _StandardQuestionsLibraryState
 }
 
 // ── Shared Widgets ────────────────────────────────────────────────
+
+class _StandardQuestion {
+  final int id;
+  final String category;
+  final QuestionType type;
+  final String text;
+  final List<String> choices;
+  final String? helperText;
+
+  const _StandardQuestion({
+    required this.id,
+    required this.category,
+    required this.type,
+    required this.text,
+    this.choices = const [],
+    this.helperText,
+  });
+
+  InterviewQuestion toInterviewQuestion() {
+    return InterviewQuestion(
+      type: type,
+      text: text,
+      choices: choices,
+      required: true,
+    );
+  }
+}
+
+class _StandardQuestionCard extends StatelessWidget {
+  final _StandardQuestion question;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _StandardQuestionCard({
+    required this.question,
+    required this.selected,
+    required this.onTap,
+  });
+
+  Color get _typeColor {
+    switch (question.type) {
+      case QuestionType.multipleChoice:
+        return const Color(0xFFF43845);
+      case QuestionType.textAnswer:
+        return const Color(0xFFF2AA58);
+      case QuestionType.yesNo:
+        return const Color(0xFF5399F0);
+      case QuestionType.rating:
+        return const Color(0xFF56C14A);
+    }
+  }
+
+  String get _typeLabel {
+    switch (question.type) {
+      case QuestionType.multipleChoice:
+        return 'Multiple Choice';
+      case QuestionType.textAnswer:
+        return 'Text Answer';
+      case QuestionType.yesNo:
+        return 'Yes / No';
+      case QuestionType.rating:
+        return '1-5 Rating';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFFFF0F5) : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected ? AppColors.primary : const Color(0xFFFFCDD5),
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    question.text,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      height: 1.35,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF333333),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: selected ? AppColors.primary : Colors.white,
+                    border: Border.all(
+                      color: selected
+                          ? AppColors.primary
+                          : const Color(0xFFDDDDDD),
+                    ),
+                  ),
+                  child: Icon(
+                    selected ? Icons.check : Icons.add,
+                    size: 17,
+                    color: selected ? Colors.white : const Color(0xFF888888),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                _QuestionMetaChip(label: _typeLabel, color: _typeColor),
+                const SizedBox(width: 8),
+                _QuestionMetaChip(
+                  label: question.category,
+                  color: AppColors.primary,
+                ),
+              ],
+            ),
+            if (question.helperText != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                question.helperText!,
+                style: const TextStyle(
+                  fontSize: 11,
+                  height: 1.3,
+                  color: Color(0xFF888888),
+                ),
+              ),
+            ],
+            if (question.choices.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              ...question.choices.take(4).map(
+                    (choice) => Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 12,
+                            height: 12,
+                            margin: const EdgeInsets.only(top: 2),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(3),
+                              border: Border.all(color: _typeColor),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              choice,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                height: 1.25,
+                                color: Color(0xFF666666),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              if (question.choices.length > 4)
+                Text(
+                  '+ ${question.choices.length - 4} more',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: _typeColor,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _QuestionMetaChip extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const _QuestionMetaChip({
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          color: color,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+const List<_StandardQuestion> _standardQuestions = [
+  _StandardQuestion(
+    id: 1,
+    category: 'Intention',
+    type: QuestionType.multipleChoice,
+    text: 'What is your primary reason for wanting to adopt a pet?',
+    helperText: 'Tick all that applies.',
+    choices: [
+      'For companionship / emotional support',
+      'For my children / family',
+      'As a guard or working animal',
+      'I want to give a pet a good home',
+      'Other',
+    ],
+  ),
+  _StandardQuestion(
+    id: 2,
+    category: 'Intention',
+    type: QuestionType.yesNo,
+    text:
+        'Have you discussed the decision to adopt a pet with all members of your household?',
+    helperText:
+        'If yes, do they all agree and support having a pet at home?',
+  ),
+  _StandardQuestion(
+    id: 3,
+    category: 'Intention',
+    type: QuestionType.textAnswer,
+    text:
+        'In your own words, why do you want to adopt a pet at this time?',
+    helperText:
+        'Be as specific as possible. Include what kind of pet you are looking for and why.',
+  ),
+  _StandardQuestion(
+    id: 4,
+    category: 'Intention',
+    type: QuestionType.yesNo,
+    text:
+        'Are you adopting this pet for yourself, or is it intended as a gift for someone else?',
+    helperText:
+        'If as a gift, does that person know about and agree to receiving a pet?',
+  ),
+  _StandardQuestion(
+    id: 5,
+    category: 'Intention',
+    type: QuestionType.rating,
+    text:
+        'On a scale of 1 to 5, how prepared do you feel you are to take on the responsibility of owning a pet right now?',
+    helperText: '1 = Not prepared at all. 5 = Fully prepared.',
+  ),
+  _StandardQuestion(
+    id: 6,
+    category: 'Experience',
+    type: QuestionType.yesNo,
+    text: 'Do you have previous experience caring for a dog or a cat?',
+    helperText:
+        'If yes, how long did you care for the pet, and what happened to it?',
+  ),
+  _StandardQuestion(
+    id: 7,
+    category: 'Experience',
+    type: QuestionType.multipleChoice,
+    text:
+        'Which of the following pet care responsibilities have you personally handled before?',
+    helperText: 'Tick all that applies.',
+    choices: [
+      'Feeding and providing fresh water daily',
+      'Grooming (bathing, brushing, nail trimming)',
+      'Bringing the pet to a veterinarian for checkups or vaccinations',
+      'Training or disciplining the pet',
+      "Managing the pet's health during illness",
+      'None of the above',
+    ],
+  ),
+  _StandardQuestion(
+    id: 8,
+    category: 'Experience',
+    type: QuestionType.rating,
+    text:
+        'How would you rate your overall knowledge of basic pet care needs (diet, hygiene, health, behavior)?',
+    helperText: '1 = No knowledge. 5 = Very knowledgeable.',
+  ),
+  _StandardQuestion(
+    id: 9,
+    category: 'Experience',
+    type: QuestionType.textAnswer,
+    text:
+        'If you have previously owned a pet that you were unable to continue caring for, what happened and what did you learn from that experience?',
+    helperText:
+        'Be honest and specific about what happened and what changed.',
+  ),
+  _StandardQuestion(
+    id: 10,
+    category: 'Home',
+    type: QuestionType.multipleChoice,
+    text: 'What type of home do you currently live in?',
+    helperText: 'Tick all that applies.',
+    choices: [
+      'House with a yard or outdoor space',
+      'Apartment or condominium unit',
+      'Shared or rented room / boarding house',
+      'Other',
+    ],
+  ),
+  _StandardQuestion(
+    id: 11,
+    category: 'Home',
+    type: QuestionType.yesNo,
+    text:
+        'If you are renting your home, does your landlord or property owner allow pets on the premises?',
+  ),
+  _StandardQuestion(
+    id: 12,
+    category: 'Home',
+    type: QuestionType.yesNo,
+    text:
+        'Does anyone in your household have allergies or medical conditions that could be worsened by having a pet at home?',
+    helperText: 'If yes, have you consulted a doctor about this?',
+  ),
+  _StandardQuestion(
+    id: 13,
+    category: 'Home',
+    type: QuestionType.rating,
+    text:
+        'On a scale of 1 to 5, how suitable would you say your current living space is for housing a pet comfortably?',
+    helperText: '1 = Not suitable at all. 5 = Very suitable.',
+  ),
+  _StandardQuestion(
+    id: 14,
+    category: 'Home',
+    type: QuestionType.textAnswer,
+    text:
+        'Where will the pet sleep, eat, and spend most of its time? Have you already prepared a dedicated space for it?',
+    helperText: 'Describe the specific area or setup you have planned.',
+  ),
+  _StandardQuestion(
+    id: 15,
+    category: 'Lifestyle',
+    type: QuestionType.yesNo,
+    text:
+        'Are you aware of the monthly costs involved in owning a pet, including food, veterinary visits, grooming, and supplies?',
+    helperText: 'If yes, have you budgeted for these expenses?',
+  ),
+  _StandardQuestion(
+    id: 16,
+    category: 'Lifestyle',
+    type: QuestionType.multipleChoice,
+    text:
+        'If you encountered an unexpected veterinary emergency, what would you most likely do?',
+    helperText: 'Tick all that applies.',
+    choices: [
+      'I have savings set aside for this purpose',
+      'I would borrow money from family or friends',
+      'I am not sure what I would do',
+      'Other',
+    ],
+  ),
+  _StandardQuestion(
+    id: 17,
+    category: 'Lifestyle',
+    type: QuestionType.rating,
+    text:
+        'On a scale of 1 to 5, how committed are you to caring for this pet for its entire lifetime - even through major life changes such as moving, having a new baby, or changes in employment?',
+    helperText: '1 = Not committed at all. 5 = Fully committed for life.',
+  ),
+  _StandardQuestion(
+    id: 18,
+    category: 'Lifestyle',
+    type: QuestionType.yesNo,
+    text:
+        "Are you willing to send regular updates about the pet's condition, health, and wellbeing to the original owner or shelter after the adoption?",
+    helperText:
+        'If yes, how often would you be willing to provide updates?',
+  ),
+  _StandardQuestion(
+    id: 19,
+    category: 'Lifestyle',
+    type: QuestionType.textAnswer,
+    text:
+        'What would you do if circumstances in your life made it impossible for you to continue caring for the pet in the future?',
+    helperText:
+        'Examples: relocation abroad, financial hardship, family health emergency.',
+  ),
+  _StandardQuestion(
+    id: 20,
+    category: 'Lifestyle',
+    type: QuestionType.multipleChoice,
+    text:
+        'How many hours per day will the pet be left alone at home on a typical day?',
+    helperText: 'Tick all that applies.',
+    choices: [
+      'Less than 2 hours',
+      '2 to 4 hours',
+      '4 to 6 hours',
+      '6 to 8 hours',
+      'More than 8 hours',
+    ],
+  ),
+  _StandardQuestion(
+    id: 21,
+    category: 'Lifestyle',
+    type: QuestionType.yesNo,
+    text:
+        'Do you have a family member, friend, or neighbor who can look after the pet when you are unavailable, traveling, or away for extended periods?',
+  ),
+  _StandardQuestion(
+    id: 22,
+    category: 'Lifestyle',
+    type: QuestionType.rating,
+    text:
+        'On a scale of 1 to 5, how active is your daily lifestyle in terms of physical activity and outdoor time?',
+    helperText:
+        '1 = Mostly sedentary / indoors. 5 = Very active / outdoors daily.',
+  ),
+  _StandardQuestion(
+    id: 23,
+    category: 'Lifestyle',
+    type: QuestionType.yesNo,
+    text:
+        'Do you have young children below 10 years old or elderly family members in your household who will regularly interact with the pet?',
+    helperText:
+        'If yes, have you considered how the pet and these household members will safely interact with each other?',
+  ),
+  _StandardQuestion(
+    id: 24,
+    category: 'Lifestyle',
+    type: QuestionType.textAnswer,
+    text:
+        'Is there anything else about your lifestyle, household, or personal situation that you believe is important for us to know when evaluating your qualification as a pet adopter?',
+    helperText: 'Feel free to share any additional details.',
+  ),
+];
 
 class _DashedButton extends StatelessWidget {
   final String label;

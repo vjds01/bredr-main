@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../services/user_session_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/breedr_logo.dart';
@@ -70,57 +71,177 @@ class _LoadingScreenState extends State<LoadingScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
+      backgroundColor: const Color(0xFFFFF7FC),
+      body: DecoratedBox(
         decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment.center,
-            radius: 1.1,
-            colors: [Colors.white, Color(0xFFFCE4EC)],
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFFFFF9FD),
+              Color(0xFFFFFFFF),
+              Color(0xFFFFEEF7),
+            ],
+            stops: [0, 0.58, 1],
           ),
         ),
-        child: FadeTransition(
-          opacity: _fade,
-          child: SafeArea(
-            child: Column(
-              children: [
-                const Spacer(flex: 2),
-                // Logo PNG - Centered properly
-                Center(child: const BreedrLogo(size: 150)),
-                const SizedBox(height: 20),
-                // Wordmark
-                const Text(
-                  'Breedr.',
-                  style: TextStyle(
-                    fontSize: 38,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primary,
-                  ),
+        child: Stack(
+          children: [
+            const Positioned.fill(child: _SplashBackground()),
+            FadeTransition(
+              opacity: _fade,
+              child: SafeArea(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final height = constraints.maxHeight;
+
+                    return Column(
+                      children: [
+                        SizedBox(height: height * 0.22),
+                        const BreedrLogo(size: 190),
+                        SizedBox(height: height * 0.04),
+                        Text(
+                          'Breedr.',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 52,
+                            height: 1,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          'powered by',
+                          style: GoogleFonts.urbanist(
+                            fontSize: 13,
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'GROUP 10',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 17,
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        SizedBox(height: height * 0.08),
+                      ],
+                    );
+                  },
                 ),
-                const Spacer(flex: 3),
-                // powered by GROUP 10
-                const Text(
-                  'powered by',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w400,
-                  ),
-                ),
-                const Text(
-                  'GROUP 10',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.5,
-                  ),
-                ),
-                const SizedBox(height: 48),
-              ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
   }
+}
+
+class _SplashBackground extends StatelessWidget {
+  const _SplashBackground();
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _SplashBackgroundPainter(),
+      child: const SizedBox.expand(),
+    );
+  }
+}
+
+class _SplashBackgroundPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cloudPaint = Paint()..color = Colors.white.withValues(alpha: 0.72);
+    final skylinePaint = Paint()..color = const Color(0xFFFFDDEB);
+    final wavePaint = Paint()..color = const Color(0xFFFFE2EF);
+
+    _drawCloud(canvas, Offset(size.width * 0.18, size.height * 0.30), 1.0,
+        cloudPaint);
+    _drawCloud(canvas, Offset(size.width * 0.82, size.height * 0.33), 0.85,
+        cloudPaint);
+
+    final skylineTop = size.height * 0.46;
+    final buildingWidth = size.width / 13;
+    for (var i = 0; i < 13; i++) {
+      final heightFactor = 0.035 + (i % 4) * 0.015;
+      final left = i * buildingWidth;
+      final top = skylineTop - size.height * heightFactor;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(left, top, buildingWidth * 0.72, skylineTop - top),
+          const Radius.circular(2),
+        ),
+        skylinePaint,
+      );
+    }
+
+    final leftWave = Path()
+      ..moveTo(0, size.height * 0.78)
+      ..cubicTo(
+        size.width * 0.12,
+        size.height * 0.77,
+        size.width * 0.16,
+        size.height * 0.91,
+        size.width * 0.32,
+        size.height * 0.88,
+      )
+      ..cubicTo(
+        size.width * 0.45,
+        size.height * 0.86,
+        size.width * 0.48,
+        size.height,
+        size.width * 0.58,
+        size.height,
+      )
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(leftWave, wavePaint);
+
+    final rightWave = Path()
+      ..moveTo(size.width, size.height * 0.77)
+      ..cubicTo(
+        size.width * 0.86,
+        size.height * 0.76,
+        size.width * 0.84,
+        size.height * 0.91,
+        size.width * 0.68,
+        size.height * 0.89,
+      )
+      ..cubicTo(
+        size.width * 0.55,
+        size.height * 0.87,
+        size.width * 0.52,
+        size.height,
+        size.width * 0.42,
+        size.height,
+      )
+      ..lineTo(size.width, size.height)
+      ..close();
+    canvas.drawPath(rightWave, wavePaint);
+  }
+
+  void _drawCloud(Canvas canvas, Offset center, double scale, Paint paint) {
+    canvas.drawCircle(center.translate(-18 * scale, 5 * scale), 10 * scale, paint);
+    canvas.drawCircle(center.translate(-4 * scale, -3 * scale), 14 * scale, paint);
+    canvas.drawCircle(center.translate(13 * scale, 6 * scale), 9 * scale, paint);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: center.translate(-2 * scale, 9 * scale),
+          width: 48 * scale,
+          height: 16 * scale,
+        ),
+        Radius.circular(12 * scale),
+      ),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

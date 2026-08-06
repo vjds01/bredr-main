@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import '../../models/pet_listing_data.dart';
+import '../../services/pet_registration_draft_service.dart';
 import '../../services/pet_service.dart';
 import '../../widgets/breedr_network_image.dart';
 import 'pet_published_screen.dart';
@@ -40,6 +41,7 @@ class _PetReviewScreenState extends State<PetReviewScreen> {
 
     try {
       final result = await PetService.instance.publishPet(widget.petData);
+      await PetRegistrationDraftService.instance.clearDraft();
 
       if (!mounted) return;
 
@@ -69,6 +71,10 @@ class _PetReviewScreenState extends State<PetReviewScreen> {
   }
 
   String _publishErrorMessage(Object error) {
+    if (error is DuplicatePetListingException) {
+      return 'You already have an active listing for ${error.petName}.';
+    }
+
     if (error is FirebaseException) {
       switch (error.code) {
         case 'permission-denied':

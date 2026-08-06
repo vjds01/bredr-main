@@ -75,6 +75,99 @@ class PetListingData {
   bool get hasProfilePhoto => profilePhotoFile != null;
   bool get hasHealthRecords => healthRecords.isNotEmpty;
 
+  Map<String, dynamic> toDraftJson() {
+    return {
+      'ownerId': ownerId,
+      'ownerName': ownerName,
+      'ownerPhoto': ownerPhoto,
+      'name': name,
+      'species': species,
+      'breed': breed,
+      'primaryBreed': primaryBreed,
+      'secondaryBreed': secondaryBreed,
+      'isMixedBreed': isMixedBreed,
+      'breedSize': breedSize,
+      'age': age,
+      'gender': gender,
+      'color': color,
+      'about': about,
+      'locationName': locationName,
+      'latitude': latitude,
+      'longitude': longitude,
+      'profilePhotoPath': profilePhotoFile?.path,
+      'additionalPhotoPaths':
+          additionalPhotoFiles.map((file) => file.path).toList(),
+      'purpose': purpose,
+      'breedingPreferredGender': breedingPreferredGender,
+      'sameBreedOnly': sameBreedOnly,
+      'vetVerifiedOnly': vetVerifiedOnly,
+      'adoptionType': adoptionType,
+      'price': price,
+      'noOtherPets': noOtherPets,
+      'priceNegotiable': priceNegotiable,
+      'interviewQuestions':
+          interviewQuestions.map((question) => question.toDraftJson()).toList(),
+      'healthRecords':
+          healthRecords.map((record) => record.toDraftJson()).toList(),
+    };
+  }
+
+  factory PetListingData.fromDraftJson(Map<String, dynamic> json) {
+    final profilePhotoPath = json['profilePhotoPath'] as String?;
+    final additionalPhotoPaths =
+        (json['additionalPhotoPaths'] as List<dynamic>? ?? [])
+            .whereType<String>();
+
+    return PetListingData(
+      ownerId: json['ownerId'] as String?,
+      ownerName: json['ownerName'] as String?,
+      ownerPhoto: json['ownerPhoto'] as String?,
+      name: json['name'] as String? ?? '',
+      species: json['species'] as String? ?? 'Dog',
+      breed: json['breed'] as String? ?? '',
+      primaryBreed: json['primaryBreed'] as String? ?? '',
+      secondaryBreed: json['secondaryBreed'] as String? ?? '',
+      isMixedBreed: json['isMixedBreed'] as bool? ?? false,
+      breedSize: json['breedSize'] as String? ?? 'Small',
+      age: json['age'] as String? ?? '',
+      gender: json['gender'] as String? ?? 'Male',
+      color: json['color'] as String? ?? '',
+      about: json['about'] as String? ?? '',
+      locationName: json['locationName'] as String? ?? '',
+      latitude: (json['latitude'] as num?)?.toDouble(),
+      longitude: (json['longitude'] as num?)?.toDouble(),
+      profilePhotoFile: _fileFromPath(profilePhotoPath),
+      additionalPhotoFiles: additionalPhotoPaths
+          .map(_fileFromPath)
+          .whereType<File>()
+          .toList(),
+      purpose: json['purpose'] as String?,
+      breedingPreferredGender:
+          json['breedingPreferredGender'] as String? ?? 'Male',
+      sameBreedOnly: json['sameBreedOnly'] as bool? ?? true,
+      vetVerifiedOnly: json['vetVerifiedOnly'] as bool? ?? true,
+      adoptionType: json['adoptionType'] as String? ?? 'FREE',
+      price: (json['price'] as num?)?.toDouble() ?? 0,
+      noOtherPets: json['noOtherPets'] as bool? ?? true,
+      priceNegotiable: json['priceNegotiable'] as bool? ?? true,
+      interviewQuestions: (json['interviewQuestions'] as List<dynamic>? ?? [])
+          .whereType<Map<String, dynamic>>()
+          .map(PetInterviewQuestion.fromDraftJson)
+          .toList(),
+      healthRecords: (json['healthRecords'] as List<dynamic>? ?? [])
+          .whereType<Map<String, dynamic>>()
+          .map(PetHealthRecordData.fromDraftJson)
+          .where((record) => record.file != null || record.fileUrl.isNotEmpty)
+          .toList(),
+    );
+  }
+
+  static File? _fileFromPath(String? path) {
+    if (path == null || path.isEmpty) return null;
+    final file = File(path);
+    return file.existsSync() ? file : null;
+  }
+
   PetListingData copyWith({
     String? ownerId,
     String? ownerName,
@@ -236,6 +329,20 @@ class PetInterviewQuestion {
       'order': order,
     };
   }
+
+  Map<String, dynamic> toDraftJson() => toMap();
+
+  factory PetInterviewQuestion.fromDraftJson(Map<String, dynamic> json) {
+    return PetInterviewQuestion(
+      questionId: json['questionId'] as String? ?? '',
+      type: json['type'] as String? ?? 'textAnswer',
+      text: json['text'] as String? ?? '',
+      choices:
+          (json['choices'] as List<dynamic>? ?? []).whereType<String>().toList(),
+      required: json['required'] as bool? ?? true,
+      order: json['order'] as int? ?? 0,
+    );
+  }
 }
 
 class PetHealthRecordData {
@@ -266,6 +373,28 @@ class PetHealthRecordData {
       'veterinarian': veterinarian,
       'clinic': clinic,
     };
+  }
+
+  Map<String, dynamic> toDraftJson() {
+    return {
+      ...toMap(),
+      'filePath': file?.path,
+    };
+  }
+
+  factory PetHealthRecordData.fromDraftJson(Map<String, dynamic> json) {
+    final filePath = json['filePath'] as String?;
+    final file = PetListingData._fileFromPath(filePath);
+
+    return PetHealthRecordData(
+      type: json['type'] as String? ?? '',
+      fileName: json['fileName'] as String? ?? '',
+      file: file,
+      fileUrl: json['fileUrl'] as String? ?? '',
+      dateIssued: json['dateIssued'] as String? ?? '',
+      veterinarian: json['veterinarian'] as String? ?? '',
+      clinic: json['clinic'] as String? ?? '',
+    );
   }
 
   PetHealthRecordData copyWith({

@@ -21,6 +21,21 @@ class PetService {
       throw Exception('You must be logged in to publish a pet');
     }
 
+    final purpose = _normalizeText(pet.purpose ?? '');
+    final duplicateKey = _duplicateKey(
+      ownerId: user.uid,
+      purpose: purpose,
+      species: pet.species,
+      name: pet.name,
+    );
+
+    await _ensureNoDuplicateActiveListing(
+      ownerId: user.uid,
+      purpose: purpose,
+      species: pet.species,
+      name: pet.name,
+    );
+
     final profile = await UserSessionService.instance.getCurrentUserProfile();
     final userData = profile?.data();
 
@@ -48,18 +63,94 @@ class PetService {
       healthRecords: await _uploadHealthRecords(pet.healthRecords),
     );
 
-    final document = await _firestore.collection('pets').add(
-          petWithOwner.toFirestore(
-            profilePhotoUrl: profilePhotoUrl,
-            additionalImageUrls: additionalImageUrls,
-          ),
-        );
+    final petData = petWithOwner.toFirestore(
+      profilePhotoUrl: profilePhotoUrl,
+      additionalImageUrls: additionalImageUrls,
+    );
+
+    final document = await _firestore.collection('pets').add({
+      ...petData,
+      'duplicateKey': duplicateKey,
+      'normalizedName': _normalizeText(pet.name),
+      'normalizedSpecies': _normalizeText(pet.species),
+      'normalizedPurpose': purpose,
+    });
 
     return PetPublishResult(
       document: document,
       profilePhotoUrl: profilePhotoUrl,
       additionalImageUrls: additionalImageUrls,
     );
+  }
+
+  Future<void> _ensureNoDuplicateActiveListing({
+    required String ownerId,
+    required String purpose,
+    required String species,
+    required String name,
+  }) async {
+    final normalizedName = _normalizeText(name);
+    final normalizedSpecies = _normalizeText(species);
+
+    if (normalizedName.isEmpty || purpose.isEmpty) return;
+
+    final existingPets = await _firestore
+        .collection('pets')
+        .where('ownerId', isEqualTo: ownerId)
+        .get();
+
+    for (final document in existingPets.docs) {
+      final data = document.data();
+      final existingName = _normalizeText(
+        (data['normalizedName'] ?? data['name'] ?? '').toString(),
+      );
+      final existingSpecies = _normalizeText(
+        (data['normalizedSpecies'] ?? data['species'] ?? '').toString(),
+      );
+      final existingPurpose = _normalizeText(
+        (data['normalizedPurpose'] ?? data['purpose'] ?? '').toString(),
+      );
+      final status = _normalizeText((data['status'] ?? '').toString());
+
+      if (_isTerminalPetStatus(status)) continue;
+
+      final isDuplicate = existingName == normalizedName &&
+          existingSpecies == normalizedSpecies &&
+          existingPurpose == purpose;
+
+      if (isDuplicate) {
+        throw DuplicatePetListingException(name);
+      }
+    }
+  }
+
+  bool _isTerminalPetStatus(String status) {
+    return {
+      'adopted',
+      'matched',
+      'removed',
+      'inactive',
+      'archived',
+      'deleted',
+    }.contains(status);
+  }
+
+  String _duplicateKey({
+    required String ownerId,
+    required String purpose,
+    required String species,
+    required String name,
+  }) {
+    return [
+      ownerId,
+      _normalizeText(purpose),
+      _normalizeText(species),
+      _normalizeText(name),
+    ].join('|');
+  }
+
+  String _normalizeText(String value) {
+    return value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
   }
 
   Future<List<PetHealthRecordData>> _uploadHealthRecords(
@@ -80,6 +171,15 @@ class PetService {
 
     return uploaded;
   }
+}
+
+class DuplicatePetListingException implements Exception {
+  final String petName;
+
+  const DuplicatePetListingException(this.petName);
+
+  @override
+  String toString() => 'Duplicate active pet listing: $petName';
 }
 
 class PetPublishResult {

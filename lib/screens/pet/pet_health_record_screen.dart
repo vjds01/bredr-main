@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../theme/app_colors.dart';
 import '../../models/pet_listing_data.dart';
+import '../../services/pet_registration_draft_service.dart';
 import 'pet_review_screen.dart';
 
 // Colors from design
@@ -47,18 +48,30 @@ class PetHealthRecordScreen extends StatefulWidget {
 class _PetHealthRecordScreenState extends State<PetHealthRecordScreen> {
   final List<HealthRecord> _records = [];
 
+  @override
+  void initState() {
+    super.initState();
+    _records.addAll(widget.petData.healthRecords.map(_fromPetHealthRecord));
+  }
+
   void _openAddRecord() {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _AddHealthRecordSheet(
-        onSave: (r) => setState(() => _records.add(r)),
+        onSave: (r) {
+          setState(() => _records.add(r));
+          _saveDraft();
+        },
       ),
     );
   }
 
-  void _removeRecord(int i) => setState(() => _records.removeAt(i));
+  void _removeRecord(int i) {
+    setState(() => _records.removeAt(i));
+    _saveDraft();
+  }
 
   void _replaceRecord(int index) {
     showModalBottomSheet(
@@ -67,7 +80,10 @@ class _PetHealthRecordScreenState extends State<PetHealthRecordScreen> {
       backgroundColor: Colors.transparent,
       builder: (_) => _AddHealthRecordSheet(
         initialRecord: _records[index],
-        onSave: (r) => setState(() => _records[index] = r),
+        onSave: (r) {
+          setState(() => _records[index] = r);
+          _saveDraft();
+        },
       ),
     );
   }
@@ -79,8 +95,8 @@ class _PetHealthRecordScreenState extends State<PetHealthRecordScreen> {
     );
   }
 
-  void _goNext() {
-    final healthRecords = _records
+  List<PetHealthRecordData> _petHealthRecords() {
+    return _records
         .map(
           (record) => PetHealthRecordData(
             type: record.type,
@@ -92,14 +108,36 @@ class _PetHealthRecordScreenState extends State<PetHealthRecordScreen> {
           ),
         )
         .toList();
+  }
+
+  HealthRecord _fromPetHealthRecord(PetHealthRecordData record) {
+    return HealthRecord(
+      type: record.type,
+      fileName: record.fileName,
+      file: record.file,
+      dateIssued: record.dateIssued,
+      veterinarian: record.veterinarian,
+      clinic: record.clinic,
+    );
+  }
+
+  PetListingData _updatedPetData() {
+    return widget.petData.copyWith(healthRecords: _petHealthRecords());
+  }
+
+  Future<void> _saveDraft() async {
+    await PetRegistrationDraftService.instance.saveDraft(_updatedPetData());
+  }
+
+  void _goNext() {
+    final updatedData = _updatedPetData();
+    PetRegistrationDraftService.instance.saveDraft(updatedData);
 
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => PetReviewScreen(
-          petData: widget.petData.copyWith(
-            healthRecords: healthRecords,
-          ),
+          petData: updatedData,
         ),
       ),
     );

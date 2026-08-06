@@ -11,6 +11,7 @@ import '../../theme/app_colors.dart';
 import '../../widgets/breedr_network_image.dart';
 import '../chat/chats_screen.dart';
 import '../owner/owner_ratings_screen.dart';
+import '../pet/pet_registration_screen.dart';
 import 'match_screen.dart';
 
 class BreedingScreen extends StatefulWidget {
@@ -234,6 +235,17 @@ class _BreedingScreenState extends State<BreedingScreen> {
                                   subtitle: myPets.isEmpty
                                       ? 'Add one of your pets for breeding, then nearby listings from other owners will show here.'
                                       : 'No ${selectedPet?.species.toLowerCase() ?? 'pet'} listings match your current filters.',
+                                  actionLabel:
+                                      myPets.isEmpty ? 'Register a pet' : null,
+                                  onAction: myPets.isEmpty
+                                      ? () => Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) =>
+                                                  const PetRegistrationScreen(),
+                                            ),
+                                          )
+                                      : null,
                                 )
                               : Padding(
                                   padding: const EdgeInsets.symmetric(
@@ -1233,6 +1245,17 @@ class _ExpandedPetProfile extends StatelessWidget {
                       child: _HealthRecordRow(record: record),
                     ),
                   ),
+                if (pet.additionalImages.isNotEmpty) ...[
+                  const SizedBox(height: 18),
+                  const _ThinDivider(),
+                  const SizedBox(height: 14),
+                  _SectionTitle('MORE PHOTOS OF ${pet.name.toUpperCase()}'),
+                  const SizedBox(height: 10),
+                  _PetMorePhotosCarousel(
+                    images: pet.additionalImages,
+                    species: pet.species,
+                  ),
+                ],
                 const SizedBox(height: 12),
                 _ActionButtons(onPass: onPass, onLike: onLike),
                 const SizedBox(height: 18),
@@ -1518,6 +1541,167 @@ class _ActionButtons extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _PetMorePhotosCarousel extends StatefulWidget {
+  final List<String> images;
+  final String species;
+
+  const _PetMorePhotosCarousel({
+    required this.images,
+    required this.species,
+  });
+
+  @override
+  State<_PetMorePhotosCarousel> createState() => _PetMorePhotosCarouselState();
+}
+
+class _PetMorePhotosCarouselState extends State<_PetMorePhotosCarousel> {
+  late final PageController _controller;
+  int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = PageController(viewportFraction: 0.62);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final count = widget.images.length;
+
+    return Column(
+      children: [
+        Align(
+          alignment: Alignment.centerRight,
+          child: Text(
+            '${_index + 1} / $count',
+            style: const TextStyle(
+              color: AppColors.primary,
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 250,
+          child: Row(
+            children: [
+              _CirclePhotoArrow(
+                icon: Icons.chevron_left,
+                enabled: _index > 0,
+                onTap: () => _controller.previousPage(
+                  duration: const Duration(milliseconds: 250),
+                  curve: Curves.easeOut,
+                ),
+              ),
+              Expanded(
+                child: PageView.builder(
+                  controller: _controller,
+                  itemCount: count,
+                  onPageChanged: (value) => setState(() => _index = value),
+                  itemBuilder: (context, index) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Positioned(
+                            top: 18,
+                            left: 18,
+                            right: 0,
+                            bottom: 4,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFF6D82),
+                                borderRadius: BorderRadius.circular(18),
+                              ),
+                            ),
+                          ),
+                          Positioned.fill(
+                            right: 12,
+                            bottom: 12,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(18),
+                              child: BreedrNetworkImage(
+                                imageUrl: widget.images[index],
+                                fallback: const _PetFallbackBlock(),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+              _CirclePhotoArrow(
+                icon: Icons.chevron_right,
+                enabled: _index < count - 1,
+                onTap: () => _controller.nextPage(
+                  duration: const Duration(milliseconds: 250),
+                  curve: Curves.easeOut,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(
+            count,
+            (dotIndex) => AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: dotIndex == _index ? 26 : 8,
+              height: 8,
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              decoration: BoxDecoration(
+                color: dotIndex == _index
+                    ? AppColors.primary
+                    : const Color(0xFFD7D7D7),
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CirclePhotoArrow extends StatelessWidget {
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _CirclePhotoArrow({
+    required this.icon,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton.filled(
+      onPressed: enabled ? onTap : null,
+      style: IconButton.styleFrom(
+        backgroundColor: AppColors.primary,
+        disabledBackgroundColor: const Color(0xFFFFD8DF),
+        foregroundColor: Colors.white,
+        disabledForegroundColor: Colors.white,
+        fixedSize: const Size(50, 50),
+      ),
+      icon: Icon(icon, size: 30),
     );
   }
 }
@@ -2249,11 +2433,15 @@ class _BreedingEmptyState extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
+  final String? actionLabel;
+  final VoidCallback? onAction;
 
   const _BreedingEmptyState({
     required this.icon,
     required this.title,
     required this.subtitle,
+    this.actionLabel,
+    this.onAction,
   });
 
   @override
@@ -2284,6 +2472,27 @@ class _BreedingEmptyState extends StatelessWidget {
                 height: 1.45,
               ),
             ),
+            if (actionLabel != null && onAction != null) ...[
+              const SizedBox(height: 18),
+              SizedBox(
+                width: 210,
+                height: 48,
+                child: FilledButton.icon(
+                  onPressed: onAction,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  icon: const Icon(Icons.add),
+                  label: Text(
+                    actionLabel!,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),

@@ -74,6 +74,9 @@ class _Step3WelcomeState extends State<Step3Welcome> {
         debugPrint(
           'Additional uploaded: ${additionalPhotoUrls.length}',
         );
+        final coverPhotoUrl =
+            additionalPhotoUrls.isNotEmpty ? additionalPhotoUrls.first : '';
+
       await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
@@ -99,6 +102,7 @@ class _Step3WelcomeState extends State<Step3Welcome> {
         'profilePhoto': profilePhotoUrl ?? '',
 
         'additionalImages': additionalPhotoUrls, 
+        'coverPhoto': coverPhotoUrl,
 
         'hasProfilePhoto': profilePhotoUrl != null,
 
@@ -283,16 +287,12 @@ class _Step3WelcomeState extends State<Step3Welcome> {
                     SizedBox(
                       width: double.infinity,
                       height: 180,
-                      child: Image.asset(
-                        'assets/images/Welcome.png',
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => Container(
-                          color: const Color(0xFF888888),
-                          child: const Center(
-                            child: Icon(Icons.image_outlined,
-                                color: Colors.white54, size: 48),
-                          ),
-                        ),
+                      child: _ProfileCoverPreview(
+                        coverPhoto:
+                            widget.onboardingData.additionalPhotoFiles.isNotEmpty
+                                ? widget
+                                    .onboardingData.additionalPhotoFiles.first
+                                : null,
                       ),
                     ),
 
@@ -663,6 +663,41 @@ class _Step3WelcomeState extends State<Step3Welcome> {
 }
 
 // ── Reusable widgets ──────────────────────────────────────────────
+
+class _ProfileCoverPreview extends StatelessWidget {
+  final File? coverPhoto;
+
+  const _ProfileCoverPreview({
+    required this.coverPhoto,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (coverPhoto != null) {
+      return Image.file(
+        coverPhoto!,
+        width: double.infinity,
+        height: double.infinity,
+        fit: BoxFit.cover,
+      );
+    }
+
+    return Image.asset(
+      'assets/images/Welcome.png',
+      fit: BoxFit.cover,
+      errorBuilder: (_, _, _) => Container(
+        color: const Color(0xFF888888),
+        child: const Center(
+          child: Icon(
+            Icons.image_outlined,
+            color: Colors.white54,
+            size: 48,
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _Tag extends StatelessWidget {
   final String label;

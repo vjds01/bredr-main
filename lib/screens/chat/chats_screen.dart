@@ -1409,6 +1409,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
   Future<void> _requestAnotherAdoptionUpdate(String updateRequestId) async {
     final reason = await showModalBottomSheet<String>(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -5590,65 +5591,68 @@ class _RequestAnotherPhotoSheet extends StatelessWidget {
       ('Please send another update when you can.', 'Custom general request'),
     ];
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 20, 22, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Request Another Photo',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
-                  ),
-                ),
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close),
-                ),
-              ],
-            ),
-            const Text(
-              "This isn't a report. Let them know what wasn't quite right.",
-              style: TextStyle(color: Color(0xFF666666)),
-            ),
-            const SizedBox(height: 16),
-            ...options.map(
-              (option) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: InkWell(
-                  onTap: () => Navigator.pop(
-                    context,
-                    '${option.$1}: ${option.$2}',
-                  ),
-                  borderRadius: BorderRadius.circular(14),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: AppColors.primary),
-                      borderRadius: BorderRadius.circular(14),
+      child: FractionallySizedBox(
+        heightFactor: 0.86,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(22, 20, 22, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Request Another Photo',
+                      style:
+                          TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          option.$1,
-                          style: const TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                        Text(
-                          option.$2,
-                          style: const TextStyle(color: Color(0xFF666666)),
-                        ),
-                      ],
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              const Text(
+                "This isn't a report. Let them know what wasn't quite right.",
+                style: TextStyle(color: Color(0xFF666666)),
+              ),
+              const SizedBox(height: 16),
+              ...options.map(
+                (option) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: InkWell(
+                    onTap: () => Navigator.pop(
+                      context,
+                      '${option.$1}: ${option.$2}',
+                    ),
+                    borderRadius: BorderRadius.circular(14),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: AppColors.primary),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            option.$1,
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          Text(
+                            option.$2,
+                            style: const TextStyle(color: Color(0xFF666666)),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

@@ -1,5 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../theme/app_colors.dart';
 import 'review_profile.dart';
@@ -23,6 +25,9 @@ class _Step2ReviewProfileState extends State<Step2ReviewProfile> {
   String? _selectedHomeType;
   final _aboutCtrl = TextEditingController();
   final _locationCtrl = TextEditingController();
+  bool _isDetectingLocation = false;
+  double? _latitude;
+  double? _longitude;
 
   File? _profilePhoto;
   List<File> _additionalPhotosFiles = [];
@@ -40,7 +45,13 @@ class _Step2ReviewProfileState extends State<Step2ReviewProfile> {
     super.initState();
 
     _locationCtrl.text =
-        LocationService.instance.locationName ?? '';
+        widget.onboardingData.locationName ??
+        LocationService.instance.locationName ??
+        '';
+    _latitude =
+        widget.onboardingData.latitude ?? LocationService.instance.latitude;
+    _longitude =
+        widget.onboardingData.longitude ?? LocationService.instance.longitude;
 
     debugPrint(
         'Step2 Location: ${LocationService.instance.locationName}');
@@ -56,6 +67,114 @@ class _Step2ReviewProfileState extends State<Step2ReviewProfile> {
     super.dispose();
   }
 
+  Future<void> _detectLocation() async {
+    setState(() => _isDetectingLocation = true);
+
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        await Geolocator.openLocationSettings();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please enable GPS, then tap Detect again.'),
+          ),
+        );
+        return;
+      }
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Location permission is required to continue.'),
+          ),
+        );
+        return;
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        await Geolocator.openAppSettings();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Please allow location permission in settings, then try again.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      final placemarks = await placemarkFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+      final locationName = _locationNameFromPlacemark(
+        placemarks.isNotEmpty ? placemarks.first : null,
+      );
+
+      setState(() {
+        _latitude = position.latitude;
+        _longitude = position.longitude;
+        _locationCtrl.text = locationName;
+      });
+
+      LocationService.instance.latitude = position.latitude;
+      LocationService.instance.longitude = position.longitude;
+      LocationService.instance.locationName = locationName;
+    } catch (e) {
+      debugPrint('Onboarding location detection error: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_locationErrorMessage(e))),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isDetectingLocation = false);
+      }
+    }
+  }
+
+  String _locationNameFromPlacemark(Placemark? place) {
+    if (place == null) return 'Detected location';
+
+    final parts = [
+      place.subLocality,
+      place.locality,
+      place.administrativeArea,
+    ]
+        .where((part) => part != null && part.trim().isNotEmpty)
+        .map((part) => part!.trim())
+        .toList();
+
+    return parts.isEmpty ? 'Detected location' : parts.toSet().join(', ');
+  }
+
+  String _locationErrorMessage(Object error) {
+    final message = error.toString().toLowerCase();
+
+    if (message.contains('permission')) {
+      return 'Location permission is required to continue.';
+    }
+    if (message.contains('service') || message.contains('disabled')) {
+      return 'Please enable GPS, then try again.';
+    }
+    if (message.contains('network') || message.contains('timed out')) {
+      return 'Unable to detect your location. Please check your connection and try again.';
+    }
+
+    return 'Unable to detect your location right now. Please try again.';
+  }
+
   void _goNext() {
 
   debugPrint(
@@ -66,20 +185,24 @@ class _Step2ReviewProfileState extends State<Step2ReviewProfile> {
     'Additional photos: ${_additionalPhotosFiles.length}',
   );
   
+  final locationName = _locationCtrl.text.trim();
+  if (locationName.isEmpty || _latitude == null || _longitude == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Please detect your location before continuing.'),
+      ),
+    );
+    return;
+  }
+
   final updatedData = widget.onboardingData.copyWith(
     bio: _aboutCtrl.text.trim(),
     homeType: _selectedHomeType,
     childrenAtHome: _childrenAtHome,
     otherPetsAtHome: _otherPetsAtHome,
-    locationName:
-      LocationService.instance.locationName ??
-    _locationCtrl.text.trim(),
-
-    latitude:
-      LocationService.instance.latitude,
-
-    longitude:
-      LocationService.instance.longitude,
+    locationName: locationName,
+    latitude: _latitude,
+    longitude: _longitude,
 
     profilePhotoFile: _profilePhoto,
     additionalPhotoFiles: _additionalPhotosFiles,
@@ -94,6 +217,31 @@ class _Step2ReviewProfileState extends State<Step2ReviewProfile> {
     ),
   );
 }
+
+  void _addAdditionalPhotos(List<File> files) {
+    if (files.isEmpty) return;
+
+    final remaining = 10 - _additionalPhotosFiles.length;
+    if (remaining <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You can upload up to 10 additional photos.')),
+      );
+      return;
+    }
+
+    final selected = files.take(remaining).toList();
+    setState(() => _additionalPhotosFiles.addAll(selected));
+
+    if (files.length > remaining) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Only $remaining more photo${remaining == 1 ? '' : 's'} can be added. Extra photos were skipped.',
+          ),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -207,6 +355,8 @@ class _Step2ReviewProfileState extends State<Step2ReviewProfile> {
                     const SizedBox(height: 10),
                     _LocationField(
                       controller: _locationCtrl,
+                      isDetecting: _isDetectingLocation,
+                      onDetectLocation: _detectLocation,
                     ),
                     const SizedBox(height: 6),
                     _InfoNote(
@@ -354,13 +504,7 @@ class _Step2ReviewProfileState extends State<Step2ReviewProfile> {
                     // Additional photos carousel card
                     _AdditionalPhotosCard(
                       photos: _additionalPhotosFiles,
-                      onImageSelected: (file) {
-                        setState(() {
-                          if (_additionalPhotosFiles.length < 10) {
-                            _additionalPhotosFiles.add(file);
-                          }
-                        });
-                      },
+                      onImagesSelected: _addAdditionalPhotos,
                     ),
 
                     const SizedBox(height: 8),
@@ -456,9 +600,13 @@ class _InfoNote extends StatelessWidget {
 
 class _LocationField extends StatelessWidget {
   final TextEditingController controller;
+  final bool isDetecting;
+  final VoidCallback onDetectLocation;
 
   const _LocationField({
     required this.controller,
+    required this.isDetecting,
+    required this.onDetectLocation,
   });
 
   @override
@@ -470,6 +618,29 @@ class _LocationField extends StatelessWidget {
         filled: true,
         fillColor: Colors.white,
         prefixIcon: const Icon(Icons.location_on, color: AppColors.primary),
+        hintText: 'Tap Detect to set your location',
+        hintStyle: const TextStyle(color: Color(0xFFBBBBBB), fontSize: 13),
+        suffixIcon: Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: TextButton.icon(
+            onPressed: isDetecting ? null : onDetectLocation,
+            icon: isDetecting
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.my_location, size: 16),
+            label: Text(isDetecting ? 'Detecting' : 'Detect'),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.primary,
+              textStyle: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: Color(0xFFEEEEEE)),
@@ -665,11 +836,11 @@ class _ProfilePhotoUploadState extends State<_ProfilePhotoUpload> {
 // Additional photos horizontal carousel
 class _AdditionalPhotosCard extends StatelessWidget {
   final List<File> photos;
-  final ValueChanged<File> onImageSelected;
+  final ValueChanged<List<File>> onImagesSelected;
 
   const _AdditionalPhotosCard({
     required this.photos,
-    required this.onImageSelected,
+    required this.onImagesSelected,
   });
 
   @override
@@ -689,7 +860,7 @@ class _AdditionalPhotosCard extends StatelessWidget {
           return SizedBox(
             width: 220,
             child: isAddTile
-                ? _AdditionalPhotoUploadTile(onImageSelected: onImageSelected)
+                ? _AdditionalPhotoUploadTile(onImagesSelected: onImagesSelected)
                 : _AdditionalPhotoPreview(photo: photos[index]),
           );
         },
@@ -718,10 +889,10 @@ class _AdditionalPhotoPreview extends StatelessWidget {
 }
 
 class _AdditionalPhotoUploadTile extends StatefulWidget {
-  final ValueChanged<File> onImageSelected;
+  final ValueChanged<List<File>> onImagesSelected;
 
   const _AdditionalPhotoUploadTile({
-    required this.onImageSelected,
+    required this.onImagesSelected,
   });
 
   @override
@@ -730,14 +901,23 @@ class _AdditionalPhotoUploadTile extends StatefulWidget {
 }
 
 class _AdditionalPhotoUploadTileState extends State<_AdditionalPhotoUploadTile> {
-  Future<void> _pick(ImageSource source) async {
+  Future<void> _pickGallery() async {
+    final picked = await ImagePicker().pickMultiImage(imageQuality: 75);
+    if (picked.isEmpty) return;
+
+    widget.onImagesSelected(
+      picked.map((image) => File(image.path)).toList(),
+    );
+  }
+
+  Future<void> _pickCamera() async {
     final xFile = await ImagePicker().pickImage(
-      source: source,
+      source: ImageSource.camera,
       imageQuality: 75,
     );
 
     if (xFile != null) {
-      widget.onImageSelected(File(xFile.path));
+      widget.onImagesSelected([File(xFile.path)]);
     }
   }
 
@@ -790,7 +970,7 @@ class _AdditionalPhotoUploadTileState extends State<_AdditionalPhotoUploadTile> 
               width: double.infinity,
               height: 42,
               child: ElevatedButton(
-                onPressed: () => _pick(ImageSource.gallery),
+                onPressed: _pickGallery,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
@@ -810,7 +990,7 @@ class _AdditionalPhotoUploadTileState extends State<_AdditionalPhotoUploadTile> 
               width: double.infinity,
               height: 42,
               child: OutlinedButton(
-                onPressed: () => _pick(ImageSource.camera),
+                onPressed: _pickCamera,
                 style: OutlinedButton.styleFrom(
                   side:
                       const BorderSide(color: AppColors.primary, width: 1.5),

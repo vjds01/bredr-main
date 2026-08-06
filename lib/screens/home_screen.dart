@@ -330,7 +330,12 @@ class _ProfileHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final backgroundUrl = additionalImages.isNotEmpty ? additionalImages.first : '';
+    final storedCoverUrl = data?['coverPhoto'] as String? ?? '';
+    final backgroundUrl = storedCoverUrl.isNotEmpty
+        ? storedCoverUrl
+        : additionalImages.isNotEmpty
+            ? additionalImages.first
+            : '';
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12),
@@ -1095,6 +1100,27 @@ class _EditProfileScreenState extends State<_EditProfileScreen> {
     final source = await _chooseImageSource();
     if (source == null) return;
 
+    final remaining = _maxAdditionalPhotos - _totalAdditionalPhotos;
+
+    if (source == ImageSource.gallery) {
+      final picked = await _picker.pickMultiImage(imageQuality: 75);
+      if (picked.isEmpty || !mounted) return;
+
+      final selected = picked
+          .take(remaining)
+          .map((image) => File(image.path))
+          .toList();
+
+      setState(() => _additionalImageFiles.addAll(selected));
+
+      if (picked.length > remaining) {
+        _showMessage(
+          'Only $remaining more photo${remaining == 1 ? '' : 's'} can be added. Extra photos were skipped.',
+        );
+      }
+      return;
+    }
+
     final picked = await _picker.pickImage(
       source: source,
       imageQuality: 75,
@@ -1202,6 +1228,9 @@ class _EditProfileScreenState extends State<_EditProfileScreen> {
         }
       }
 
+      final coverPhotoUrl =
+          additionalImageUrls.isNotEmpty ? additionalImageUrls.first : '';
+
       await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
         'bio': _aboutController.text.trim(),
         'homeType': _homeType,
@@ -1212,6 +1241,7 @@ class _EditProfileScreenState extends State<_EditProfileScreen> {
         'longitude': _longitude,
         'profilePhoto': profilePhotoUrl,
         'additionalImages': additionalImageUrls,
+        'coverPhoto': coverPhotoUrl,
         'hasProfilePhoto': profilePhotoUrl.isNotEmpty,
         'profileCompleted': profilePhotoUrl.isNotEmpty &&
             _aboutController.text.trim().isNotEmpty &&
