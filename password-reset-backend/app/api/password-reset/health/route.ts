@@ -19,6 +19,7 @@ export async function GET() {
       firebaseProjectId: hasEnv("FIREBASE_PROJECT_ID"),
       firebaseClientEmail: hasEnv("FIREBASE_CLIENT_EMAIL"),
       firebasePrivateKey: hasEnv("FIREBASE_PRIVATE_KEY"),
+      firebasePrivateKeyBase64: hasEnv("FIREBASE_PRIVATE_KEY_BASE64"),
       otpSecret: hasEnv("OTP_SECRET"),
     },
   });

@@ -11,7 +11,14 @@ function requiredEnv(name: string): string {
 }
 
 function privateKey(): string {
-  return requiredEnv("FIREBASE_PRIVATE_KEY").replace(/\\n/g, "\n");
+  const base64Key = process.env.FIREBASE_PRIVATE_KEY_BASE64;
+  if (base64Key && base64Key.trim().length > 0) {
+    return Buffer.from(base64Key.trim(), "base64").toString("utf8");
+  }
+
+  return requiredEnv("FIREBASE_PRIVATE_KEY")
+    .replace(/^"|"$/g, "")
+    .replace(/\\n/g, "\n");
 }
 
 function ensureFirebaseAdmin() {
