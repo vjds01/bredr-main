@@ -6,6 +6,9 @@ import { createVerificationToken, hashOtp } from "@/lib/security";
 const maxAttempts = 5;
 const verifiedTtlMs = 10 * 60 * 1000;
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();

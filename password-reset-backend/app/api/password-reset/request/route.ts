@@ -7,6 +7,9 @@ import { hashOtp, randomOtp } from "@/lib/security";
 
 const resetTtlMs = 10 * 60 * 1000;
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
