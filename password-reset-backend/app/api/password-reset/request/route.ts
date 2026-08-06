@@ -22,12 +22,27 @@ export async function POST(request: NextRequest) {
     let user;
     try {
       user = await adminAuth().getUserByEmail(email);
-    } catch {
+    } catch (error) {
+      const firebaseError = error as { code?: string; message?: string };
+      if (
+        firebaseError.code === "auth/user-not-found" ||
+        firebaseError.code === "auth/invalid-email"
+      ) {
+        return NextResponse.json({
+          ok: true,
+          message:
+            "If this email is connected to a Breedr account, a code has been sent.",
+        });
+      }
+
+      console.error("Firebase user lookup failed", error);
       return NextResponse.json({
-        ok: true,
-        message:
-          "If this email is connected to a Breedr account, a code has been sent.",
-      });
+          ok: false,
+          message:
+            "The password reset service is not connected to Firebase correctly yet.",
+        },
+        { status: 500 },
+      );
     }
 
     const resetRef = adminDb().collection("passwordResetOtps").doc();
