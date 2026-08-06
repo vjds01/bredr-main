@@ -2,7 +2,7 @@ import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { NextRequest, NextResponse } from "next/server";
 
 import { sendPasswordResetOtp } from "@/lib/brevo";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { adminDb } from "@/lib/firebase-admin";
 import { hashOtp, randomOtp } from "@/lib/security";
 
 const resetTtlMs = 10 * 60 * 1000;
@@ -13,7 +13,8 @@ export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const email = String(body.email || "").trim().toLowerCase();
+    const rawEmail = String(body.email || "").trim();
+    const email = rawEmail.toLowerCase();
 
     if (!email || !email.includes("@")) {
       return NextResponse.json(
@@ -22,15 +23,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let user;
+    let userId = "";
     try {
-      user = await adminAuth().getUserByEmail(email);
-    } catch (error) {
-      const firebaseError = error as { code?: string; message?: string };
-      if (
-        firebaseError.code === "auth/user-not-found" ||
-        firebaseError.code === "auth/invalid-email"
-      ) {
+      let users = await adminDb()
+        .collection("users")
+        .where("email", "==", email)
+        .limit(1)
+        .get();
+
+      if (users.empty && rawEmail !== email) {
+        users = await adminDb()
+          .collection("users")
+          .where("email", "==", rawEmail)
+          .limit(1)
+          .get();
+      }
+
+      if (users.empty) {
         return NextResponse.json({
           ok: true,
           message:
@@ -38,11 +47,14 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      console.error("Firebase user lookup failed", error);
-      return NextResponse.json({
+      userId = users.docs[0].id;
+    } catch (error) {
+      console.error("Firestore user lookup failed", error);
+      return NextResponse.json(
+        {
           ok: false,
           message:
-            "The password reset service is not connected to Firebase correctly yet.",
+            "The password reset service is not connected to Breedr records correctly yet.",
         },
         { status: 500 },
       );
@@ -54,7 +66,7 @@ export async function POST(request: NextRequest) {
 
     await resetRef.set({
       email,
-      uid: user.uid,
+      uid: userId,
       codeHash: hashOtp(resetRef.id, code),
       attempts: 0,
       consumed: false,
