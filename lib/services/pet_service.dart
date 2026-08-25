@@ -12,9 +12,46 @@ class PetService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final CloudinaryService _cloudinary = CloudinaryService();
 
-  Future<PetPublishResult> publishPet(
-    PetListingData pet,
-  ) async {
+  Future<void> relistReturnedPetForAdoption(String petId) async {
+    final user = UserSessionService.instance.currentUser;
+    if (user == null) {
+      throw Exception('You must be logged in to publish a pet');
+    }
+    final petRef = _firestore.collection('pets').doc(petId);
+    final listingCycleId = DateTime.now().microsecondsSinceEpoch.toString();
+    await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(petRef);
+      final data = snapshot.data();
+      if (data == null) {
+        throw Exception('This pet profile could not be found.');
+      }
+      if (data['ownerId'] != user.uid) {
+        throw Exception('Only the pet owner can publish this profile.');
+      }
+      if (data['status'] != 'unpublished' ||
+          data['adoptionStatus'] != 'returned') {
+        throw Exception('This returned pet is not ready to be relisted.');
+      }
+      transaction.update(petRef, {
+        'purpose': 'adoption',
+        'normalizedPurpose': 'adoption',
+        'status': 'published',
+        'adoptionStatus': 'active',
+        'listingCycleId': listingCycleId,
+        'isActive': true,
+        'reservedFor': FieldValue.delete(),
+        'approvedRequestId': FieldValue.delete(),
+        'adoptionRequestId': FieldValue.delete(),
+        'adoptionConversationId': FieldValue.delete(),
+        'adoptedBy': FieldValue.delete(),
+        'adoptedAt': FieldValue.delete(),
+        'relistedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    });
+  }
+
+  Future<PetPublishResult> publishPet(PetListingData pet) async {
     final user = UserSessionService.instance.currentUser;
 
     if (user == null) {
@@ -114,7 +151,8 @@ class PetService {
 
       if (_isTerminalPetStatus(status)) continue;
 
-      final isDuplicate = existingName == normalizedName &&
+      final isDuplicate =
+          existingName == normalizedName &&
           existingSpecies == normalizedSpecies &&
           existingPurpose == purpose;
 

@@ -25,7 +25,9 @@ class BreedingMatchService {
         .snapshots()
         .map(
           (snapshot) => snapshot.docs
-              .map((document) => document.data()['targetPetId'] as String? ?? '')
+              .map(
+                (document) => document.data()['targetPetId'] as String? ?? '',
+              )
               .where((id) => id.isNotEmpty)
               .toSet(),
         );
@@ -42,21 +44,28 @@ class BreedingMatchService {
     required String targetOwnerId,
     required bool liked,
   }) async {
-    final swipeReference =
-        _firestore.collection('swipes').doc(swipeId(swiperPetId, targetPetId));
-    final reverseReference =
-        _firestore.collection('swipes').doc(swipeId(targetPetId, swiperPetId));
+    final swipeReference = _firestore
+        .collection('swipes')
+        .doc(swipeId(swiperPetId, targetPetId));
+    final reverseReference = _firestore
+        .collection('swipes')
+        .doc(swipeId(targetPetId, swiperPetId));
     final resolvedMatchId = matchId(swiperPetId, targetPetId);
-    final matchReference =
-        _firestore.collection('matches').doc(resolvedMatchId);
-    final conversationReference =
-        _firestore.collection('conversations').doc(resolvedMatchId);
-    final likeNotificationReference =
-        _firestore.collection('notifications').doc();
-    final swiperMatchNotificationReference =
-        _firestore.collection('notifications').doc();
-    final targetMatchNotificationReference =
-        _firestore.collection('notifications').doc();
+    final matchReference = _firestore
+        .collection('matches')
+        .doc(resolvedMatchId);
+    final conversationReference = _firestore
+        .collection('conversations')
+        .doc(resolvedMatchId);
+    final likeNotificationReference = _firestore
+        .collection('notifications')
+        .doc();
+    final swiperMatchNotificationReference = _firestore
+        .collection('notifications')
+        .doc();
+    final targetMatchNotificationReference = _firestore
+        .collection('notifications')
+        .doc();
 
     var matched = false;
 
@@ -72,22 +81,18 @@ class BreedingMatchService {
       final reverseData = reverseSwipe?.data();
       final reverseLiked = reverseData?['action'] == 'like';
 
-      transaction.set(
-        swipeReference,
-        {
-          'swiperPetId': swiperPetId,
-          'swiperPetName': swiperPetName,
-          'swiperOwnerId': swiperOwnerId,
-          'targetPetId': targetPetId,
-          'targetPetName': targetPetName,
-          'targetOwnerId': targetOwnerId,
-          'purpose': 'breeding',
-          'action': liked ? 'like' : 'dislike',
-          'createdAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
+      transaction.set(swipeReference, {
+        'swiperPetId': swiperPetId,
+        'swiperPetName': swiperPetName,
+        'swiperOwnerId': swiperOwnerId,
+        'targetPetId': targetPetId,
+        'targetPetName': targetPetName,
+        'targetOwnerId': targetOwnerId,
+        'purpose': 'breeding',
+        'action': liked ? 'like' : 'dislike',
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
 
       if (!liked) return;
 
@@ -111,69 +116,40 @@ class BreedingMatchService {
       final petIds = [swiperPetId, targetPetId]..sort();
       final ownerIds = [swiperOwnerId, targetOwnerId];
 
-      transaction.set(
-        matchReference,
-        {
-          'matchId': resolvedMatchId,
-          'purpose': 'breeding',
-          'petIds': petIds,
-          'ownerIds': ownerIds,
-          'petOwners': {
-            swiperPetId: swiperOwnerId,
-            targetPetId: targetOwnerId,
-          },
-          'petNames': {
-            swiperPetId: swiperPetName,
-            targetPetId: targetPetName,
-          },
-          'petPhotos': {
-            swiperPetId: swiperPetPhoto,
-            targetPetId: targetPetPhoto,
-          },
-          'status': 'active',
-          'completionConfirmations': <String, bool>{},
-          'removalDecisions': <String, bool>{},
-          'createdAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
+      transaction.set(matchReference, {
+        'matchId': resolvedMatchId,
+        'purpose': 'breeding',
+        'petIds': petIds,
+        'ownerIds': ownerIds,
+        'petOwners': {swiperPetId: swiperOwnerId, targetPetId: targetOwnerId},
+        'petNames': {swiperPetId: swiperPetName, targetPetId: targetPetName},
+        'petPhotos': {swiperPetId: swiperPetPhoto, targetPetId: targetPetPhoto},
+        'status': 'active',
+        'completionConfirmations': <String, bool>{},
+        'removalDecisions': <String, bool>{},
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
 
-      transaction.set(
-        conversationReference,
-        {
-          'conversationId': resolvedMatchId,
-          'matchId': resolvedMatchId,
-          'purpose': 'breeding',
-          'participantIds': ownerIds,
-          'petIds': petIds,
-          'petOwners': {
-            swiperPetId: swiperOwnerId,
-            targetPetId: targetOwnerId,
-          },
-          'petNames': {
-            swiperPetId: swiperPetName,
-            targetPetId: targetPetName,
-          },
-          'petPhotos': {
-            swiperPetId: swiperPetPhoto,
-            targetPetId: targetPetPhoto,
-          },
-          'status': 'active',
-          'isArchived': false,
-          'canSendMessages': true,
-          'lastMessage': '',
-          'lastMessageAt': null,
-          'unreadCounts': {
-            swiperOwnerId: 0,
-            targetOwnerId: 0,
-          },
-          'lastReadAt': <String, dynamic>{},
-          'createdAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
+      transaction.set(conversationReference, {
+        'conversationId': resolvedMatchId,
+        'matchId': resolvedMatchId,
+        'purpose': 'breeding',
+        'participantIds': ownerIds,
+        'petIds': petIds,
+        'petOwners': {swiperPetId: swiperOwnerId, targetPetId: targetOwnerId},
+        'petNames': {swiperPetId: swiperPetName, targetPetId: targetPetName},
+        'petPhotos': {swiperPetId: swiperPetPhoto, targetPetId: targetPetPhoto},
+        'status': 'active',
+        'isArchived': false,
+        'canSendMessages': true,
+        'lastMessage': '',
+        'lastMessageAt': null,
+        'unreadCounts': {swiperOwnerId: 0, targetOwnerId: 0},
+        'lastReadAt': <String, dynamic>{},
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
       transaction.set(swiperMatchNotificationReference, {
         'notificationId': swiperMatchNotificationReference.id,
         'recipientId': swiperOwnerId,
@@ -206,7 +182,9 @@ class BreedingMatchService {
     );
   }
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> watchConversations(String userId) {
+  Stream<QuerySnapshot<Map<String, dynamic>>> watchConversations(
+    String userId,
+  ) {
     return _firestore
         .collection('conversations')
         .where('participantIds', arrayContains: userId)
@@ -254,15 +232,12 @@ class BreedingMatchService {
     final trimmed = text.trim();
     if (user == null || trimmed.isEmpty) return;
 
-    final conversation =
-        _firestore.collection('conversations').doc(matchId);
-    final match = _firestore.collection('matches').doc(matchId);
+    final conversation = _firestore.collection('conversations').doc(matchId);
     final message = conversation.collection('messages').doc();
     final notification = _firestore.collection('notifications').doc();
 
     await _firestore.runTransaction((transaction) async {
       final snapshot = await transaction.get(conversation);
-      final matchSnapshot = await transaction.get(match);
       final data = snapshot.data();
       if (data == null) throw StateError('Conversation not found.');
 
@@ -271,24 +246,39 @@ class BreedingMatchService {
       if (!participantIds.contains(user.uid)) {
         throw StateError('You are not part of this conversation.');
       }
-      if (data['status'] == 'unmatched' ||
-          data['isArchived'] == true ||
-          data['canSendMessages'] == false) {
+      final purpose = data['purpose'] as String? ?? 'breeding';
+      final adoptionProcess = Map<String, dynamic>.from(
+        data['adoptionProcess'] as Map? ?? const {},
+      );
+      final isCompletedAdoption =
+          purpose == 'adoption' && data['status'] == 'completed';
+      if (data['status'] == 'unmatched' || data['isArchived'] == true) {
         throw StateError('This conversation is no longer available.');
       }
-      final matchData = matchSnapshot.data();
-      final reviewReleaseAt = matchData?['reviewReleaseAt'] as Timestamp?;
-      if (matchData?['status'] == 'completed' &&
-          reviewReleaseAt != null &&
-          !DateTime.now().toUtc().isBefore(reviewReleaseAt.toDate())) {
+      if (purpose == 'adoption' &&
+          adoptionProcess['status'] == 'contract_pending') {
         throw StateError(
-          'This completed conversation is now read-only.',
+          'Chat unlocks once both parties sign the adoption contract.',
         );
       }
+      if (data['canSendMessages'] == false && !isCompletedAdoption) {
+        throw StateError('This conversation is no longer available.');
+      }
+      if (purpose != 'adoption') {
+        final match = _firestore.collection('matches').doc(matchId);
+        final matchSnapshot = await transaction.get(match);
+        final matchData = matchSnapshot.data();
+        final reviewReleaseAt = matchData?['reviewReleaseAt'] as Timestamp?;
+        if (matchData?['status'] == 'completed' &&
+            reviewReleaseAt != null &&
+            !DateTime.now().toUtc().isBefore(reviewReleaseAt.toDate())) {
+          throw StateError('This completed conversation is now read-only.');
+        }
+      }
 
-      final recipientId =
-          participantIds.firstWhere((participantId) => participantId != user.uid);
-      final purpose = data['purpose'] as String? ?? 'breeding';
+      final recipientId = participantIds.firstWhere(
+        (participantId) => participantId != user.uid,
+      );
       final unreadCounts = Map<String, dynamic>.from(
         data['unreadCounts'] as Map? ?? const <String, dynamic>{},
       );
@@ -319,17 +309,14 @@ class BreedingMatchService {
         'isRead': false,
         'createdAt': FieldValue.serverTimestamp(),
       });
-      transaction.update(
-        conversation,
-        <String, dynamic>{
-          'lastMessage': trimmed,
-          'lastMessageSenderId': user.uid,
-          'lastMessageAt': FieldValue.serverTimestamp(),
-          'unreadCounts': unreadCounts,
-          'lastReadAt': lastReadAt,
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-      );
+      transaction.update(conversation, <String, dynamic>{
+        'lastMessage': trimmed,
+        'lastMessageSenderId': user.uid,
+        'lastMessageAt': FieldValue.serverTimestamp(),
+        'unreadCounts': unreadCounts,
+        'lastReadAt': lastReadAt,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
     });
   }
 
@@ -337,8 +324,7 @@ class BreedingMatchService {
     final user = UserSessionService.instance.currentUser;
     if (user == null) return;
 
-    final conversation =
-        _firestore.collection('conversations').doc(matchId);
+    final conversation = _firestore.collection('conversations').doc(matchId);
     await _firestore.runTransaction((transaction) async {
       final snapshot = await transaction.get(conversation);
       final data = snapshot.data();
@@ -358,13 +344,10 @@ class BreedingMatchService {
       );
       lastReadAt[user.uid] = FieldValue.serverTimestamp();
 
-      transaction.update(
-        conversation,
-        <String, dynamic>{
-          'unreadCounts': unreadCounts,
-          'lastReadAt': lastReadAt,
-        },
-      );
+      transaction.update(conversation, <String, dynamic>{
+        'unreadCounts': unreadCounts,
+        'lastReadAt': lastReadAt,
+      });
     });
   }
 
@@ -373,13 +356,13 @@ class BreedingMatchService {
     if (user == null) throw StateError('User is not signed in.');
 
     final matchReference = _firestore.collection('matches').doc(matchId);
-    final conversationReference =
-        _firestore.collection('conversations').doc(matchId);
+    final conversationReference = _firestore
+        .collection('conversations')
+        .doc(matchId);
 
     await _firestore.runTransaction((transaction) async {
       final matchSnapshot = await transaction.get(matchReference);
-      final conversationSnapshot =
-          await transaction.get(conversationReference);
+      final conversationSnapshot = await transaction.get(conversationReference);
       final matchData = matchSnapshot.data();
       final conversationData = conversationSnapshot.data();
 
@@ -413,8 +396,9 @@ class BreedingMatchService {
       );
       final firstPetName = (petNames[petIds[0]] ?? 'Pet').toString();
       final secondPetName = (petNames[petIds[1]] ?? 'Pet').toString();
-      final notificationReference =
-          _firestore.collection('notifications').doc();
+      final notificationReference = _firestore
+          .collection('notifications')
+          .doc();
 
       transaction.update(matchReference, {
         'status': 'unmatched',
@@ -471,8 +455,9 @@ class BreedingMatchService {
     if (user == null) throw StateError('User is not signed in.');
 
     final reference = _firestore.collection('matches').doc(matchId);
-    final conversationReference =
-        _firestore.collection('conversations').doc(matchId);
+    final conversationReference = _firestore
+        .collection('conversations')
+        .doc(matchId);
 
     await _firestore.runTransaction((transaction) async {
       final snapshot = await transaction.get(reference);
@@ -501,7 +486,8 @@ class BreedingMatchService {
       final completed = ownerIds.every((id) => confirmations[id] == true);
       final now = DateTime.now().toUtc();
       final requestedAt =
-          data['completionRequestedAt'] as Timestamp? ?? Timestamp.fromDate(now);
+          data['completionRequestedAt'] as Timestamp? ??
+          Timestamp.fromDate(now);
       final completionSnapshots = completed
           ? await _buildCompletionSnapshots(transaction, data)
           : const <String, dynamic>{};
@@ -509,33 +495,32 @@ class BreedingMatchService {
       transaction.update(reference, {
         'completionConfirmations': confirmations,
         'status': completed ? 'completed' : 'completion_pending',
-        'completionRequestedBy':
-            data['completionRequestedBy'] ?? user.uid,
+        'completionRequestedBy': data['completionRequestedBy'] ?? user.uid,
         'completionRequestedAt': requestedAt,
-        'confirmationDeadline': data['confirmationDeadline'] ??
+        'confirmationDeadline':
+            data['confirmationDeadline'] ??
             Timestamp.fromDate(now.add(const Duration(hours: 24))),
-        'autoCompleteAt': data['autoCompleteAt'] ??
+        'autoCompleteAt':
+            data['autoCompleteAt'] ??
             Timestamp.fromDate(now.add(const Duration(hours: 48))),
         if (completed) ...{
           'completedAt': Timestamp.fromDate(now),
           'completionType': 'confirmed',
-          'reviewReleaseAt':
-              Timestamp.fromDate(now.add(const Duration(days: 7))),
+          'reviewReleaseAt': Timestamp.fromDate(
+            now.add(const Duration(days: 7)),
+          ),
         },
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
       if (completed) {
-        transaction.set(
-          conversationReference,
-          {
-            'status': 'completed',
-            'reviewReleaseAt':
-                Timestamp.fromDate(now.add(const Duration(days: 7))),
-            'updatedAt': FieldValue.serverTimestamp(),
-          },
-          SetOptions(merge: true),
-        );
+        transaction.set(conversationReference, {
+          'status': 'completed',
+          'reviewReleaseAt': Timestamp.fromDate(
+            now.add(const Duration(days: 7)),
+          ),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
         transaction.set(
           _firestore.collection('breedingTransactions').doc(matchId),
           _transactionSnapshot(
@@ -584,8 +569,9 @@ class BreedingMatchService {
     if (user == null) return;
 
     final matchReference = _firestore.collection('matches').doc(matchId);
-    final conversationReference =
-        _firestore.collection('conversations').doc(matchId);
+    final conversationReference = _firestore
+        .collection('conversations')
+        .doc(matchId);
 
     await _firestore.runTransaction((transaction) async {
       final snapshot = await transaction.get(matchReference);
@@ -605,14 +591,15 @@ class BreedingMatchService {
       final confirmations = Map<String, dynamic>.from(
         data['completionConfirmations'] as Map? ?? const {},
       );
-      final completionSnapshots =
-          await _buildCompletionSnapshots(transaction, data);
+      final completionSnapshots = await _buildCompletionSnapshots(
+        transaction,
+        data,
+      );
       transaction.update(matchReference, {
         'status': 'completed',
         'completedAt': Timestamp.fromDate(now),
         'completionType': 'auto_completed',
-        'reviewReleaseAt':
-            Timestamp.fromDate(now.add(const Duration(days: 7))),
+        'reviewReleaseAt': Timestamp.fromDate(now.add(const Duration(days: 7))),
         'updatedAt': FieldValue.serverTimestamp(),
       });
       transaction.set(
@@ -626,16 +613,11 @@ class BreedingMatchService {
           completionSnapshots: completionSnapshots,
         ),
       );
-      transaction.set(
-        conversationReference,
-        {
-          'status': 'completed',
-          'reviewReleaseAt':
-              Timestamp.fromDate(now.add(const Duration(days: 7))),
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
+      transaction.set(conversationReference, {
+        'status': 'completed',
+        'reviewReleaseAt': Timestamp.fromDate(now.add(const Duration(days: 7))),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
 
       for (final ownerId in ownerIds) {
         final notification = _firestore.collection('notifications').doc();
@@ -688,7 +670,8 @@ class BreedingMatchService {
       }
 
       final deadline = data['confirmationDeadline'] as Timestamp?;
-      if (deadline == null || DateTime.now().toUtc().isBefore(deadline.toDate())) {
+      if (deadline == null ||
+          DateTime.now().toUtc().isBefore(deadline.toDate())) {
         throw StateError('The reminder becomes available after 24 hours.');
       }
 
@@ -742,8 +725,9 @@ class BreedingMatchService {
     }
 
     final matchReference = _firestore.collection('matches').doc(matchId);
-    final reviewReference =
-        _firestore.collection('reviews').doc('${matchId}_${user.uid}');
+    final reviewReference = _firestore
+        .collection('reviews')
+        .doc('${matchId}_${user.uid}');
 
     await _firestore.runTransaction((transaction) async {
       final matchSnapshot = await transaction.get(matchReference);
@@ -767,10 +751,12 @@ class BreedingMatchService {
       }
 
       final reviewedUserId = ownerIds.firstWhere((id) => id != user.uid);
-      final otherReviewReference =
-          _firestore.collection('reviews').doc('${matchId}_$reviewedUserId');
+      final otherReviewReference = _firestore
+          .collection('reviews')
+          .doc('${matchId}_$reviewedUserId');
       final completedAt =
-          (data['completedAt'] as Timestamp?)?.toDate() ?? DateTime.now().toUtc();
+          (data['completedAt'] as Timestamp?)?.toDate() ??
+          DateTime.now().toUtc();
       final bothSubmitted = reviewsSubmitted[reviewedUserId] == true;
 
       transaction.set(reviewReference, {
@@ -789,8 +775,9 @@ class BreedingMatchService {
         'photoUrls': photoUrls,
         'isPublished': bothSubmitted,
         'completedAt': Timestamp.fromDate(completedAt),
-        'visibleAfter':
-            Timestamp.fromDate(completedAt.add(const Duration(days: 7))),
+        'visibleAfter': Timestamp.fromDate(
+          completedAt.add(const Duration(days: 7)),
+        ),
         'createdAt': FieldValue.serverTimestamp(),
       });
       transaction.update(matchReference, {
@@ -875,8 +862,9 @@ class BreedingMatchService {
       'completionRequestedAt': matchData['completionRequestedAt'],
       'completedAt': Timestamp.fromDate(completedAt),
       'completionType': completionType,
-      'reviewReleaseAt':
-          Timestamp.fromDate(completedAt.add(const Duration(days: 7))),
+      'reviewReleaseAt': Timestamp.fromDate(
+        completedAt.add(const Duration(days: 7)),
+      ),
       'createdAt': FieldValue.serverTimestamp(),
     };
   }
@@ -922,10 +910,7 @@ class BreedingMatchService {
       };
     }
 
-    return {
-      'ownerSnapshots': ownerSnapshots,
-      'petSnapshots': petSnapshots,
-    };
+    return {'ownerSnapshots': ownerSnapshots, 'petSnapshots': petSnapshots};
   }
 
   Future<void> decideOwnPetRemoval({
@@ -970,15 +955,12 @@ class BreedingMatchService {
       });
 
       if (removeFromListings) {
-        transaction.update(
-          _firestore.collection('pets').doc(ownPetId),
-          {
-            'status': 'matched',
-            'isActive': false,
-            'matchId': matchId,
-            'updatedAt': FieldValue.serverTimestamp(),
-          },
-        );
+        transaction.update(_firestore.collection('pets').doc(ownPetId), {
+          'status': 'matched',
+          'isActive': false,
+          'matchId': matchId,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
       }
     });
   }
@@ -988,8 +970,5 @@ class SwipeResult {
   final bool matched;
   final String? matchId;
 
-  const SwipeResult({
-    required this.matched,
-    this.matchId,
-  });
+  const SwipeResult({required this.matched, this.matchId});
 }

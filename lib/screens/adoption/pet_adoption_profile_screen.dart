@@ -1,10 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/adoption_models.dart';
 import '../../services/adoption_service.dart';
+import '../../services/cloudinary_service.dart';
 import '../../services/user_session_service.dart';
 import '../../theme/app_colors.dart';
+import '../../utils/evidence_picker_helper.dart';
 import '../../widgets/breedr_network_image.dart';
 import 'adoption_application_screen.dart';
 import 'owner_profile_screen.dart';
@@ -12,10 +15,7 @@ import 'owner_profile_screen.dart';
 class PetAdoptionProfileScreen extends StatefulWidget {
   final String listingId;
 
-  const PetAdoptionProfileScreen({
-    super.key,
-    required this.listingId,
-  });
+  const PetAdoptionProfileScreen({super.key, required this.listingId});
 
   @override
   State<PetAdoptionProfileScreen> createState() =>
@@ -23,7 +23,9 @@ class PetAdoptionProfileScreen extends StatefulWidget {
 }
 
 class _PetAdoptionProfileScreenState extends State<PetAdoptionProfileScreen> {
-  final PageController _photoController = PageController(viewportFraction: 0.72);
+  final PageController _photoController = PageController(
+    viewportFraction: 0.72,
+  );
   final ScrollController _scrollController = ScrollController();
   final ValueNotifier<int> _photoIndex = ValueNotifier<int>(0);
   bool _validating = false;
@@ -31,11 +33,11 @@ class _PetAdoptionProfileScreenState extends State<PetAdoptionProfileScreen> {
   @override
   void initState() {
     super.initState();
-    AdoptionService.instance.recordListingView(widget.listingId).catchError(
-      (Object error) {
-        debugPrint('Adoption listing view could not be recorded: $error');
-      },
-    );
+    AdoptionService.instance.recordListingView(widget.listingId).catchError((
+      Object error,
+    ) {
+      debugPrint('Adoption listing view could not be recorded: $error');
+    });
   }
 
   @override
@@ -102,9 +104,31 @@ class _PetAdoptionProfileScreenState extends State<PetAdoptionProfileScreen> {
         slivers: [
           SliverAppBar(
             pinned: true,
-            expandedHeight: 265,
+            expandedHeight: 300,
             backgroundColor: const Color(0xFFFFF7FA),
             foregroundColor: AppColors.primary,
+            actions: [
+              if (!isOwnListing)
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert),
+                  onSelected: (value) {
+                    if (value == 'report') _showReportListingSheet(listing);
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(
+                      value: 'report',
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.flag, color: Color(0xFFE93535), size: 18),
+                          SizedBox(width: 8),
+                          Text('Report this Listing'),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+            ],
             flexibleSpace: FlexibleSpaceBar(
               background: Stack(
                 fit: StackFit.expand,
@@ -124,19 +148,10 @@ class _PetAdoptionProfileScreenState extends State<PetAdoptionProfileScreen> {
                   ),
                   if (listing.isForSale)
                     Positioned(
-                      top: 58,
+                      top: 86,
                       right: 16,
                       child: _PriceBadge(price: listing.price ?? 0),
                     ),
-                  Positioned(
-                    top: listing.isForSale ? 102 : 58,
-                    right: 16,
-                    child: _FavoriteButton(
-                      listingId: listing.id,
-                      disabled: isOwnListing,
-                      onError: _showMessage,
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -158,10 +173,7 @@ class _PetAdoptionProfileScreenState extends State<PetAdoptionProfileScreen> {
                           color: const Color(0xFFFFD9E1),
                           border: Border.all(color: Colors.white, width: 4),
                           boxShadow: const [
-                            BoxShadow(
-                              color: Color(0x22000000),
-                              blurRadius: 8,
-                            ),
+                            BoxShadow(color: Color(0x22000000), blurRadius: 8),
                           ],
                         ),
                         clipBehavior: Clip.antiAlias,
@@ -177,6 +189,8 @@ class _PetAdoptionProfileScreenState extends State<PetAdoptionProfileScreen> {
                           children: [
                             Text(
                               listing.name,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 color: AppColors.primary,
                                 fontSize: 28,
@@ -223,6 +237,17 @@ class _PetAdoptionProfileScreenState extends State<PetAdoptionProfileScreen> {
                           ],
                         ),
                       ),
+                      if (!isOwnListing) ...[
+                        const SizedBox(width: 10),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 14),
+                          child: _FavoriteButton(
+                            listingId: listing.id,
+                            disabled: false,
+                            onError: _showMessage,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 14),
@@ -368,7 +393,10 @@ class _PetAdoptionProfileScreenState extends State<PetAdoptionProfileScreen> {
           child: StreamBuilder<AdoptionRequest?>(
             stream: isOwnListing
                 ? Stream.value(null)
-                : AdoptionService.instance.watchMyRequestForListing(listing.id),
+                : AdoptionService.instance.watchMyRequestForListing(
+                    listing.id,
+                    listingCycleId: listing.listingCycleId,
+                  ),
             builder: (context, requestSnapshot) {
               return _AdoptionActionButton(
                 listing: listing,
@@ -388,8 +416,8 @@ class _PetAdoptionProfileScreenState extends State<PetAdoptionProfileScreen> {
     if (_validating) return;
     setState(() => _validating = true);
     try {
-      final eligibility =
-          await AdoptionService.instance.validateListingForRequest(listing.id);
+      final eligibility = await AdoptionService.instance
+          .validateListingForRequest(listing.id);
       if (!mounted) return;
       if (!eligibility.allowed || eligibility.listing == null) {
         _showMessage(
@@ -420,8 +448,458 @@ class _PetAdoptionProfileScreenState extends State<PetAdoptionProfileScreen> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _showReportListingSheet(AdoptionListing listing) async {
+    final submitted = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ReportListingSheet(listing: listing),
+    );
+    if (submitted == true && mounted) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          title: const Text('Report Submitted', textAlign: TextAlign.center),
+          content: const Text(
+            'Thanks for helping keep the community safe. We will review this listing as soon as possible.',
+            textAlign: TextAlign.center,
+          ),
+          actionsAlignment: MainAxisAlignment.center,
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(context),
+              style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+}
+
+class _ReportListingSheet extends StatefulWidget {
+  final AdoptionListing listing;
+
+  const _ReportListingSheet({required this.listing});
+
+  @override
+  State<_ReportListingSheet> createState() => _ReportListingSheetState();
+}
+
+class _ReportListingSheetState extends State<_ReportListingSheet> {
+  final _detailController = TextEditingController();
+  final _evidenceFiles = <SelectedEvidenceFile>[];
+  String _reason = 'Fake or misleading listing';
+  String? _errorMessage;
+  bool _submitting = false;
+
+  static const _reasons = [
+    (
+      'Fake or misleading listing',
+      'Photos or details do not match the actual pet',
+    ),
+    (
+      'Suspected animal abuse or neglect',
+      'Signs of harm or poor living conditions',
+    ),
+    (
+      'Scam or fraudulent activity',
+      'Requesting payment outside the app suspiciously',
+    ),
+    (
+      'Inappropriate or offensive content',
+      'Photos or description violate community guidelines',
+    ),
+    (
+      'Prohibited breed or illegal sale',
+      'Selling restricted or endangered species',
+    ),
+    ('Other', 'Describe the issue in your own words'),
+  ];
+
+  @override
+  void dispose() {
+    _detailController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickEvidence() async {
+    final remainingSlots = 3 - _evidenceFiles.length;
+    if (remainingSlots <= 0) {
+      _showError('You can attach up to 3 evidence files only.');
+      return;
+    }
+
+    final picked = await FilePicker.platform.pickFiles(
+      allowMultiple: true,
+      type: FileType.custom,
+      allowedExtensions: const [
+        'jpg',
+        'jpeg',
+        'png',
+        'webp',
+        'mp4',
+        'mov',
+        'm4v',
+      ],
+    );
+    if (picked == null || !mounted) return;
+
+    final selected = <SelectedEvidenceFile>[];
+    final existingPaths = _evidenceFiles
+        .map((evidence) => evidence.file.path)
+        .toSet();
+    final existingFingerprints = _evidenceFiles
+        .map(
+          (evidence) =>
+              '${evidence.fileName.toLowerCase()}::${evidence.sizeBytes}',
+        )
+        .toSet();
+    var invalidTypeCount = 0;
+    var oversizedCount = 0;
+    var duplicateCount = 0;
+    var overLimitCount = 0;
+    for (final file in picked.files) {
+      if (selected.length >= remainingSlots) {
+        overLimitCount++;
+        continue;
+      }
+      final path = file.path;
+      if (path == null) {
+        invalidTypeCount++;
+        continue;
+      }
+      final fingerprint = '${file.name.toLowerCase()}::${file.size}';
+      if (existingPaths.contains(path) ||
+          existingFingerprints.contains(fingerprint)) {
+        duplicateCount++;
+        continue;
+      }
+      final evidence = SelectedEvidenceFile.fromPath(
+        path,
+        fileName: file.name,
+        sizeBytes: file.size,
+      );
+      if (evidence == null) {
+        invalidTypeCount++;
+        continue;
+      }
+      if (!evidence.isValidSize) {
+        oversizedCount++;
+        continue;
+      }
+      selected.add(evidence);
+      existingPaths.add(path);
+      existingFingerprints.add(fingerprint);
+    }
+    if (selected.isNotEmpty) {
+      setState(() {
+        _errorMessage = null;
+        _evidenceFiles.addAll(selected);
+      });
+    }
+    final warnings = <String>[
+      if (duplicateCount > 0)
+        'Duplicate files are not allowed. A selected evidence file was skipped.',
+      if (overLimitCount > 0)
+        'Only $remainingSlots more file(s) could be added because reports are limited to 3 files.',
+      if (invalidTypeCount > 0)
+        'Some files were skipped because only JPG, PNG, WEBP, MP4, MOV, and M4V are accepted.',
+      if (oversizedCount > 0)
+        'Some files were skipped because each evidence file must be 50 MB or less.',
+    ];
+    if (warnings.isNotEmpty) {
+      _showError(warnings.join(' '));
+    }
+  }
+
+  Future<void> _submit() async {
+    setState(() {
+      _errorMessage = null;
+      _submitting = true;
+    });
+    try {
+      final evidence = <AdoptionEvidenceFile>[];
+      for (final file in _evidenceFiles) {
+        final url = await CloudinaryService().uploadEvidenceOrThrow(file.file);
+        evidence.add(
+          AdoptionEvidenceFile(
+            url: url,
+            fileName: file.fileName,
+            fileType: file.fileType,
+            mimeType: file.mimeType,
+            sizeBytes: file.sizeBytes,
+          ),
+        );
+      }
+      await AdoptionService.instance.reportPetListing(
+        listing: widget.listing,
+        reason: _reason,
+        detail: _detailController.text,
+        evidenceFiles: evidence,
+      );
+      if (mounted) Navigator.pop(context, true);
+    } on CloudinaryUploadException catch (error) {
+      if (mounted) _showError(error.message);
+    } on AdoptionServiceException catch (error) {
+      if (mounted) _showError(error.message);
+    } on FirebaseException catch (error) {
+      if (mounted) _showError(_firebaseMessage(error));
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    setState(() => _errorMessage = message);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(18, 0, 18, bottom + 18),
+        child: Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(26),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 14, 24, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 54,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD7D7D7),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    const Icon(Icons.flag, color: Color(0xFFE93535), size: 28),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        'Report this Pet Listing',
+                        style: TextStyle(
+                          color: AppColors.primary,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Close report',
+                      onPressed: _submitting
+                          ? null
+                          : () => Navigator.pop(context, false),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Help us keep Breedr safe. Select the reason that best describes the issue with this listing.',
+                  style: TextStyle(color: Color(0xFF777777), fontSize: 12),
+                ),
+                const Divider(height: 28),
+                ..._reasons.map(
+                  (reason) => RadioListTile<String>(
+                    value: reason.$1,
+                    groupValue: _reason,
+                    activeColor: AppColors.primary,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      reason.$1,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    subtitle: Text(
+                      reason.$2,
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                    onChanged: _submitting
+                        ? null
+                        : (value) => setState(() => _reason = value ?? _reason),
+                  ),
+                ),
+                const Divider(height: 24),
+                const Text(
+                  'ADDITIONAL DETAIL',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _detailController,
+                  minLines: 3,
+                  maxLines: 5,
+                  decoration: InputDecoration(
+                    hintText:
+                        'Describe what you noticed. The more detail you provide, the faster we can act.',
+                    filled: true,
+                    fillColor: const Color(0xFFFFF7FA),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFFFB5C1)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: _submitting ? null : _pickEvidence,
+                  icon: const Icon(Icons.attach_file),
+                  label: Text(
+                    _evidenceFiles.isEmpty
+                        ? 'Attach Evidence (optional)'
+                        : '${_evidenceFiles.length}/3 file(s) attached',
+                  ),
+                ),
+                if (_errorMessage != null) ...[
+                  const SizedBox(height: 10),
+                  _ReportInlineMessage(message: _errorMessage!),
+                ],
+                if (_evidenceFiles.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  ..._evidenceFiles.asMap().entries.map((entry) {
+                    final file = entry.value;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Row(
+                        children: [
+                          Icon(file.icon, color: AppColors.primary, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              file.fileName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Remove evidence',
+                            visualDensity: VisualDensity.compact,
+                            onPressed: _submitting
+                                ? null
+                                : () => setState(
+                                    () => _evidenceFiles.removeAt(entry.key),
+                                  ),
+                            icon: const Icon(Icons.close, size: 18),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+                const SizedBox(height: 6),
+                const Text(
+                  'Up to 3 files. JPG, PNG, WEBP, MP4, MOV, or M4V. Max 50 MB each.',
+                  style: TextStyle(color: Color(0xFF777777), fontSize: 11),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFE8EE),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(
+                        Icons.lock_outline,
+                        size: 16,
+                        color: AppColors.primary,
+                      ),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Your report is anonymous. The listing owner will not know who reported them.',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF777777),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                FilledButton(
+                  onPressed: _submitting ? null : _submit,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    minimumSize: const Size.fromHeight(50),
+                  ),
+                  child: Text(_submitting ? 'Submitting...' : 'Submit Report'),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton(
+                  onPressed: _submitting
+                      ? null
+                      : () => Navigator.pop(context, false),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    side: const BorderSide(color: AppColors.primary),
+                    minimumSize: const Size.fromHeight(48),
+                  ),
+                  child: const Text('Cancel Report'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReportInlineMessage extends StatelessWidget {
+  final String message;
+
+  const _ReportInlineMessage({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFE8EE),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFFFA9B9)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info_outline, color: AppColors.primary, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                color: Color(0xFF7A4D57),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -514,9 +992,7 @@ class _AdoptConfirmationDialog extends StatelessWidget {
           onPressed: () => Navigator.pop(context, true),
           style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
           child: Text(
-            listing.questions.isEmpty
-                ? 'Continue'
-                : 'Continue to Questions',
+            listing.questions.isEmpty ? 'Continue' : 'Continue to Questions',
           ),
         ),
       ],
@@ -636,19 +1112,13 @@ class _HealthRecordRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(
-            Icons.description_outlined,
-            color: Color(0xFF3189F5),
-          ),
+          const Icon(Icons.description_outlined, color: Color(0xFF3189F5)),
           const SizedBox(width: 9),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  type,
-                  style: const TextStyle(fontWeight: FontWeight.w900),
-                ),
+                Text(type, style: const TextStyle(fontWeight: FontWeight.w900)),
                 Text(
                   fileName,
                   maxLines: 1,
@@ -767,9 +1237,9 @@ class _PhotoCarousel extends StatelessWidget {
                 onPressed: index == 0
                     ? null
                     : () => controller.previousPage(
-                          duration: const Duration(milliseconds: 250),
-                          curve: Curves.easeOut,
-                        ),
+                        duration: const Duration(milliseconds: 250),
+                        curve: Curves.easeOut,
+                      ),
                 icon: const Icon(Icons.chevron_left),
               ),
               Expanded(
@@ -797,9 +1267,9 @@ class _PhotoCarousel extends StatelessWidget {
                 onPressed: index >= images.length - 1
                     ? null
                     : () => controller.nextPage(
-                          duration: const Duration(milliseconds: 250),
-                          curve: Curves.easeOut,
-                        ),
+                        duration: const Duration(milliseconds: 250),
+                        curve: Curves.easeOut,
+                      ),
                 icon: const Icon(Icons.chevron_right),
               ),
             ],
@@ -837,8 +1307,9 @@ class _FavoriteButtonState extends State<_FavoriteButton> {
       _overrideValue = !currentValue;
     });
     try {
-      final saved =
-          await AdoptionService.instance.toggleFavorite(widget.listingId);
+      final saved = await AdoptionService.instance.toggleFavorite(
+        widget.listingId,
+      );
       if (mounted) setState(() => _overrideValue = saved);
     } on AdoptionServiceException catch (error) {
       if (mounted) setState(() => _overrideValue = previous);
@@ -859,8 +1330,7 @@ class _FavoriteButtonState extends State<_FavoriteButton> {
       builder: (context, snapshot) {
         final isFavorite = _overrideValue ?? (snapshot.data == true);
         return Tooltip(
-          message:
-              isFavorite ? 'Remove from Favorites' : 'Save to Favorites',
+          message: isFavorite ? 'Remove from Favorites' : 'Save to Favorites',
           child: Material(
             color: Colors.white.withValues(alpha: 0.95),
             shape: const CircleBorder(),
@@ -950,21 +1420,31 @@ class _InfoGrid extends StatelessWidget {
       children: [
         Row(
           children: [
-            Expanded(child: _InfoCell(label: 'Species', value: listing.species)),
-            Expanded(child: _InfoCell(label: 'Breed', value: listing.breed)),
+            Expanded(
+              child: _InfoCell(label: 'Species', value: listing.species),
+            ),
+            Expanded(
+              child: _InfoCell(label: 'Breed', value: listing.breed),
+            ),
           ],
         ),
         const SizedBox(height: 14),
         Row(
           children: [
-            Expanded(child: _InfoCell(label: 'Age', value: listing.age)),
-            Expanded(child: _InfoCell(label: 'Gender', value: listing.gender)),
+            Expanded(
+              child: _InfoCell(label: 'Age', value: listing.age),
+            ),
+            Expanded(
+              child: _InfoCell(label: 'Gender', value: listing.gender),
+            ),
           ],
         ),
         const SizedBox(height: 14),
         Row(
           children: [
-            Expanded(child: _InfoCell(label: 'Color', value: listing.color)),
+            Expanded(
+              child: _InfoCell(label: 'Color', value: listing.color),
+            ),
             Expanded(
               child: _InfoCell(label: 'Size', value: listing.breedSize),
             ),
@@ -1120,10 +1600,7 @@ class _NetworkPetImage extends StatelessWidget {
   final String url;
   final String species;
 
-  const _NetworkPetImage({
-    required this.url,
-    required this.species,
-  });
+  const _NetworkPetImage({required this.url, required this.species});
 
   @override
   Widget build(BuildContext context) {
@@ -1159,10 +1636,7 @@ class _InlineEmpty extends StatelessWidget {
   final IconData icon;
   final String text;
 
-  const _InlineEmpty({
-    required this.icon,
-    required this.text,
-  });
+  const _InlineEmpty({required this.icon, required this.text});
 
   @override
   Widget build(BuildContext context) {
@@ -1207,19 +1681,13 @@ class _RecordDetail extends StatelessWidget {
             width: 92,
             child: Text(
               label,
-              style: const TextStyle(
-                color: Color(0xFF777777),
-                fontSize: 11,
-              ),
+              style: const TextStyle(color: Color(0xFF777777), fontSize: 11),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
             ),
           ),
         ],

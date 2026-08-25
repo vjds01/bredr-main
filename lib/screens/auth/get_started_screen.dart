@@ -3,6 +3,7 @@ import '../../theme/app_colors.dart';
 import '../../widgets/breedr_logo.dart';
 import 'location_permission_screen.dart';
 import 'login_screen.dart';
+import 'cabuyao_access_gate_screen.dart';
 
 class GetStartedScreen extends StatelessWidget {
   const GetStartedScreen({super.key});
@@ -45,19 +46,25 @@ class GetStartedScreen extends StatelessWidget {
                     onPressed: () => Navigator.push(
                       context,
                       MaterialPageRoute(
-                          builder: (_) => const LocationPermissionScreen()),
+                        builder: (_) => const CabuyaoAccessGate(
+                          child: LocationPermissionScreen(),
+                        ),
+                      ),
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
                       foregroundColor: Colors.white,
                       elevation: 0,
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(30)),
+                        borderRadius: BorderRadius.circular(30),
+                      ),
                     ),
                     child: const Text(
                       'Get Started 🐾',
                       style: TextStyle(
-                          fontWeight: FontWeight.w600, fontSize: 16),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
                     ),
                   ),
                 ),
@@ -69,19 +76,30 @@ class GetStartedScreen extends StatelessWidget {
                   child: OutlinedButton(
                     onPressed: () => Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const LoginScreen()),
+                      MaterialPageRoute(
+                        // The account role is not known until authentication
+                        // completes. Admin accounts must be able to sign in
+                        // outside Cabuyao; regular accounts are gated after
+                        // the role check in LoginScreen.
+                        builder: (_) => const LoginScreen(),
+                      ),
                     ),
                     style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: AppColors.primary, width: 1.5),
+                      side: const BorderSide(
+                        color: AppColors.primary,
+                        width: 1.5,
+                      ),
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(30)),
+                        borderRadius: BorderRadius.circular(30),
+                      ),
                     ),
                     child: const Text(
                       'I already have an account',
                       style: TextStyle(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 15),
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
                     ),
                   ),
                 ),

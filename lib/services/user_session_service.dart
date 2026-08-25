@@ -43,21 +43,47 @@ class UserSessionService {
     return profile?.exists ?? false;
   }
 
+  Future<bool> isCurrentUserAdmin() async {
+    final profile = await getCurrentUserProfile();
+    final role = profile?.data()?['role']?.toString().trim().toLowerCase();
+    return role == 'admin';
+  }
+
   Future<bool> shouldAutoLogin() async {
-    final user = currentUser;
+    final user = currentUser ??
+        await _auth.authStateChanges().first.timeout(
+              const Duration(seconds: 2),
+              onTimeout: () => null,
+            );
 
     if (user == null) {
       return false;
     }
 
-    final hasProfile = await hasBreedrProfile();
+    try {
+      final hasProfile = await hasBreedrProfile();
+      if (!hasProfile) {
+        return false;
+      }
 
-    if (!hasProfile) {
-      await signOut();
-      return false;
+      return true;
+    } catch (error) {
+      // Keep the Firebase Auth session intact during temporary Firestore issues.
+      return true;
+    }
+  }
+
+  Future<bool> hasCurrentSession() async {
+    if (currentUser != null) {
+      return true;
     }
 
-    return true;
+    final user = await _auth.authStateChanges().first.timeout(
+          const Duration(seconds: 2),
+          onTimeout: () => null,
+        );
+
+    return user != null;
   }
 
   Future<UserCredential> signInWithEmail({
@@ -67,32 +93,6 @@ class UserSessionService {
     return _auth.signInWithEmailAndPassword(
       email: email,
       password: password,
-    );
-  }
-
-  Future<void> sendPasswordResetLink(String email) {
-    return _auth.sendPasswordResetEmail(
-      email: email,
-      actionCodeSettings: ActionCodeSettings(
-        url: 'https://breedr-3c5dc.web.app/usermgmt',
-        handleCodeInApp: true,
-        androidPackageName: 'com.example.breedr',
-        androidInstallApp: false,
-      ),
-    );
-  }
-
-  Future<String> verifyPasswordResetCode(String resetCode) {
-    return _auth.verifyPasswordResetCode(resetCode);
-  }
-
-  Future<void> confirmPasswordReset({
-    required String resetCode,
-    required String newPassword,
-  }) {
-    return _auth.confirmPasswordReset(
-      code: resetCode,
-      newPassword: newPassword,
     );
   }
 

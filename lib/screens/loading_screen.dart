@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../services/moderation_service.dart';
 import '../services/user_session_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/breedr_logo.dart';
+import 'admin/admin_dashboard_screen.dart';
 import 'auth/get_started_screen.dart';
+import 'auth/cabuyao_access_gate_screen.dart';
+import 'auth/moderation_gate_screen.dart';
 import 'home_screen.dart';
 
 class LoadingScreen extends StatefulWidget {
@@ -35,16 +39,25 @@ class _LoadingScreenState extends State<LoadingScreen>
     Widget nextScreen = const GetStartedScreen();
 
     try {
-      final canAutoLogin =
-          await UserSessionService.instance.shouldAutoLogin();
+      final canAutoLogin = await UserSessionService.instance.shouldAutoLogin();
 
       if (canAutoLogin) {
-        nextScreen = const HomeScreen();
+        final isAdmin = await UserSessionService.instance.isCurrentUserAdmin();
+        if (isAdmin) {
+          nextScreen = const AdminDashboardScreen();
+        } else {
+          final moderation =
+              await ModerationService.instance.getCurrentUserModeration();
+          nextScreen = moderation?.isBlocked == true
+              ? ModerationGateScreen(state: moderation!)
+              : const CabuyaoAccessGate(child: HomeScreen());
+        }
       }
     } catch (e) {
       debugPrint('Auto login check failed: $e');
-      await UserSessionService.instance.signOut();
-      nextScreen = const GetStartedScreen();
+      nextScreen = UserSessionService.instance.currentUser == null
+          ? const GetStartedScreen()
+          : const CabuyaoAccessGate(child: HomeScreen());
     }
 
     final elapsed = DateTime.now().difference(start);
@@ -77,11 +90,7 @@ class _LoadingScreenState extends State<LoadingScreen>
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFFFFF9FD),
-              Color(0xFFFFFFFF),
-              Color(0xFFFFEEF7),
-            ],
+            colors: [Color(0xFFFFF9FD), Color(0xFFFFFFFF), Color(0xFFFFEEF7)],
             stops: [0, 0.58, 1],
           ),
         ),
@@ -96,35 +105,48 @@ class _LoadingScreenState extends State<LoadingScreen>
                     final height = constraints.maxHeight;
 
                     return Column(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         SizedBox(height: height * 0.22),
-                        const BreedrLogo(size: 190),
+                        const Center(child: BreedrLogo(size: 190)),
                         SizedBox(height: height * 0.04),
-                        Text(
-                          'Breedr.',
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 52,
-                            height: 1,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.primary,
+                        SizedBox(
+                          width: double.infinity,
+                          child: Text(
+                            'Breedr.',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 52,
+                              height: 1,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.primary,
+                            ),
                           ),
                         ),
                         const Spacer(),
-                        Text(
-                          'powered by',
-                          style: GoogleFonts.urbanist(
-                            fontSize: 13,
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.w700,
+                        SizedBox(
+                          width: double.infinity,
+                          child: Text(
+                            'powered by',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.urbanist(
+                              fontSize: 13,
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 8),
-                        Text(
-                          'GROUP 10',
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 17,
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.w800,
+                        SizedBox(
+                          width: double.infinity,
+                          child: Text(
+                            'GROUP 10',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 17,
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
                         ),
                         SizedBox(height: height * 0.08),
@@ -160,10 +182,18 @@ class _SplashBackgroundPainter extends CustomPainter {
     final skylinePaint = Paint()..color = const Color(0xFFFFDDEB);
     final wavePaint = Paint()..color = const Color(0xFFFFE2EF);
 
-    _drawCloud(canvas, Offset(size.width * 0.18, size.height * 0.30), 1.0,
-        cloudPaint);
-    _drawCloud(canvas, Offset(size.width * 0.82, size.height * 0.33), 0.85,
-        cloudPaint);
+    _drawCloud(
+      canvas,
+      Offset(size.width * 0.18, size.height * 0.30),
+      1.0,
+      cloudPaint,
+    );
+    _drawCloud(
+      canvas,
+      Offset(size.width * 0.82, size.height * 0.33),
+      0.85,
+      cloudPaint,
+    );
 
     final skylineTop = size.height * 0.46;
     final buildingWidth = size.width / 13;
@@ -226,9 +256,21 @@ class _SplashBackgroundPainter extends CustomPainter {
   }
 
   void _drawCloud(Canvas canvas, Offset center, double scale, Paint paint) {
-    canvas.drawCircle(center.translate(-18 * scale, 5 * scale), 10 * scale, paint);
-    canvas.drawCircle(center.translate(-4 * scale, -3 * scale), 14 * scale, paint);
-    canvas.drawCircle(center.translate(13 * scale, 6 * scale), 9 * scale, paint);
+    canvas.drawCircle(
+      center.translate(-18 * scale, 5 * scale),
+      10 * scale,
+      paint,
+    );
+    canvas.drawCircle(
+      center.translate(-4 * scale, -3 * scale),
+      14 * scale,
+      paint,
+    );
+    canvas.drawCircle(
+      center.translate(13 * scale, 6 * scale),
+      9 * scale,
+      paint,
+    );
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromCenter(

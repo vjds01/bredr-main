@@ -6,6 +6,8 @@ import '../../theme/app_colors.dart';
 import '../../models/pet_listing_data.dart';
 import '../../services/pet_registration_draft_service.dart';
 import '../../services/pet_service.dart';
+import '../../services/cabuyao_access_service.dart';
+import '../../services/user_session_service.dart';
 import '../../widgets/breedr_network_image.dart';
 import 'pet_published_screen.dart';
 
@@ -37,6 +39,18 @@ class _PetReviewScreenState extends State<PetReviewScreen> {
   }
 
   Future<void> _publishPet() async {
+    final isAdmin = await UserSessionService.instance.isCurrentUserAdmin();
+    final locationResult = isAdmin
+        ? const CabuyaoAccessResult(CabuyaoAccessStatus.allowed)
+        : await CabuyaoAccessService.instance.checkAccess();
+    if (!locationResult.isAllowed) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_locationErrorMessage(locationResult.status))),
+      );
+      return;
+    }
+
     setState(() => _isPublishing = true);
 
     try {
@@ -67,6 +81,22 @@ class _PetReviewScreenState extends State<PetReviewScreen> {
       if (mounted) {
         setState(() => _isPublishing = false);
       }
+    }
+  }
+
+  String _locationErrorMessage(CabuyaoAccessStatus status) {
+    switch (status) {
+      case CabuyaoAccessStatus.serviceDisabled:
+        return 'Turn on Location Services before publishing a pet.';
+      case CabuyaoAccessStatus.permissionDenied:
+      case CabuyaoAccessStatus.permissionDeniedForever:
+        return 'Allow location access before publishing a pet.';
+      case CabuyaoAccessStatus.outsideServiceArea:
+        return 'Pet listings can only be published while you are in Cabuyao.';
+      case CabuyaoAccessStatus.locationUnavailable:
+        return 'We could not verify your location. Please try again.';
+      case CabuyaoAccessStatus.allowed:
+        return '';
     }
   }
 

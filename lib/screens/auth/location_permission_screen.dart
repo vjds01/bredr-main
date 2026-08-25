@@ -5,6 +5,7 @@ import 'how_location_used_screen.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import '../../services/location_service.dart';
+import '../../services/cabuyao_access_service.dart';
 
 class LocationPermissionScreen extends StatefulWidget {
   const LocationPermissionScreen({super.key});
@@ -71,6 +72,18 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen> {
       final position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
+
+      if (!CabuyaoAccessService.instance.isWithinCabuyao(position)) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Breedr is currently available only within Cabuyao, Laguna.',
+            ),
+          ),
+        );
+        return;
+      }
 
       final placemarks = await placemarkFromCoordinates(
         position.latitude,

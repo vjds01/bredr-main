@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
+import '../../models/onboarding_data.dart';
 import '../../theme/app_colors.dart';
+import '../admin/admin_dashboard_screen.dart';
 import '../home_screen.dart';
 import '../signup/create_account.dart';
 import '../../services/location_service.dart';
+import '../../services/moderation_service.dart';
 import '../../services/user_session_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'forgot_password_screen.dart';
+import 'cabuyao_access_gate_screen.dart';
+import 'moderation_gate_screen.dart';
+import 'welcome_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -28,53 +34,44 @@ class _LoginScreenState extends State<LoginScreen> {
     _passCtrl.dispose();
     super.dispose();
   }
+
   @override
   void initState() {
     super.initState();
 
     debugPrint('===== LOGIN SCREEN LOCATION CHECK =====');
-    debugPrint(
-        'Latitude: ${LocationService.instance.latitude}');
-    debugPrint(
-        'Longitude: ${LocationService.instance.longitude}');
-    debugPrint(
-        'Location: ${LocationService.instance.locationName}');
+    debugPrint('Latitude: ${LocationService.instance.latitude}');
+    debugPrint('Longitude: ${LocationService.instance.longitude}');
+    debugPrint('Location: ${LocationService.instance.locationName}');
     debugPrint('=======================================');
   }
 
   //login code
   Future<void> _login() async {
-    if (_emailCtrl.text.trim().isEmpty ||
-        _passCtrl.text.trim().isEmpty) {
+    if (_emailCtrl.text.trim().isEmpty || _passCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter email and password'),
-        ),
+        const SnackBar(content: Text('Please enter email and password')),
       );
       return;
     }
-    
+
     setState(() {
       _isLoading = true;
     });
-    
+
     try {
       debugPrint('===== LOGIN ATTEMPT =====');
       debugPrint('Email: ${_emailCtrl.text.trim()}');
 
-      final credential =
-          await UserSessionService.instance.signInWithEmail(
+      final credential = await UserSessionService.instance.signInWithEmail(
         email: _emailCtrl.text.trim(),
         password: _passCtrl.text.trim(),
       );
 
-      debugPrint(
-        'Login successful: ${credential.user?.uid}',
-      );
+      debugPrint('Login successful: ${credential.user?.uid}');
       debugPrint('Email: ${credential.user?.email}');
 
-      final hasProfile =
-          await UserSessionService.instance.hasBreedrProfile();
+      final hasProfile = await UserSessionService.instance.hasBreedrProfile();
 
       if (!hasProfile) {
         await UserSessionService.instance.signOut();
@@ -83,13 +80,24 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (!mounted) return;
 
+      final isAdmin = await UserSessionService.instance.isCurrentUserAdmin();
+      Widget destination = const CabuyaoAccessGate(child: HomeScreen());
+
+      if (isAdmin) {
+        destination = const AdminDashboardScreen();
+      } else {
+        final moderation =
+            await ModerationService.instance.getCurrentUserModeration();
+        if (moderation?.isBlocked == true) {
+          destination = ModerationGateScreen(state: moderation!);
+        }
+      }
+
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(
-          builder: (_) => const HomeScreen(),
-        ),
+        MaterialPageRoute(builder: (_) => destination),
       );
-
     } on FirebaseAuthException catch (e) {
       debugPrint('Firebase login error: ${e.code}');
 
@@ -115,27 +123,25 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     } catch (e) {
       debugPrint('Unexpected login error: $e');
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_loginErrorMessage(e)),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_loginErrorMessage(e))));
     } finally {
-  if (mounted) {
-    setState(() {
-      _isLoading = false;
-    });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
-  }
-} 
 
   Future<void> _loginWithGoogle() async {
     setState(() {
@@ -143,40 +149,69 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final userCredential =
-          await UserSessionService.instance.signInWithGoogle();
+      final userCredential = await UserSessionService.instance
+          .signInWithGoogle();
       final user = userCredential.user;
 
       if (user == null) {
         throw Exception('Unable to sign in with Google');
       }
 
-      final hasProfile =
-          await UserSessionService.instance.hasBreedrProfile();
+      final hasProfile = await UserSessionService.instance.hasBreedrProfile();
 
       if (!hasProfile) {
-        await UserSessionService.instance.signOut();
-        throw Exception('No Breedr account found. Please sign up first.');
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => CabuyaoAccessGate(
+              child: WelcomeScreen(
+                onboardingData: OnboardingData(
+                  authProvider: 'google',
+                  fullName: user.displayName?.trim().isNotEmpty == true
+                      ? user.displayName!.trim()
+                      : 'Breedr User',
+                  userName: _usernameFromEmail(user.email ?? ''),
+                  email: user.email ?? '',
+                  password: '',
+                  profilePhoto: user.photoURL,
+                ),
+                photoUrl: user.photoURL,
+              ),
+            ),
+          ),
+        );
+        return;
       }
 
       if (!mounted) return;
 
+      final isAdmin = await UserSessionService.instance.isCurrentUserAdmin();
+      Widget destination = const CabuyaoAccessGate(child: HomeScreen());
+
+      if (isAdmin) {
+        destination = const AdminDashboardScreen();
+      } else {
+        final moderation =
+            await ModerationService.instance.getCurrentUserModeration();
+        if (moderation?.isBlocked == true) {
+          destination = ModerationGateScreen(state: moderation!);
+        }
+      }
+
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(
-          builder: (_) => const HomeScreen(),
-        ),
+        MaterialPageRoute(builder: (_) => destination),
       );
     } catch (e) {
       if (!mounted) return;
 
       debugPrint('Google login error: $e');
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_googleSignInMessage(e)),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_googleSignInMessage(e))));
     } finally {
       if (mounted) {
         setState(() {
@@ -197,6 +232,12 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     return 'Unable to log in right now. Please try again.';
+  }
+
+  String _usernameFromEmail(String email) {
+    final name = email.split('@').first.toLowerCase();
+    final cleaned = name.replaceAll(RegExp(r'[^a-z0-9_]'), '_');
+    return cleaned.isEmpty ? 'breedr_user' : cleaned;
   }
 
   String _googleSignInMessage(Object error) {
@@ -240,8 +281,11 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Padding(
                   padding: const EdgeInsets.only(left: 8, top: 8),
                   child: IconButton(
-                    icon: const Icon(Icons.arrow_back_ios,
-                        color: AppColors.primary, size: 20),
+                    icon: const Icon(
+                      Icons.arrow_back_ios,
+                      color: AppColors.primary,
+                      size: 20,
+                    ),
                     onPressed: () => Navigator.pop(context),
                   ),
                 ),
@@ -391,24 +435,25 @@ class _LoginScreenState extends State<LoginScreen> {
                         style: FilledButton.styleFrom(
                           backgroundColor: AppColors.primary,
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(30)),
+                            borderRadius: BorderRadius.circular(30),
+                          ),
                         ),
                         child: _isLoading
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : const Text(
-                            'LOG IN',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text(
+                                'LOG IN',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
                       ),
                     ),
 
@@ -420,13 +465,18 @@ class _LoginScreenState extends State<LoginScreen> {
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
-                              builder: (_) => const Step1AboutYou()),
+                            builder: (_) => const CabuyaoAccessGate(
+                              child: Step1AboutYou(),
+                            ),
+                          ),
                         ),
                         child: RichText(
                           text: const TextSpan(
                             text: "Don't have an account? ",
                             style: TextStyle(
-                                color: Color(0xFF999999), fontSize: 13),
+                              color: Color(0xFF999999),
+                              fontSize: 13,
+                            ),
                             children: [
                               TextSpan(
                                 text: 'Sign up here.',
@@ -449,15 +499,21 @@ class _LoginScreenState extends State<LoginScreen> {
                     Row(
                       children: [
                         const Expanded(
-                            child: Divider(color: Color(0xFFDDDDDD))),
+                          child: Divider(color: Color(0xFFDDDDDD)),
+                        ),
                         const Padding(
                           padding: EdgeInsets.symmetric(horizontal: 12),
-                          child: Text('or',
-                              style: TextStyle(
-                                  color: Color(0xFF999999), fontSize: 13)),
+                          child: Text(
+                            'or',
+                            style: TextStyle(
+                              color: Color(0xFF999999),
+                              fontSize: 13,
+                            ),
+                          ),
                         ),
                         const Expanded(
-                            child: Divider(color: Color(0xFFDDDDDD))),
+                          child: Divider(color: Color(0xFFDDDDDD)),
+                        ),
                       ],
                     ),
 
@@ -468,13 +524,15 @@ class _LoginScreenState extends State<LoginScreen> {
                       width: double.infinity,
                       height: 52,
                       child: OutlinedButton(
-                        onPressed:
-                            _isGoogleLoading ? null : _loginWithGoogle,
+                        onPressed: _isGoogleLoading ? null : _loginWithGoogle,
                         style: OutlinedButton.styleFrom(
                           side: const BorderSide(
-                              color: AppColors.primary, width: 1.5),
+                            color: AppColors.primary,
+                            width: 1.5,
+                          ),
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(30)),
+                            borderRadius: BorderRadius.circular(30),
+                          ),
                           backgroundColor: Colors.white,
                         ),
                         child: _isGoogleLoading
@@ -495,13 +553,13 @@ class _LoginScreenState extends State<LoginScreen> {
                                     height: 22,
                                     errorBuilder: (context, error, stack) =>
                                         const Text(
-                                      'G',
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                        color: Color(0xFF4285F4),
-                                      ),
-                                    ),
+                                          'G',
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(0xFF4285F4),
+                                          ),
+                                        ),
                                   ),
                                   const SizedBox(width: 10),
                                   const Text(
@@ -525,18 +583,24 @@ class _LoginScreenState extends State<LoginScreen> {
                         textAlign: TextAlign.center,
                         text: const TextSpan(
                           style: TextStyle(
-                              fontSize: 11, color: Color(0xFF999999)),
+                            fontSize: 11,
+                            color: Color(0xFF999999),
+                          ),
                           children: [
-                            TextSpan(text: "By signing up, you agree to Breedr's "),
+                            TextSpan(
+                              text: "By signing up, you agree to Breedr's ",
+                            ),
                             TextSpan(
                               text: 'Terms of Service and Privacy Policy',
                               style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF666666)),
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF666666),
+                              ),
                             ),
                             TextSpan(
-                                text:
-                                    '. Your Google account will only be used for authentication.'),
+                              text:
+                                  '. Your Google account will only be used for authentication.',
+                            ),
                           ],
                         ),
                       ),
@@ -582,13 +646,14 @@ class _InputField extends StatelessWidget {
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: const TextStyle(color: Color(0xFFBBBBBB), fontSize: 14),
-        prefixIcon:
-            Icon(prefixIcon, color: const Color(0xFFBBBBBB), size: 20),
+        prefixIcon: Icon(prefixIcon, color: const Color(0xFFBBBBBB), size: 20),
         suffixIcon: suffixIcon,
         filled: true,
         fillColor: Colors.white,
-        contentPadding:
-            const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+        contentPadding: const EdgeInsets.symmetric(
+          vertical: 14,
+          horizontal: 16,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide.none,
@@ -599,8 +664,7 @@ class _InputField extends StatelessWidget {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide:
-              const BorderSide(color: AppColors.primary, width: 1.2),
+          borderSide: const BorderSide(color: AppColors.primary, width: 1.2),
         ),
       ),
     );

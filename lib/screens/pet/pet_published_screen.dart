@@ -3,6 +3,7 @@ import '../../theme/app_colors.dart';
 import '../../models/pet_listing_data.dart';
 import '../../widgets/breedr_network_image.dart';
 import '../home_screen.dart';
+import '../auth/cabuyao_access_gate_screen.dart';
 import 'pet_registration_screen.dart';
 
 class PetPublishedScreen extends StatelessWidget {
@@ -257,7 +258,7 @@ class PetPublishedScreen extends StatelessWidget {
                           onPressed: () => Navigator.pushAndRemoveUntil(
                             context,
                             MaterialPageRoute(
-                                builder: (_) => const HomeScreen()),
+                                builder: (_) => const CabuyaoAccessGate(child: HomeScreen())),
                             (route) => false,
                           ),
                           style: ElevatedButton.styleFrom(

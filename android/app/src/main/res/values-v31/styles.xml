@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
-        <item name="android:windowSplashScreenBackground">#FFF9FD</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/launch_logo</item>
-        <item name="android:postSplashScreenTheme">@style/NormalTheme</item>
+    <style name="LaunchTheme" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#FFF9FD</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/launch_logo</item>
+        <item name="postSplashScreenTheme">@style/NormalTheme</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:navigationBarColor">#FFF0F7</item>
         <item name="android:statusBarColor">#FFF9FD</item>

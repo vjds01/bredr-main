@@ -10,6 +10,11 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == ownerId;
     }
 
+    function isAdmin() {
+      return signedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
     function isParticipant(data) {
       return signedIn() && request.auth.uid in data.ownerIds;
     }
@@ -31,22 +36,106 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if signedIn();
-      allow create, update: if isOwner(userId);
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) || isAdmin();
+    }
+
+    match /reports/{reportId} {
+      allow create: if signedIn() &&
+        request.resource.data.reporterId == request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.type in ['listing', 'user'];
+      allow read: if isAdmin() ||
+        (signedIn() &&
+          (reportId.matches('.*_' + request.auth.uid) ||
+           resource.data.reporterId == request.auth.uid));
+      allow update, delete: if isAdmin();
+    }
+
+    match /adoptionReturnRequests/{returnRequestId} {
+      allow create: if signedIn() &&
+        request.resource.data.filedBy == request.auth.uid &&
+        request.resource.data.conversationId is string &&
+        request.auth.uid in
+          get(/databases/$(database)/documents/conversations/$(request.resource.data.conversationId))
+            .data.participantIds;
+      allow read: if isAdmin() ||
+        (signedIn() &&
+          (resource.data.filedBy == request.auth.uid ||
+           resource.data.ownerId == request.auth.uid));
+      allow update: if isAdmin() ||
+        (signedIn() &&
+          request.auth.uid in resource.data.participantIds &&
+          resource.data.adminStatus == 'approved' &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['handoverConfirmations', 'status', 'completedAt', 'updatedAt']));
+      allow delete: if isAdmin();
+    }
+
+    match /returnedPets/{returnedPetId} {
+      allow read: if isAdmin() ||
+        (signedIn() && request.auth.uid in resource.data.participantIds);
+      allow create: if signedIn() &&
+        request.auth.uid in request.resource.data.participantIds &&
+        request.resource.data.status == 'completed' &&
+        getAfter(
+          /databases/$(database)/documents/conversations/$(request.resource.data.conversationId)
+        ).data.status == 'returned';
+      allow update, delete: if isAdmin();
+    }
+
+    match /adminActivity/{activityId} {
+      allow read, create, update, delete: if isAdmin();
     }
 
     match /pets/{petId} {
       allow read: if signedIn();
       allow create: if signedIn() &&
         request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if isAdmin();
       allow update: if signedIn() &&
         resource.data.ownerId == request.auth.uid;
       allow update: if isApprovedAdoptionPartyForPet(resource.data) &&
         resource.data.adoptionStatus == 'reserved' &&
         request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['status', 'adoptionStatus', 'isActive', 'adoptedAt', 'updatedAt']) &&
+          .hasOnly([
+            'ownerId',
+            'ownerName',
+            'ownerPhoto',
+            'previousOwnerId',
+            'previousOwnerName',
+            'previousOwnerPhoto',
+            'adoptedBy',
+            'adoptionRequestId',
+            'adoptionConversationId',
+            'status',
+            'adoptionStatus',
+            'isActive',
+            'adoptedAt',
+            'updatedAt'
+          ]) &&
+        request.resource.data.ownerId ==
+          get(/databases/$(database)/documents/adoptionRequests/$(resource.data.approvedRequestId))
+            .data.applicantId &&
+        request.resource.data.previousOwnerId == resource.data.ownerId &&
+        request.resource.data.adoptedBy ==
+          get(/databases/$(database)/documents/adoptionRequests/$(resource.data.approvedRequestId))
+            .data.applicantId &&
+        request.resource.data.adoptionRequestId == resource.data.approvedRequestId &&
         request.resource.data.status == 'adopted' &&
         request.resource.data.adoptionStatus == 'adopted' &&
         request.resource.data.isActive == false;
+      allow update: if isApprovedAdoptionPartyForPet(resource.data) &&
+        request.resource.data.ownerId ==
+          get(/databases/$(database)/documents/adoptionRequests/$(resource.data.approvedRequestId))
+            .data.ownerId &&
+        request.resource.data.status == 'unpublished' &&
+        request.resource.data.adoptionStatus == 'returned' &&
+        request.resource.data.isActive == false &&
+        request.resource.data.returnedFromConversationId is string &&
+        getAfter(
+          /databases/$(database)/documents/conversations/$(request.resource.data.returnedFromConversationId)
+        ).data.status == 'returned';
       allow delete: if signedIn() &&
         resource.data.ownerId == request.auth.uid;
     }
@@ -67,8 +156,9 @@ service cloud.firestore {
     }
 
     match /conversations/{conversationId} {
-      allow read: if signedIn() &&
-        request.auth.uid in resource.data.participantIds;
+      allow read: if isAdmin() ||
+        (signedIn() &&
+          request.auth.uid in resource.data.participantIds);
       allow create: if signedIn() &&
         request.auth.uid in request.resource.data.participantIds &&
         (
@@ -84,18 +174,21 @@ service cloud.firestore {
             ).data.ownerId == request.auth.uid
           )
         );
-      allow update: if signedIn() &&
-        request.auth.uid in resource.data.participantIds &&
-        request.resource.data.participantIds == resource.data.participantIds &&
-        !(resource.data.status == 'completed' &&
-          request.resource.data.status == 'unmatched');
+      allow update: if isAdmin() ||
+        (signedIn() &&
+          request.auth.uid in resource.data.participantIds &&
+          request.resource.data.participantIds == resource.data.participantIds &&
+          !(resource.data.status == 'completed' &&
+            request.resource.data.status == 'unmatched'));
 
       match /messages/{messageId} {
-        allow read: if signedIn() &&
-          request.auth.uid in
-            get(/databases/$(database)/documents/conversations/$(conversationId))
-              .data.participantIds;
-        allow create: if signedIn() &&
+        allow read: if isAdmin() ||
+          (signedIn() &&
+            request.auth.uid in
+              get(/databases/$(database)/documents/conversations/$(conversationId))
+                .data.participantIds);
+        allow create: if isAdmin() ||
+          (signedIn() &&
           request.resource.data.senderId == request.auth.uid &&
           request.auth.uid in
             get(/databases/$(database)/documents/conversations/$(conversationId))
@@ -106,31 +199,50 @@ service cloud.firestore {
             (
               get(/databases/$(database)/documents/conversations/$(conversationId))
                   .data.purpose == 'adoption' &&
+              (
+                get(/databases/$(database)/documents/conversations/$(conversationId))
+                    .data.get('canSendMessages', true) != false ||
+                get(/databases/$(database)/documents/conversations/$(conversationId))
+                    .data.status == 'completed'
+              ) &&
               get(/databases/$(database)/documents/conversations/$(conversationId))
-                  .data.canSendMessages != false
+                  .data.get('adoptionProcess', {}).get('status', 'not_started')
+                    != 'contract_pending'
             ) ||
             (
-              get(/databases/$(database)/documents/matches/$(conversationId))
-                  .data.status != 'completed' ||
-              request.time <
+              get(/databases/$(database)/documents/conversations/$(conversationId))
+                  .data.purpose == 'breeding' &&
+              (
                 get(/databases/$(database)/documents/matches/$(conversationId))
-                  .data.reviewReleaseAt
+                    .data.status != 'completed' ||
+                request.time <
+                  get(/databases/$(database)/documents/matches/$(conversationId))
+                    .data.reviewReleaseAt
+              )
             )
-          );
+          ));
+        allow update: if signedIn() &&
+          request.auth.uid in
+            get(/databases/$(database)/documents/conversations/$(conversationId))
+              .data.participantIds &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['readBy', 'requestStatus', 'updatedAt']);
       }
 
       match /adoptionUpdateRequests/{updateRequestId} {
-        allow read, create, update: if signedIn() &&
-          request.auth.uid in
-            get(/databases/$(database)/documents/conversations/$(conversationId))
-              .data.participantIds;
+        allow read, create, update: if isAdmin() ||
+          (signedIn() &&
+            request.auth.uid in
+              get(/databases/$(database)/documents/conversations/$(conversationId))
+                .data.participantIds);
       }
 
       match /adoptionReturnRequests/{returnRequestId} {
-        allow read, create, update: if signedIn() &&
-          request.auth.uid in
-            get(/databases/$(database)/documents/conversations/$(conversationId))
-              .data.participantIds;
+        allow read, create, update: if isAdmin() ||
+          (signedIn() &&
+            request.auth.uid in
+              get(/databases/$(database)/documents/conversations/$(conversationId))
+                .data.participantIds);
       }
     }
 
@@ -196,8 +308,32 @@ service cloud.firestore {
         request.resource.data.applicantId == request.auth.uid &&
         request.resource.data.ownerId != request.auth.uid &&
         request.resource.data.petId is string &&
-        requestId ==
-          request.resource.data.petId + '_' + request.auth.uid &&
+        (
+          (
+            requestId == request.resource.data.petId + '_' + request.auth.uid &&
+            get(/databases/$(database)/documents/pets/$(request.resource.data.petId))
+              .data.get('listingCycleId', '') == '' &&
+            get(/databases/$(database)/documents/pets/$(request.resource.data.petId))
+              .data.get('returnedFromAdoptionRequestId', '') == ''
+          ) ||
+          (
+            request.resource.data.listingCycleId is string &&
+            (
+              request.resource.data.listingCycleId ==
+                get(/databases/$(database)/documents/pets/$(request.resource.data.petId))
+                  .data.get('listingCycleId', '') ||
+              (
+                get(/databases/$(database)/documents/pets/$(request.resource.data.petId))
+                  .data.get('listingCycleId', '') == '' &&
+                request.resource.data.listingCycleId ==
+                  get(/databases/$(database)/documents/pets/$(request.resource.data.petId))
+                    .data.returnedFromAdoptionRequestId
+              )
+            ) &&
+            requestId == request.resource.data.petId + '_' +
+              request.resource.data.listingCycleId + '_' + request.auth.uid
+          )
+        ) &&
         request.resource.data.status == 'pending' &&
         get(/databases/$(database)/documents/pets/$(request.resource.data.petId))
           .data.ownerId == request.resource.data.ownerId &&
@@ -261,7 +397,25 @@ service cloud.firestore {
             isAdoptionRequestParty(resource.data) &&
             request.resource.data.status == 'completed' &&
             request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['status', 'completedAt', 'updatedAt'])
+              .hasOnly([
+                'status',
+                'completedAt',
+                'updatedAt',
+                'outcome',
+                'returnRequestId',
+                'returnCompletedAt',
+                'reviewsEnabled'
+              ]) &&
+            (
+              !('outcome' in request.resource.data) ||
+              (
+                request.resource.data.outcome == 'returned' &&
+                request.resource.data.reviewsEnabled == false &&
+                getAfter(
+                  /databases/$(database)/documents/conversations/$(resource.data.conversationId)
+                ).data.status == 'returned'
+              )
+            )
           )
         );
     }

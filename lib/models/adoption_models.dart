@@ -1,12 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-enum AdoptionListingStatus {
-  active,
-  reserved,
-  adopted,
-  paused,
-  removed,
-}
+import 'breed_options.dart';
+
+enum AdoptionListingStatus { active, reserved, adopted, paused, removed }
 
 enum AdoptionRequestStatus {
   pending,
@@ -24,6 +20,12 @@ class AdoptionPolicy {
       'Breedr does not process or verify payments. Any payment arrangements '
       'are made directly between you and the pet owner. Exercise caution '
       'before transferring money.';
+}
+
+DateTime? _dateTimeFromAny(dynamic value) {
+  if (value is Timestamp) return value.toDate();
+  if (value is DateTime) return value;
+  return null;
 }
 
 class AdoptionQuestion {
@@ -103,7 +105,8 @@ class AdoptionAnswer {
   factory AdoptionAnswer.fromMap(Map<String, dynamic> data) {
     return AdoptionAnswer(
       questionId: data['questionId'] as String? ?? '',
-      questionText: data['questionText'] as String? ??
+      questionText:
+          data['questionText'] as String? ??
           data['questionSnapshot'] as String? ??
           '',
       type: data['type'] as String? ?? 'textAnswer',
@@ -163,8 +166,15 @@ class AdoptionListing {
   final bool vetVerified;
   final AdoptionListingStatus status;
   final bool isActive;
+  final String adminListingStatus;
+  final bool adminHidden;
+  final bool adminRemoved;
+  final DateTime? adminHiddenUntil;
+  final String moderationListingStatus;
+  final DateTime? moderationHiddenUntil;
   final String? reservedFor;
   final String? approvedRequestId;
+  final String listingCycleId;
 
   const AdoptionListing({
     required this.id,
@@ -198,8 +208,15 @@ class AdoptionListing {
     required this.vetVerified,
     required this.status,
     required this.isActive,
+    required this.adminListingStatus,
+    required this.adminHidden,
+    required this.adminRemoved,
+    required this.adminHiddenUntil,
+    required this.moderationListingStatus,
+    required this.moderationHiddenUntil,
     required this.reservedFor,
     required this.approvedRequestId,
+    required this.listingCycleId,
   });
 
   factory AdoptionListing.fromDocument(
@@ -218,27 +235,46 @@ class AdoptionListing {
             index: index,
           ),
     ]..sort((a, b) => a.order.compareTo(b.order));
-    final rawType =
-        (details['adoptionType'] as String? ?? 'FREE').toUpperCase();
-    final rawStatus = (data['adoptionStatus'] as String? ??
-            data['status'] as String? ??
-            'active')
-        .toLowerCase();
+    final rawType = (details['adoptionType'] as String? ?? 'FREE')
+        .toUpperCase();
+    final rawStatus =
+        (data['adoptionStatus'] as String? ??
+                data['status'] as String? ??
+                'active')
+            .toLowerCase();
+
+    final primaryBreed = data['primaryBreed'] as String? ?? '';
+    final secondaryBreed = data['secondaryBreed'] as String? ?? '';
+    final isMixedBreed = data['isMixedBreed'] as bool? ?? false;
+    final breed = data['breed'] as String? ?? '';
+    final storedBreedTags =
+        (data['breedTags'] as List?)?.whereType<String>().toList() ??
+        const <String>[];
+    final derivedBreedTags = storedBreedTags.isNotEmpty
+        ? storedBreedTags
+        : _deriveBreedTags(
+            breed: breed,
+            primaryBreed: primaryBreed,
+            secondaryBreed: secondaryBreed,
+            isMixedBreed: isMixedBreed,
+          );
 
     return AdoptionListing(
       id: document.id,
       ownerId: data['ownerId'] as String? ?? '',
       ownerName: data['ownerName'] as String? ?? 'Pet Owner',
       ownerPhoto: data['ownerPhoto'] as String? ?? '',
-      purpose: (data['purpose'] as String? ?? '').toLowerCase(),
+      purpose: (data['normalizedPurpose'] ?? data['purpose'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase(),
       name: data['name'] as String? ?? 'Pet',
       species: data['species'] as String? ?? '',
-      breed: data['breed'] as String? ?? '',
-      primaryBreed: data['primaryBreed'] as String? ?? '',
-      secondaryBreed: data['secondaryBreed'] as String? ?? '',
-      isMixedBreed: data['isMixedBreed'] as bool? ?? false,
-      breedTags:
-          (data['breedTags'] as List?)?.whereType<String>().toList() ?? const [],
+      breed: breed,
+      primaryBreed: primaryBreed,
+      secondaryBreed: secondaryBreed,
+      isMixedBreed: isMixedBreed,
+      breedTags: derivedBreedTags,
       breedSize: data['breedSize'] as String? ?? '',
       age: data['age'] as String? ?? '',
       gender: data['gender'] as String? ?? '',
@@ -247,13 +283,18 @@ class AdoptionListing {
       locationName: data['locationName'] as String? ?? '',
       latitude: (data['latitude'] as num?)?.toDouble(),
       longitude: (data['longitude'] as num?)?.toDouble(),
-      profilePhoto: data['petProfilePhoto'] as String? ??
+      profilePhoto:
+          data['petProfilePhoto'] as String? ??
           data['profilePhoto'] as String? ??
           '',
-      additionalImages:
-          (data['additionalImages'] as List?)?.whereType<String>().toList() ??
-              const [],
-      healthRecords: (data['healthRecords'] as List?)
+      additionalImages: _stringListFromAny(
+        data['additionalImages'] ??
+            data['additionalPhotos'] ??
+            data['additionalPhotoUrls'] ??
+            data['morePhotos'],
+      ),
+      healthRecords:
+          (data['healthRecords'] as List?)
               ?.whereType<Map>()
               .map((record) => Map<String, dynamic>.from(record))
               .toList() ??
@@ -261,20 +302,50 @@ class AdoptionListing {
       questions: questions.where((question) => question.isValid).toList(),
       adoptionType:
           rawType == 'FOR SALE' || rawType == 'FOR_SALE' || rawType == 'FORSALE'
-              ? AdoptionType.forSale
-              : AdoptionType.free,
-      price: rawType == 'FREE'
-          ? null
-          : (details['price'] as num?)?.toDouble(),
+          ? AdoptionType.forSale
+          : AdoptionType.free,
+      price: rawType == 'FREE' ? null : (details['price'] as num?)?.toDouble(),
       priceNegotiable: details['priceNegotiable'] as bool? ?? false,
       noOtherPets: details['noOtherPets'] as bool? ?? false,
       vetVerified:
           data['vetVerified'] as bool? ?? data['hasHealthRecords'] == true,
       status: _listingStatus(rawStatus),
       isActive: data['isActive'] as bool? ?? true,
+      adminListingStatus: (data['adminListingStatus'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase(),
+      adminHidden: data['adminHidden'] as bool? ?? false,
+      adminRemoved: data['adminRemoved'] as bool? ?? false,
+      adminHiddenUntil: _dateTimeFromAny(data['adminHiddenUntil']),
+      moderationListingStatus: (data['moderationListingStatus'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase(),
+      moderationHiddenUntil: _dateTimeFromAny(data['moderationHiddenUntil']),
       reservedFor: data['reservedFor'] as String?,
       approvedRequestId: data['approvedRequestId'] as String?,
+      listingCycleId:
+          (data['listingCycleId'] ?? data['returnedFromAdoptionRequestId'])
+              ?.toString() ??
+          '',
     );
+  }
+
+  static List<String> _deriveBreedTags({
+    required String breed,
+    required String primaryBreed,
+    required String secondaryBreed,
+    required bool isMixedBreed,
+  }) {
+    final tags = breedTagsFor(
+      isMixedBreed: isMixedBreed,
+      primaryBreed: primaryBreed.isNotEmpty ? primaryBreed : breed,
+      secondaryBreed: secondaryBreed,
+    );
+    if (tags.isNotEmpty) return tags;
+    final fallback = breed.trim();
+    return fallback.isEmpty ? const [] : [fallback];
   }
 
   static AdoptionListingStatus _listingStatus(String value) {
@@ -295,9 +366,25 @@ class AdoptionListing {
   }
 
   bool get isForSale => adoptionType == AdoptionType.forSale;
+  bool get isHiddenByAdmin {
+    if (moderationListingStatus == 'removed') return true;
+    if (moderationListingStatus == 'hidden') {
+      final until = moderationHiddenUntil;
+      return until == null || until.isAfter(DateTime.now());
+    }
+    if (adminRemoved || adminListingStatus == 'removed') return true;
+    if (status == AdoptionListingStatus.removed) return true;
+    if (adminListingStatus == 'hidden') {
+      final until = adminHiddenUntil;
+      return until == null || until.isAfter(DateTime.now());
+    }
+    return adminHidden;
+  }
+
   bool get isAvailable =>
       purpose == 'adoption' &&
       isActive &&
+      !isHiddenByAdmin &&
       status == AdoptionListingStatus.active;
   bool get hasValidPrice => !isForSale || (price != null && price! > 0);
 
@@ -322,8 +409,19 @@ class AdoptionListing {
       'ownerName': ownerName,
       'ownerPhoto': ownerPhoto,
       'vetVerified': vetVerified,
+      'listingCycleId': listingCycleId,
     };
   }
+}
+
+List<String> _stringListFromAny(Object? value) {
+  if (value is Iterable) {
+    return value
+        .map((item) => item?.toString().trim() ?? '')
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+  return const [];
 }
 
 class AdoptionRequest {
@@ -338,6 +436,8 @@ class AdoptionRequest {
   final String? conversationId;
   final Timestamp? createdAt;
   final Timestamp? updatedAt;
+  final Timestamp? completedAt;
+  final String outcome;
 
   const AdoptionRequest({
     required this.id,
@@ -351,6 +451,8 @@ class AdoptionRequest {
     required this.conversationId,
     required this.createdAt,
     required this.updatedAt,
+    required this.completedAt,
+    required this.outcome,
   });
 
   factory AdoptionRequest.fromDocument(
@@ -364,13 +466,15 @@ class AdoptionRequest {
       ownerId: data['ownerId'] as String? ?? '',
       applicantId: data['applicantId'] as String? ?? '',
       status: _requestStatus(data['status'] as String? ?? 'pending'),
-      answers: rawAnswers
-          .whereType<Map>()
-          .map((answer) => AdoptionAnswer.fromMap(
-                Map<String, dynamic>.from(answer),
-              ))
-          .toList()
-        ..sort((a, b) => a.order.compareTo(b.order)),
+      answers:
+          rawAnswers
+              .whereType<Map>()
+              .map(
+                (answer) =>
+                    AdoptionAnswer.fromMap(Map<String, dynamic>.from(answer)),
+              )
+              .toList()
+            ..sort((a, b) => a.order.compareTo(b.order)),
       petSnapshot: Map<String, dynamic>.from(
         data['petSnapshot'] as Map? ?? const <String, dynamic>{},
       ),
@@ -380,6 +484,8 @@ class AdoptionRequest {
       conversationId: data['conversationId'] as String?,
       createdAt: data['createdAt'] as Timestamp?,
       updatedAt: data['updatedAt'] as Timestamp?,
+      completedAt: data['completedAt'] as Timestamp?,
+      outcome: data['outcome']?.toString() ?? 'adopted',
     );
   }
 
@@ -413,19 +519,17 @@ class AdoptionEligibility {
   });
 
   const AdoptionEligibility.allowed(AdoptionListing listing)
-      : this._(allowed: true, listing: listing);
+    : this._(allowed: true, listing: listing);
 
   const AdoptionEligibility.denied(String reason)
-      : this._(allowed: false, reason: reason);
+    : this._(allowed: false, reason: reason);
 }
 
 class AdoptionActionEligibility {
   final bool allowed;
   final String? reason;
 
-  const AdoptionActionEligibility.allowed()
-      : allowed = true,
-        reason = null;
+  const AdoptionActionEligibility.allowed() : allowed = true, reason = null;
 
   const AdoptionActionEligibility.denied(this.reason) : allowed = false;
 }

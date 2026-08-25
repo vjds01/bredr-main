@@ -4,15 +4,23 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/cloudinary_service.dart';
+import '../services/app_guide_service.dart';
 import '../services/breeding_match_service.dart';
+import '../services/cabuyao_access_service.dart';
+import '../services/moderation_service.dart';
+import '../services/pet_service.dart';
 import '../services/presence_service.dart';
 import '../services/user_session_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/breedr_network_image.dart';
+import '../widgets/main_app_guide_overlay.dart';
 import 'adoption/adoption_browse_screen.dart';
 import 'auth/get_started_screen.dart';
+import 'auth/moderation_gate_screen.dart';
+import 'auth/terms_screen.dart';
 import 'breeding/breeding_screen.dart';
 import 'chat/chats_screen.dart';
 import 'notifications/notifications_screen.dart';
@@ -30,6 +38,10 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
+  bool _showGuide = false;
+  bool _checkedModeration = false;
+  bool _checkingModerationNavigation = false;
+  int _guideIndex = 0;
   final ValueNotifier<int> _breedingActivation = ValueNotifier<int>(0);
   final ValueNotifier<int> _adoptionActivation = ValueNotifier<int>(0);
 
@@ -38,25 +50,375 @@ class _HomeScreenState extends State<HomeScreen> {
     AdoptionBrowseScreen(activationSignal: _adoptionActivation),
     const ChatsScreen(),
     const NotificationsScreen(),
-    _ProfileTab(onLogout: _logout),
+    _ProfileTab(onLogout: _logout, onShowGuide: _startGuideFromSettings),
+  ];
+
+  static const List<MainAppGuideStep> _guideSteps = [
+    MainAppGuideStep(
+      tabIndex: 0,
+      title: 'Welcome to Breeding',
+      body:
+          'Browse pet profiles and find compatible breeding matches for your pet, right from this screen.',
+      previewType: GuidePreviewType.breedingWelcome,
+      assetPath: 'assets/images/guide/guide_step_01.png',
+      placement: GuideCardPlacement.center,
+    ),
+    MainAppGuideStep(
+      tabIndex: 0,
+      title: 'Pet profile card',
+      body:
+          'See the pet\'s photo, name, age, gender, breed, verification badge, and a short bio to learn more.',
+      previewType: GuidePreviewType.breedingCard,
+      assetPath: 'assets/images/guide/guide_step_02.png',
+      placement: GuideCardPlacement.center,
+    ),
+    MainAppGuideStep(
+      tabIndex: 0,
+      title: 'Like',
+      body:
+          'Tap the heart, or swipe right, to send a like and show interest in breeding with this pet.',
+      previewType: GuidePreviewType.breedingLike,
+      assetPath: 'assets/images/guide/guide_step_03.png',
+      placement: GuideCardPlacement.bottom,
+    ),
+    MainAppGuideStep(
+      tabIndex: 0,
+      title: 'Pass',
+      body:
+          'Tap the X, or swipe left, to skip this profile without sending a like.',
+      previewType: GuidePreviewType.breedingPass,
+      assetPath: 'assets/images/guide/guide_step_04.png',
+      placement: GuideCardPlacement.bottom,
+    ),
+    MainAppGuideStep(
+      tabIndex: 0,
+      title: 'Swipe to browse',
+      body:
+          'Swipe left or right on the card to move through more pet profiles.',
+      previewType: GuidePreviewType.breedingSwipe,
+      assetPath: 'assets/images/guide/guide_step_05.png',
+      placement: GuideCardPlacement.top,
+    ),
+    MainAppGuideStep(
+      tabIndex: 0,
+      title: 'Filters',
+      body:
+          'Narrow down profiles by breed, age, gender, location, and other preferences.',
+      previewType: GuidePreviewType.breedingFilter,
+      assetPath: 'assets/images/guide/guide_step_06.png',
+      placement: GuideCardPlacement.top,
+    ),
+    MainAppGuideStep(
+      tabIndex: 0,
+      title: 'When you match',
+      body:
+          'If both owners like each other\'s pets, it\'s a match. You can then chat to arrange breeding.',
+      previewType: GuidePreviewType.breedingMatch,
+      assetPath: 'assets/images/guide/guide_step_07.png',
+      placement: GuideCardPlacement.bottom,
+    ),
+    MainAppGuideStep(
+      tabIndex: 1,
+      title: 'Browse Available Pets',
+      body:
+          'Start here to discover pets available for adoption or sale. Tap Browse to see the latest pet listings.',
+      previewType: GuidePreviewType.adoptionBrowse,
+      assetPath: 'assets/images/guide/guide_step_08.png',
+      placement: GuideCardPlacement.top,
+    ),
+    MainAppGuideStep(
+      tabIndex: 1,
+      title: 'Track My Request',
+      body:
+          'Open My Request to check the status of your adoption requests. You can see approved and pending requests here.',
+      previewType: GuidePreviewType.adoptionRequest,
+      assetPath: 'assets/images/guide/guide_step_09.png',
+      placement: GuideCardPlacement.top,
+    ),
+    MainAppGuideStep(
+      tabIndex: 1,
+      title: 'Manage My Listings',
+      body:
+          'My Listings lets you manage pets you have listed. You can filter your listings by All, Dogs, Cats, Free, or For Sale.',
+      previewType: GuidePreviewType.adoptionListings,
+      assetPath: 'assets/images/guide/guide_step_10.png',
+      placement: GuideCardPlacement.top,
+    ),
+    MainAppGuideStep(
+      tabIndex: 2,
+      title: 'Chat With Pet Owners',
+      body:
+          'Open a pet conversation to communicate with the owner, ask questions, and receive adoption updates.',
+      previewType: GuidePreviewType.chat,
+      assetPath: 'assets/images/guide/guide_step_11.png',
+      placement: GuideCardPlacement.top,
+    ),
+    MainAppGuideStep(
+      tabIndex: 3,
+      title: 'Check Notifications',
+      body:
+          'Notifications keep you informed about important adoption updates, photo requests, matches, and actions you need to complete.',
+      previewType: GuidePreviewType.notifications,
+      assetPath: 'assets/images/guide/guide_step_12.png',
+      placement: GuideCardPlacement.top,
+    ),
+    MainAppGuideStep(
+      tabIndex: 4,
+      title: 'View Your Profile',
+      body:
+          'Your Profile contains your personal details, home information, photos, and reviews. Keep your information updated.',
+      previewType: GuidePreviewType.profile,
+      assetPath: 'assets/images/guide/guide_step_13.png',
+      placement: GuideCardPlacement.bottom,
+    ),
+    MainAppGuideStep(
+      tabIndex: 0,
+      title: 'You\'re Ready',
+      body:
+          'You now know how to browse pets, send requests, chat with owners, check notifications, and manage your profile. Start your pet adoption journey!',
+      previewType: GuidePreviewType.ready,
+      assetPath: 'assets/images/guide/guide_step_14.png',
+      placement: GuideCardPlacement.center,
+    ),
   ];
 
   @override
   void initState() {
     super.initState();
+    _loadGuideState();
     PresenceService.instance.start().catchError((Object error) {
       debugPrint('Presence service could not start: $error');
     });
     BreedingMatchService.instance
         .processPendingCompletionsForCurrentUser()
         .catchError((Object error) {
-      debugPrint('Pending completion check failed: $error');
-    });
+          debugPrint('Pending completion check failed: $error');
+        });
     BreedingMatchService.instance
         .processReviewReleasesForCurrentUser()
         .catchError((Object error) {
-      debugPrint('Review release check failed: $error');
+          debugPrint('Review release check failed: $error');
+        });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkModerationStatus();
     });
+  }
+
+  Future<void> _checkModerationStatus() async {
+    if (_checkedModeration || !mounted) return;
+    _checkedModeration = true;
+
+    try {
+      final moderation = await ModerationService.instance
+          .getCurrentUserModeration();
+      if (!mounted || moderation == null) return;
+
+      if (moderation.isBlocked) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ModerationGateScreen(state: moderation),
+          ),
+          (route) => false,
+        );
+        return;
+      }
+
+      if (moderation.shouldShowWarning) {
+        await _showModerationWarning(moderation);
+      }
+    } catch (error) {
+      debugPrint('Moderation status check failed: $error');
+    }
+  }
+
+  Future<void> _handleTabNavigation(int index) async {
+    if (_checkingModerationNavigation) return;
+    _checkingModerationNavigation = true;
+
+    try {
+      final moderation = await ModerationService.instance
+          .getCurrentUserModeration();
+      if (!mounted) return;
+
+      if (moderation?.isBlocked == true) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ModerationGateScreen(state: moderation!),
+          ),
+          (route) => false,
+        );
+        return;
+      }
+
+      _triggerActivationForTab(index);
+      setState(() => _selectedIndex = index);
+    } catch (error) {
+      debugPrint('Moderation navigation check failed: $error');
+      if (!mounted) return;
+
+      // A temporary read failure should not strand a user on the current tab.
+      _triggerActivationForTab(index);
+      setState(() => _selectedIndex = index);
+    } finally {
+      _checkingModerationNavigation = false;
+    }
+  }
+
+  Future<void> _showModerationWarning(ModerationState moderation) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        icon: Container(
+          width: 58,
+          height: 58,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            color: Color(0xFFFFE1EA),
+          ),
+          child: const Icon(
+            Icons.warning_amber_rounded,
+            color: AppColors.primary,
+            size: 34,
+          ),
+        ),
+        title: Text(
+          moderation.title,
+          textAlign: TextAlign.center,
+          style: GoogleFonts.plusJakartaSans(
+            fontWeight: FontWeight.w800,
+            color: const Color(0xFF251D29),
+          ),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                moderation.body,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.urbanist(
+                  fontSize: 15,
+                  height: 1.35,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF6F6574),
+                ),
+              ),
+              const SizedBox(height: 16),
+              _ModerationInfoRow(
+                icon: Icons.verified_user_outlined,
+                text: 'Your account remains active.',
+              ),
+              _ModerationInfoRow(
+                icon: Icons.pets_outlined,
+                text: 'All Breedr features remain available.',
+              ),
+              _ModerationInfoRow(
+                icon: Icons.history,
+                text: 'This warning has been recorded in your account history.',
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF1C9),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      moderation.guidance.title,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF6F5317),
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      moderation.guidance.body,
+                      style: GoogleFonts.urbanist(
+                        fontSize: 12,
+                        height: 1.35,
+                        color: const Color(0xFF6F6574),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            child: Text(
+              'I understand',
+              style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    await ModerationService.instance.acknowledgeCurrentWarning();
+  }
+
+  Future<void> _loadGuideState() async {
+    final completed = await AppGuideService.instance.hasCompletedMainGuide();
+    if (!mounted || completed) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _guideIndex = 0;
+        _showGuide = true;
+      });
+    });
+  }
+
+  void _startGuideFromSettings() {
+    setState(() {
+      _guideIndex = 0;
+      _showGuide = true;
+    });
+  }
+
+  Future<void> _finishGuide() async {
+    setState(() => _showGuide = false);
+
+    try {
+      await AppGuideService.instance.markMainGuideCompleted();
+    } catch (error) {
+      debugPrint('Guide completion save failed: $error');
+    }
+  }
+
+  void _goToGuideStep(int nextIndex) {
+    if (nextIndex < 0 || nextIndex >= _guideSteps.length) return;
+
+    setState(() {
+      _guideIndex = nextIndex;
+    });
+  }
+
+  void _triggerActivationForTab(int index) {
+    if (index == 0) {
+      _breedingActivation.value++;
+    } else if (index == 1) {
+      _adoptionActivation.value++;
+    }
   }
 
   @override
@@ -106,20 +468,30 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFFFF0F5),
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: _tabs,
-      ),
-      bottomNavigationBar: _HomeBottomNav(
-        selectedIndex: _selectedIndex,
-        onTap: (index) {
-          if (index == 0) {
-            _breedingActivation.value++;
-          } else if (index == 1) {
-            _adoptionActivation.value++;
-          }
-          setState(() => _selectedIndex = index);
-        },
+      body: Stack(
+        children: [
+          Column(
+            children: [
+              Expanded(
+                child: IndexedStack(index: _selectedIndex, children: _tabs),
+              ),
+              _HomeBottomNav(
+                selectedIndex: _selectedIndex,
+                onTap: _handleTabNavigation,
+              ),
+            ],
+          ),
+          if (_showGuide)
+            MainAppGuideOverlay(
+              steps: _guideSteps,
+              currentIndex: _guideIndex,
+              onSkip: _finishGuide,
+              onBack: () => _goToGuideStep(_guideIndex - 1),
+              onNext: _guideIndex == _guideSteps.length - 1
+                  ? _finishGuide
+                  : () => _goToGuideStep(_guideIndex + 1),
+            ),
+        ],
       ),
     );
   }
@@ -129,10 +501,7 @@ class _HomeBottomNav extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onTap;
 
-  const _HomeBottomNav({
-    required this.selectedIndex,
-    required this.onTap,
-  });
+  const _HomeBottomNav({required this.selectedIndex, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -187,8 +556,9 @@ class _HomeBottomNav extends StatelessWidget {
                           color: isSelected
                               ? AppColors.primary
                               : const Color(0xFF888888),
-                          fontWeight:
-                              isSelected ? FontWeight.bold : FontWeight.normal,
+                          fontWeight: isSelected
+                              ? FontWeight.bold
+                              : FontWeight.normal,
                         ),
                       ),
                     ],
@@ -207,18 +577,14 @@ class _NavItem {
   final IconData icon;
   final String label;
 
-  const _NavItem({
-    required this.icon,
-    required this.label,
-  });
+  const _NavItem({required this.icon, required this.label});
 }
 
 class _ProfileTab extends StatefulWidget {
   final Future<void> Function() onLogout;
+  final VoidCallback onShowGuide;
 
-  const _ProfileTab({
-    required this.onLogout,
-  });
+  const _ProfileTab({required this.onLogout, required this.onShowGuide});
 
   @override
   State<_ProfileTab> createState() => _ProfileTabState();
@@ -230,16 +596,18 @@ class _ProfileTabState extends State<_ProfileTab> {
   void _refreshProfile() {
     final user = UserSessionService.instance.currentUser;
     setState(() {
-      _profileFuture =
-          user == null ? null : UserSessionService.instance.getCurrentUserProfile();
+      _profileFuture = user == null
+          ? null
+          : UserSessionService.instance.getCurrentUserProfile();
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final user = UserSessionService.instance.currentUser;
-    _profileFuture ??=
-        user == null ? null : UserSessionService.instance.getCurrentUserProfile();
+    _profileFuture ??= user == null
+        ? null
+        : UserSessionService.instance.getCurrentUserProfile();
 
     return SafeArea(
       child: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>?>(
@@ -247,8 +615,11 @@ class _ProfileTabState extends State<_ProfileTab> {
         builder: (context, snapshot) {
           final data = snapshot.data?.data();
           final fullName =
-              data?['fullName'] as String? ?? user?.displayName ?? 'Breedr User';
-          final bio = data?['bio'] as String? ??
+              data?['fullName'] as String? ??
+              user?.displayName ??
+              'Breedr User';
+          final bio =
+              data?['bio'] as String? ??
               'Tell other pet owners a little about yourself.';
           final homeType = data?['homeType'] as String? ?? 'Not set';
           final locationName =
@@ -257,29 +628,21 @@ class _ProfileTabState extends State<_ProfileTab> {
           final hasPets = data?['otherPetsAtHome'] as bool? ?? false;
           final photoUrl =
               data?['profilePhoto'] as String? ?? user?.photoURL ?? '';
-          final additionalImages =
-              (data?['additionalImages'] as List?)?.cast<String>() ??
-                  const <String>[];
+          final additionalImages = _imageListFromAny(
+            data?['additionalImages'] ??
+                data?['additionalPhotos'] ??
+                data?['additionalPhotoUrls'],
+          );
 
           return SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                  child: const Text(
-                    'Profile',
-                    style: TextStyle(
-                      color: Color(0xFF444444),
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
                 _ProfileHero(
                   data: data,
                   ownerId: user?.uid ?? '',
                   onLogout: widget.onLogout,
+                  onShowGuide: widget.onShowGuide,
                   onProfileUpdated: _refreshProfile,
                   fullName: fullName,
                   bio: bio,
@@ -303,6 +666,7 @@ class _ProfileHero extends StatelessWidget {
   final Map<String, dynamic>? data;
   final String ownerId;
   final Future<void> Function() onLogout;
+  final VoidCallback onShowGuide;
   final VoidCallback onProfileUpdated;
   final String fullName;
   final String bio;
@@ -317,6 +681,7 @@ class _ProfileHero extends StatelessWidget {
     required this.data,
     required this.ownerId,
     required this.onLogout,
+    required this.onShowGuide,
     required this.onProfileUpdated,
     required this.fullName,
     required this.bio,
@@ -334,8 +699,8 @@ class _ProfileHero extends StatelessWidget {
     final backgroundUrl = storedCoverUrl.isNotEmpty
         ? storedCoverUrl
         : additionalImages.isNotEmpty
-            ? additionalImages.first
-            : '';
+        ? additionalImages.first
+        : '';
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12),
@@ -372,6 +737,7 @@ class _ProfileHero extends StatelessWidget {
                             builder: (_) => _SettingsScreen(
                               data: data,
                               onLogout: onLogout,
+                              onShowGuide: onShowGuide,
                             ),
                           ),
                         );
@@ -410,8 +776,11 @@ class _ProfileHero extends StatelessWidget {
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      const Icon(Icons.location_on,
-                          size: 14, color: Color(0xFF555555)),
+                      const Icon(
+                        Icons.location_on,
+                        size: 14,
+                        color: Color(0xFF555555),
+                      ),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
@@ -509,8 +878,9 @@ class _OwnRatingsCard extends StatelessWidget {
     if (ownerId.isEmpty) return const SizedBox.shrink();
 
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: BreedingMatchService.instance
-          .watchPublishedReviewsForUser(ownerId),
+      stream: BreedingMatchService.instance.watchPublishedReviewsForUser(
+        ownerId,
+      ),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return const _RatingsMessage(
@@ -609,15 +979,9 @@ class _OwnRatingsCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _RatingCountRow(
-                        label: 'Breeding',
-                        count: breedingCount,
-                      ),
+                      _RatingCountRow(label: 'Breeding', count: breedingCount),
                       const SizedBox(height: 8),
-                      _RatingCountRow(
-                        label: 'Adoption',
-                        count: adoptionCount,
-                      ),
+                      _RatingCountRow(label: 'Adoption', count: adoptionCount),
                       const SizedBox(height: 10),
                       const Text(
                         'View all reviews',
@@ -630,10 +994,7 @@ class _OwnRatingsCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                const Icon(
-                  Icons.chevron_right,
-                  color: AppColors.primary,
-                ),
+                const Icon(Icons.chevron_right, color: AppColors.primary),
               ],
             ),
           ),
@@ -660,10 +1021,7 @@ class _RatingCountRow extends StatelessWidget {
   final String label;
   final int count;
 
-  const _RatingCountRow({
-    required this.label,
-    required this.count,
-  });
+  const _RatingCountRow({required this.label, required this.count});
 
   @override
   Widget build(BuildContext context) {
@@ -744,205 +1102,632 @@ class _RatingsMessage extends StatelessWidget {
   }
 }
 
-class _SettingsScreen extends StatelessWidget {
+class _SettingsScreen extends StatefulWidget {
   final Map<String, dynamic>? data;
   final Future<void> Function()? onLogout;
+  final VoidCallback? onShowGuide;
 
-  const _SettingsScreen({
-    this.data,
-    this.onLogout,
-  });
+  const _SettingsScreen({this.data, this.onLogout, this.onShowGuide});
+
+  @override
+  State<_SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<_SettingsScreen> {
+  bool _petManagementOpen = true;
+  bool _notificationsOpen = false;
+  bool _privacySafetyOpen = false;
+  bool _reviewsOpen = false;
+  bool _historyOpen = false;
+  bool _aboutOpen = false;
 
   @override
   Widget build(BuildContext context) {
     final user = UserSessionService.instance.currentUser;
     final fullName =
-        data?['fullName'] as String? ?? user?.displayName ?? 'Breedr User';
-    final userName = data?['userName'] as String? ?? '';
+        widget.data?['fullName'] as String? ??
+        user?.displayName ??
+        'Breedr User';
+    final userName = widget.data?['userName'] as String? ?? '';
     final locationName =
-        data?['locationName'] as String? ?? 'Location not set';
+        widget.data?['locationName'] as String? ?? 'Location not set';
     final photoUrl =
-        data?['profilePhoto'] as String? ?? user?.photoURL ?? '';
+        widget.data?['profilePhoto'] as String? ?? user?.photoURL ?? '';
+    final moderation = widget.data == null
+        ? null
+        : ModerationState.fromUserData(widget.data!);
+    final hasModerationIssue = moderation != null && !moderation.isActive;
 
     return Scaffold(
       backgroundColor: const Color(0xFFFFF0F5),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(28, 20, 28, 28),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-              Row(
+        child: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
+              decoration: const BoxDecoration(color: Color(0xFFFFF7FA)),
+              child: Column(
                 children: [
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.arrow_back,
-                        color: AppColors.primary, size: 28),
-                  ),
-                  const SizedBox(width: 4),
-                  const Text(
-                    'SETTINGS',
-                    style: TextStyle(
-                      color: Color(0xFF111111),
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 28),
-              Row(
-                children: [
-                  _ProfileAvatar(photoUrl: photoUrl, size: 72),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          fullName,
-                          style: const TextStyle(
-                            color: AppColors.primary,
+                  Row(
+                    children: [
+                      _SettingsCircleButton(
+                        icon: Icons.arrow_back,
+                        onTap: () => Navigator.pop(context),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text(
+                          'SETTINGS',
+                          style: TextStyle(
+                            color: Color(0xFF111111),
                             fontSize: 22,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 12,
-                          runSpacing: 6,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  Row(
+                    children: [
+                      _ProfileAvatar(photoUrl: photoUrl, size: 68),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            if (userName.isNotEmpty)
-                              _MiniMeta(icon: Icons.alternate_email, text: userName),
-                            _MiniMeta(
-                                icon: Icons.location_on_outlined,
-                                text: locationName),
+                            Text(
+                              fullName,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: AppColors.primary,
+                                fontSize: 22,
+                                fontWeight: FontWeight.w900,
+                                height: 1.05,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 10,
+                              runSpacing: 5,
+                              children: [
+                                if (userName.isNotEmpty)
+                                  _MiniMeta(
+                                    icon: Icons.alternate_email,
+                                    text: userName,
+                                  ),
+                                _MiniMeta(
+                                  icon: Icons.location_on_outlined,
+                                  text: locationName,
+                                ),
+                              ],
+                            ),
                           ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      TextButton.icon(
+                        onPressed: () async {
+                          final updated = await Navigator.push<bool>(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  _EditProfileScreen(data: widget.data),
+                            ),
+                          );
+                          if (updated == true && context.mounted) {
+                            Navigator.pop(context, true);
+                          }
+                        },
+                        icon: const Icon(Icons.edit, size: 15),
+                        label: const Text('Edit'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFFD5384C),
+                          backgroundColor: const Color(0xFFFFE1E6),
+                          textStyle: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(22),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(18, 10, 18, 22),
+                children: [
+                  _SettingsExpandableSection(
+                    title: 'PET MANAGEMENT',
+                    open: _petManagementOpen,
+                    onToggle: () => setState(
+                      () => _petManagementOpen = !_petManagementOpen,
+                    ),
+                    child: _SeparatedSettingsColumn(
+                      children: [
+                        _SettingsTile(
+                          icon: Icons.pets,
+                          label: 'My Pets',
+                          subtitle: 'Manage your listed pets',
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const _MyPetsScreen(),
+                            ),
+                          ),
+                        ),
+                        _SettingsTile(
+                          icon: Icons.local_hospital,
+                          label: 'Health Vault',
+                          subtitle: 'Vaccination and document records',
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const HealthVaultScreen(),
+                            ),
+                          ),
+                        ),
+                        _SettingsTile(
+                          icon: Icons.location_on,
+                          label: 'Location',
+                          subtitle: 'Update your area and pet locations',
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const LocationSettingsScreen(),
+                            ),
+                          ),
                         ),
                       ],
                     ),
                   ),
-                  TextButton.icon(
-                    onPressed: () async {
-                      final updated = await Navigator.push<bool>(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => _EditProfileScreen(data: data),
+                  _SettingsExpandableSection(
+                    title: 'NOTIFICATIONS',
+                    open: _notificationsOpen,
+                    onToggle: () => setState(
+                      () => _notificationsOpen = !_notificationsOpen,
+                    ),
+                    child: _SeparatedSettingsColumn(
+                      children: [
+                        _SettingSwitch(
+                          preferenceKey: 'breedingLikes',
+                          title: 'Breeding Likes',
+                          subtitle: 'When someone likes your pet',
+                          initialValue: _notificationPreference(
+                            widget.data,
+                            'breedingLikes',
+                          ),
                         ),
-                      );
-                      if (updated == true && context.mounted) {
-                        Navigator.pop(context, true);
-                      }
-                    },
-                    icon: const Icon(Icons.edit, size: 16),
-                    label: const Text('Edit Profile'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: const Color(0xFF222222),
-                      backgroundColor: const Color(0xFFFFDDE6),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18),
+                        _SettingSwitch(
+                          preferenceKey: 'adoptionRequests',
+                          title: 'Adoption Requests',
+                          subtitle: 'When an adopter answers your questions',
+                          initialValue: _notificationPreference(
+                            widget.data,
+                            'adoptionRequests',
+                          ),
+                        ),
+                        _SettingSwitch(
+                          preferenceKey: 'newMessages',
+                          title: 'New Messages',
+                          subtitle: 'Chat notifications',
+                          initialValue: _notificationPreference(
+                            widget.data,
+                            'newMessages',
+                          ),
+                        ),
+                        _SettingSwitch(
+                          preferenceKey: 'adoptionUpdates',
+                          title: 'Adoption Updates',
+                          subtitle:
+                              'Handover, protection window and status changes',
+                          initialValue: _notificationPreference(
+                            widget.data,
+                            'adoptionUpdates',
+                          ),
+                        ),
+                        _SettingSwitch(
+                          preferenceKey: 'contractUpdates',
+                          title: 'Contract Updates',
+                          subtitle: 'Signatures and agreement changes',
+                          initialValue: _notificationPreference(
+                            widget.data,
+                            'contractUpdates',
+                          ),
+                        ),
+                        _SettingSwitch(
+                          preferenceKey: 'petHealth',
+                          title: 'Pet Health',
+                          subtitle: 'Vaccination and document renewals',
+                          initialValue: _notificationPreference(
+                            widget.data,
+                            'petHealth',
+                          ),
+                        ),
+                        _SettingSwitch(
+                          preferenceKey: 'reviewsReceived',
+                          title: 'Reviews Received',
+                          subtitle: 'When someone reviews you',
+                          initialValue: _notificationPreference(
+                            widget.data,
+                            'reviewsReceived',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _SettingsExpandableSection(
+                    title: 'PRIVACY & SAFETY',
+                    open: _privacySafetyOpen,
+                    onToggle: () => setState(
+                      () => _privacySafetyOpen = !_privacySafetyOpen,
+                    ),
+                    child: _SeparatedSettingsColumn(
+                      children: [
+                        _ActivityStatusSwitch(
+                          initialValue:
+                              widget.data?['showActivityStatus'] as bool? ??
+                              true,
+                        ),
+                        _SettingsTile(
+                          icon: Icons.visibility_off_outlined,
+                          label: 'Hide Distance',
+                          subtitle: 'Do not show your distance to other users',
+                          trailing: _SettingSwitchInline(
+                            preferenceKey: 'hideDistance',
+                            initialValue:
+                                widget.data?['hideDistance'] as bool? ?? false,
+                          ),
+                          onTap: () {},
+                        ),
+                        _SettingsTile(
+                          icon: Icons.flag_outlined,
+                          label: 'Report History',
+                          subtitle: 'Reports you have filed or received',
+                          onTap: () => _showSettingsInfo(
+                            context,
+                            title: 'Report History',
+                            message:
+                                'Reports you file, reports you receive, and admin decisions will appear here once the admin module is connected.',
+                          ),
+                        ),
+                        _SettingsTile(
+                          icon: Icons.verified_user_outlined,
+                          label: 'Account Status',
+                          subtitle:
+                              'Warnings, suspensions, or restrictions on your account',
+                          badge: hasModerationIssue
+                              ? moderation.badge
+                              : 'No active issue',
+                          onTap: () => _showSettingsInfo(
+                            context,
+                            title: 'Account Status',
+                            message: hasModerationIssue
+                                ? moderation.body
+                                : 'Your account is in good standing. Active warnings, suspensions, and restrictions will appear here if the Breedr Team needs to contact you about your account.',
+                          ),
+                        ),
+                        _SettingsTile(
+                          icon: Icons.shield_outlined,
+                          label: 'Safety Records',
+                          subtitle:
+                              'Warnings and admin-reviewed account history',
+                          onTap: () => _showSafetyRecords(context, moderation),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _SettingsExpandableSection(
+                    title: 'REVIEWS',
+                    open: _reviewsOpen,
+                    onToggle: () =>
+                        setState(() => _reviewsOpen = !_reviewsOpen),
+                    child: _SeparatedSettingsColumn(
+                      children: [
+                        _SettingsTile(
+                          icon: Icons.star_border_rounded,
+                          label: 'Ratings Received',
+                          subtitle: 'What other owners think of you',
+                          badge: 'View',
+                          onTap: user == null
+                              ? () => _showSettingsInfo(
+                                  context,
+                                  title: 'Ratings Received',
+                                  message:
+                                      'Please sign in again to view your ratings.',
+                                )
+                              : () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => OwnerRatingsScreen(
+                                      ownerId: user.uid,
+                                      fallbackName: fullName,
+                                      fallbackPhoto: photoUrl,
+                                    ),
+                                  ),
+                                ),
+                        ),
+                        _SettingsTile(
+                          icon: Icons.rate_review_outlined,
+                          label: 'Reviews Given',
+                          subtitle: 'Reviews you have left for others',
+                          onTap: () => _showSettingsInfo(
+                            context,
+                            title: 'Reviews Given',
+                            message:
+                                'Reviews you leave for adopters and breeders will show up here.',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _SettingsExpandableSection(
+                    title: 'HISTORY',
+                    open: _historyOpen,
+                    onToggle: () =>
+                        setState(() => _historyOpen = !_historyOpen),
+                    child: _SeparatedSettingsColumn(
+                      children: [
+                        _SettingsTile(
+                          icon: Icons.volunteer_activism_outlined,
+                          label: 'Adoption History',
+                          subtitle: 'Pets you have adopted or adopted out',
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  const AdoptionBrowseScreen(initialTab: 3),
+                            ),
+                          ),
+                        ),
+                        _SettingsTile(
+                          icon: Icons.favorite_border,
+                          label: 'Breeding History',
+                          subtitle: 'Past breeding matches',
+                          onTap: () => _showSettingsInfo(
+                            context,
+                            title: 'Breeding History',
+                            message:
+                                'Completed breeding transactions will appear here once the breeding history screen is connected.',
+                          ),
+                        ),
+                        _SettingsTile(
+                          icon: Icons.assignment_return_outlined,
+                          label: 'Returned Pets',
+                          subtitle: 'Adoptions that did not work out',
+                          onTap: () => _showSettingsInfo(
+                            context,
+                            title: 'Returned Pets',
+                            message:
+                                'Return requests and resolved returned-pet records will appear here once admin review is connected.',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _SettingsExpandableSection(
+                    title: 'ABOUT',
+                    open: _aboutOpen,
+                    onToggle: () => setState(() => _aboutOpen = !_aboutOpen),
+                    child: _SeparatedSettingsColumn(
+                      children: [
+                        _SettingsTile(
+                          icon: Icons.help_outline,
+                          label: 'App Guide',
+                          subtitle: 'Replay the first-time walkthrough',
+                          onTap: () {
+                            Navigator.pop(context);
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              widget.onShowGuide?.call();
+                            });
+                          },
+                        ),
+                        _SettingsTile(
+                          icon: Icons.description_outlined,
+                          label: 'Terms and Services',
+                          subtitle:
+                              'Platform rules, privacy policy, and data use',
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const TermsScreen(),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: widget.onLogout == null
+                          ? null
+                          : () => widget.onLogout!(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        elevation: 8,
+                        shadowColor: AppColors.primary.withValues(alpha: 0.25),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: const Text(
+                        'LOGOUT',
+                        style: TextStyle(fontWeight: FontWeight.w900),
                       ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 28),
-              const _SettingsSectionLabel('PET OWNER ACTIONS'),
-              _SettingsTile(
-                icon: Icons.pets,
-                label: 'My Pets',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const _MyPetsScreen()),
-                ),
-              ),
-              _SettingsTile(
-                icon: Icons.local_hospital,
-                label: 'Health Vault',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const HealthVaultScreen()),
-                ),
-              ),
-              _SettingsTile(
-                icon: Icons.location_on,
-                label: 'Location',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const LocationSettingsScreen(),
-                  ),
-                ),
-              ),
-              _SettingsTile(
-                icon: Icons.storefront,
-                label: 'Breeding Status',
-                onTap: () {},
-              ),
-              const SizedBox(height: 10),
-              const _SettingsSectionLabel('NOTIFICATION'),
-              _SettingSwitch(
-                preferenceKey: 'breedingLikes',
-                title: 'Breeding Likes',
-                subtitle: 'When someone likes your pet',
-                initialValue: _notificationPreference(
-                  data,
-                  'breedingLikes',
-                ),
-              ),
-              _SettingSwitch(
-                preferenceKey: 'adoptionRequests',
-                title: 'Adoption Requests',
-                subtitle: 'When an adopter answers your questions',
-                initialValue: _notificationPreference(
-                  data,
-                  'adoptionRequests',
-                ),
-              ),
-              _SettingSwitch(
-                preferenceKey: 'newMessages',
-                title: 'New Messages',
-                subtitle: 'Chat notifications',
-                initialValue: _notificationPreference(
-                  data,
-                  'newMessages',
-                ),
-              ),
-              _SettingSwitch(
-                preferenceKey: 'petHealth',
-                title: 'Pet Health',
-                subtitle: 'Vaccination & document renewals',
-                initialValue: _notificationPreference(
-                  data,
-                  'petHealth',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showSettingsInfo(
+    BuildContext context, {
+    required String title,
+    required String message,
+  }) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => SafeArea(
+        child: Container(
+          margin: const EdgeInsets.all(18),
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: const Color(0xFFFFCBD5)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  color: AppColors.primary,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
               const SizedBox(height: 10),
-              const _SettingsSectionLabel('PRIVACY'),
-              _ActivityStatusSwitch(
-                initialValue:
-                    data?['showActivityStatus'] as bool? ?? true,
+              Text(
+                message,
+                style: const TextStyle(
+                  color: Color(0xFF5D5362),
+                  fontSize: 13,
+                  height: 1.45,
+                ),
               ),
+              const SizedBox(height: 18),
               SizedBox(
                 width: double.infinity,
-                height: 52,
+                height: 46,
                 child: ElevatedButton(
-                  onPressed: onLogout == null ? null : () => onLogout!(),
+                  onPressed: () => Navigator.pop(context),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,
-                    elevation: 0,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: BorderRadius.circular(14),
                     ),
                   ),
                   child: const Text(
-                    'LOGOUT',
+                    'Done',
                     style: TextStyle(fontWeight: FontWeight.w900),
                   ),
                 ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showSafetyRecords(BuildContext context, ModerationState? moderation) {
+    final history = moderation?.history ?? const <Map<String, dynamic>>[];
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => SafeArea(
+        child: Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.82,
+          ),
+          margin: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 22),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: const Color(0xFFFFCBD5)),
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE4DCE5),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Safety Records',
+                        style: TextStyle(
+                          color: Color(0xFF241C29),
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Close',
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                if (moderation != null && !moderation.isActive) ...[
+                  _SafetyRecordStatusCard(moderation: moderation),
+                  const SizedBox(height: 16),
+                ],
+                Text(
+                  history.isEmpty ? 'Your history' : 'Account history',
+                  style: const TextStyle(
+                    color: Color(0xFF8D8494),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: .4,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                if (history.isEmpty)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF5F7),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Text(
+                      'No safety records yet. If the Breedr Team needs to contact you about your account, the details will appear here.',
+                      style: TextStyle(
+                        color: Color(0xFF6F6574),
+                        fontSize: 13,
+                        height: 1.4,
+                      ),
+                    ),
+                  )
+                else
+                  ...history.map(
+                    (entry) => _SafetyRecordHistoryTile(entry: entry),
+                  ),
               ],
             ),
           ),
@@ -952,10 +1737,7 @@ class _SettingsScreen extends StatelessWidget {
   }
 }
 
-bool _notificationPreference(
-  Map<String, dynamic>? data,
-  String key,
-) {
+bool _notificationPreference(Map<String, dynamic>? data, String key) {
   final preferences = Map<String, dynamic>.from(
     data?['notificationPreferences'] as Map? ?? const <String, dynamic>{},
   );
@@ -965,9 +1747,7 @@ bool _notificationPreference(
 class _EditProfileScreen extends StatefulWidget {
   final Map<String, dynamic>? data;
 
-  const _EditProfileScreen({
-    required this.data,
-  });
+  const _EditProfileScreen({required this.data});
 
   @override
   State<_EditProfileScreen> createState() => _EditProfileScreenState();
@@ -1020,11 +1800,15 @@ class _EditProfileScreenState extends State<_EditProfileScreen> {
     _otherPetsAtHome = data?['otherPetsAtHome'] as bool? ?? false;
     _latitude = (data?['latitude'] as num?)?.toDouble();
     _longitude = (data?['longitude'] as num?)?.toDouble();
-    _profilePhotoUrl = data?['profilePhoto'] as String? ??
+    _profilePhotoUrl =
+        data?['profilePhoto'] as String? ??
         UserSessionService.instance.currentUser?.photoURL ??
         '';
-    _additionalImageUrls =
-        (data?['additionalImages'] as List?)?.cast<String>() ?? [];
+    _additionalImageUrls = _imageListFromAny(
+      data?['additionalImages'] ??
+          data?['additionalPhotos'] ??
+          data?['additionalPhotoUrls'],
+    );
   }
 
   @override
@@ -1058,14 +1842,18 @@ class _EditProfileScreenState extends State<_EditProfileScreen> {
                 ),
                 const SizedBox(height: 14),
                 ListTile(
-                  leading: const Icon(Icons.photo_library,
-                      color: AppColors.primary),
+                  leading: const Icon(
+                    Icons.photo_library,
+                    color: AppColors.primary,
+                  ),
                   title: const Text('Choose from gallery'),
                   onTap: () => Navigator.pop(context, ImageSource.gallery),
                 ),
                 ListTile(
-                  leading:
-                      const Icon(Icons.photo_camera, color: AppColors.primary),
+                  leading: const Icon(
+                    Icons.photo_camera,
+                    color: AppColors.primary,
+                  ),
                   title: const Text('Take a photo'),
                   onTap: () => Navigator.pop(context, ImageSource.camera),
                 ),
@@ -1081,10 +1869,7 @@ class _EditProfileScreenState extends State<_EditProfileScreen> {
     final source = await _chooseImageSource();
     if (source == null) return;
 
-    final picked = await _picker.pickImage(
-      source: source,
-      imageQuality: 75,
-    );
+    final picked = await _picker.pickImage(source: source, imageQuality: 75);
 
     if (picked == null || !mounted) return;
 
@@ -1121,10 +1906,7 @@ class _EditProfileScreenState extends State<_EditProfileScreen> {
       return;
     }
 
-    final picked = await _picker.pickImage(
-      source: source,
-      imageQuality: 75,
-    );
+    final picked = await _picker.pickImage(source: source, imageQuality: 75);
 
     if (picked == null || !mounted) return;
 
@@ -1228,8 +2010,9 @@ class _EditProfileScreenState extends State<_EditProfileScreen> {
         }
       }
 
-      final coverPhotoUrl =
-          additionalImageUrls.isNotEmpty ? additionalImageUrls.first : '';
+      final coverPhotoUrl = additionalImageUrls.isNotEmpty
+          ? additionalImageUrls.first
+          : '';
 
       await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
         'bio': _aboutController.text.trim(),
@@ -1243,7 +2026,8 @@ class _EditProfileScreenState extends State<_EditProfileScreen> {
         'additionalImages': additionalImageUrls,
         'coverPhoto': coverPhotoUrl,
         'hasProfilePhoto': profilePhotoUrl.isNotEmpty,
-        'profileCompleted': profilePhotoUrl.isNotEmpty &&
+        'profileCompleted':
+            profilePhotoUrl.isNotEmpty &&
             _aboutController.text.trim().isNotEmpty &&
             _homeType.isNotEmpty &&
             _locationController.text.trim().isNotEmpty,
@@ -1253,9 +2037,9 @@ class _EditProfileScreenState extends State<_EditProfileScreen> {
       if (!mounted) return;
 
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profile updated.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Profile updated.')));
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
@@ -1266,9 +2050,9 @@ class _EditProfileScreenState extends State<_EditProfileScreen> {
 
   void _showMessage(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -1290,8 +2074,11 @@ class _EditProfileScreenState extends State<_EditProfileScreen> {
                           onPressed: _saving
                               ? null
                               : () => Navigator.pop(context, false),
-                          icon: const Icon(Icons.arrow_back,
-                              color: AppColors.primary, size: 28),
+                          icon: const Icon(
+                            Icons.arrow_back,
+                            color: AppColors.primary,
+                            size: 28,
+                          ),
                         ),
                         const SizedBox(width: 4),
                         const Text(
@@ -1335,8 +2122,9 @@ class _EditProfileScreenState extends State<_EditProfileScreen> {
                         suffixIcon: Padding(
                           padding: const EdgeInsets.only(right: 8),
                           child: TextButton.icon(
-                            onPressed:
-                                _detectingLocation ? null : _detectLocation,
+                            onPressed: _detectingLocation
+                                ? null
+                                : _detectLocation,
                             icon: _detectingLocation
                                 ? const SizedBox(
                                     width: 12,
@@ -1401,7 +2189,8 @@ class _EditProfileScreenState extends State<_EditProfileScreen> {
                     ),
                     const SizedBox(height: 8),
                     const _EditHint(
-                      text: 'Helps match you with pets suited to your living space.',
+                      text:
+                          'Helps match you with pets suited to your living space.',
                     ),
                     const SizedBox(height: 28),
                     const _EditSectionHeader(
@@ -1515,12 +2304,15 @@ class _EditProfileScreenState extends State<_EditProfileScreen> {
                     child: SizedBox(
                       height: 48,
                       child: OutlinedButton(
-                        onPressed:
-                            _saving ? null : () => Navigator.pop(context),
+                        onPressed: _saving
+                            ? null
+                            : () => Navigator.pop(context),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppColors.primary,
                           side: const BorderSide(
-                              color: AppColors.primary, width: 1.5),
+                            color: AppColors.primary,
+                            width: 1.5,
+                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(24),
                           ),
@@ -1549,9 +2341,11 @@ class _EditProfileScreenState extends State<_EditProfileScreen> {
     return InputDecoration(
       filled: true,
       fillColor: Colors.white,
-      prefixIcon:
-          prefixIcon == null ? null : Icon(prefixIcon, color: Colors.grey),
-      suffixIcon: suffixIcon ??
+      prefixIcon: prefixIcon == null
+          ? null
+          : Icon(prefixIcon, color: Colors.grey),
+      suffixIcon:
+          suffixIcon ??
           (suffixText == null
               ? null
               : Padding(
@@ -1598,10 +2392,7 @@ class _EditSectionHeader extends StatelessWidget {
   final IconData icon;
   final String title;
 
-  const _EditSectionHeader({
-    required this.icon,
-    required this.title,
-  });
+  const _EditSectionHeader({required this.icon, required this.title});
 
   @override
   Widget build(BuildContext context) {
@@ -1628,9 +2419,7 @@ class _EditSectionHeader extends StatelessWidget {
 class _EditHint extends StatelessWidget {
   final String text;
 
-  const _EditHint({
-    required this.text,
-  });
+  const _EditHint({required this.text});
 
   @override
   Widget build(BuildContext context) {
@@ -1644,8 +2433,11 @@ class _EditHint extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.lightbulb_outline,
-              size: 14, color: AppColors.primary),
+          const Icon(
+            Icons.lightbulb_outline,
+            size: 14,
+            color: AppColors.primary,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -1718,8 +2510,11 @@ class _ProfilePhotoEditor extends StatelessWidget {
                   color: Color(0xFFFF8FA1),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.photo_camera,
-                    color: Colors.white, size: 15),
+                child: const Icon(
+                  Icons.photo_camera,
+                  color: Colors.white,
+                  size: 15,
+                ),
               ),
             ],
           ),
@@ -1781,10 +2576,7 @@ class _ProfilePhotoPreview extends StatelessWidget {
   final String photoUrl;
   final File? photoFile;
 
-  const _ProfilePhotoPreview({
-    required this.photoUrl,
-    required this.photoFile,
-  });
+  const _ProfilePhotoPreview({required this.photoUrl, required this.photoFile});
 
   @override
   Widget build(BuildContext context) {
@@ -1961,9 +2753,7 @@ class _EditableAdditionalPhotoCard extends StatelessWidget {
 class _AddAdditionalPhotoCard extends StatelessWidget {
   final VoidCallback onTap;
 
-  const _AddAdditionalPhotoCard({
-    required this.onTap,
-  });
+  const _AddAdditionalPhotoCard({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -2029,8 +2819,11 @@ class _MyPetsScreenState extends State<_MyPetsScreen> {
                 children: [
                   IconButton(
                     onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.arrow_back,
-                        color: AppColors.primary, size: 28),
+                    icon: const Icon(
+                      Icons.arrow_back,
+                      color: AppColors.primary,
+                      size: 28,
+                    ),
                   ),
                   const SizedBox(width: 6),
                   const Text(
@@ -2074,9 +2867,12 @@ class _MyPetsScreenState extends State<_MyPetsScreen> {
                         stream: _query(uid).snapshots(),
                         builder: (context, snapshot) {
                           final docs = snapshot.data?.docs ?? [];
+                          final visibleDocs = docs
+                              .where((doc) => !_isRemovedByAdmin(doc.data()))
+                              .toList();
                           final pets = _filter == 'All'
-                              ? docs
-                              : docs.where((doc) {
+                              ? visibleDocs
+                              : visibleDocs.where((doc) {
                                   final purpose =
                                       doc.data()['purpose'] as String? ?? '';
                                   return purpose == _filter.toLowerCase();
@@ -2085,11 +2881,11 @@ class _MyPetsScreenState extends State<_MyPetsScreen> {
                           return GridView.builder(
                             gridDelegate:
                                 const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              mainAxisSpacing: 14,
-                              crossAxisSpacing: 14,
-                              childAspectRatio: 0.62,
-                            ),
+                                  crossAxisCount: 2,
+                                  mainAxisSpacing: 14,
+                                  crossAxisSpacing: 14,
+                                  childAspectRatio: 0.62,
+                                ),
                             itemCount: pets.length + 1,
                             itemBuilder: (context, index) {
                               if (index == pets.length) {
@@ -2113,14 +2909,22 @@ class _MyPetsScreenState extends State<_MyPetsScreen> {
   }
 }
 
+bool _isRemovedByAdmin(Map<String, dynamic> data) {
+  final status = (data['status'] ?? '').toString().trim().toLowerCase();
+  final adminListingStatus = (data['adminListingStatus'] ?? '')
+      .toString()
+      .trim()
+      .toLowerCase();
+  return data['adminRemoved'] == true ||
+      status == 'removed' ||
+      adminListingStatus == 'removed';
+}
+
 class _MyPetCard extends StatelessWidget {
   final String petId;
   final Map<String, dynamic> data;
 
-  const _MyPetCard({
-    required this.petId,
-    required this.data,
-  });
+  const _MyPetCard({required this.petId, required this.data});
 
   @override
   Widget build(BuildContext context) {
@@ -2129,86 +2933,100 @@ class _MyPetCard extends StatelessWidget {
     final purpose = data['purpose'] as String? ?? '';
     final status = data['status'] as String? ?? purpose;
     final displayStatus = status == 'published' ? purpose : status;
-    final photoUrl = (data['petProfilePhoto'] as String?) ??
+    final isReturned =
+        status == 'unpublished' && data['adoptionStatus'] == 'returned';
+    final photoUrl =
+        (data['petProfilePhoto'] as String?) ??
         (data['profilePhoto'] as String?) ??
         '';
 
     return InkWell(
       onTap: () => Navigator.push(
         context,
-        MaterialPageRoute(
-          builder: (_) => _MyPetPreviewScreen(data: data),
-        ),
+        MaterialPageRoute(builder: (_) => _MyPetPreviewScreen(data: data)),
       ),
       child: Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: AppColors.primary, width: 2),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Column(
-        children: [
-          Align(
-            alignment: Alignment.centerRight,
-            child: PopupMenuButton<String>(
-              icon: Icon(Icons.more_vert, color: Colors.grey.shade700),
-              onSelected: (value) => _confirmStatusChange(context, value),
-              itemBuilder: (context) {
-                if (status == 'matched' || status == 'adopted') {
-                  return const [];
-                }
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: AppColors.primary, width: 2),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Column(
+          children: [
+            Align(
+              alignment: Alignment.centerRight,
+              child: PopupMenuButton<String>(
+                icon: Icon(Icons.more_vert, color: Colors.grey.shade700),
+                onSelected: (value) => _confirmStatusChange(context, value),
+                itemBuilder: (context) {
+                  if (status == 'matched' || status == 'adopted') {
+                    return const [];
+                  }
 
-                if (purpose == 'breeding') {
+                  if (purpose == 'breeding') {
+                    return const [
+                      PopupMenuItem(
+                        value: 'matched',
+                        child: Text('Mark as matched'),
+                      ),
+                    ];
+                  }
+
+                  if (isReturned) {
+                    return const [
+                      PopupMenuItem(
+                        value: 'relist_adoption',
+                        child: Text('Publish for Adoption'),
+                      ),
+                    ];
+                  }
+
                   return const [
                     PopupMenuItem(
-                      value: 'matched',
-                      child: Text('Mark as matched'),
+                      value: 'adopted',
+                      child: Text('Mark as adopted'),
                     ),
                   ];
-                }
-
-                return const [
-                  PopupMenuItem(
-                    value: 'adopted',
-                    child: Text('Mark as adopted'),
-                  ),
-                ];
-              },
+                },
+              ),
             ),
-          ),
-          const SizedBox(height: 2),
-          _PetAvatar(photoUrl: photoUrl),
-          const SizedBox(height: 6),
-          Text(
-            name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: AppColors.primary,
-              fontSize: 22,
-              fontWeight: FontWeight.w900,
+            const SizedBox(height: 2),
+            _PetAvatar(photoUrl: photoUrl),
+            const SizedBox(height: 6),
+            Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.primary,
+                fontSize: 22,
+                fontWeight: FontWeight.w900,
+              ),
             ),
-          ),
-          Text(
-            breed,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Color(0xFF222222),
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
+            Text(
+              breed,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF222222),
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          _PurposePill(label: displayStatus),
-        ],
-      ),
+            const SizedBox(height: 8),
+            _PurposePill(label: displayStatus),
+          ],
+        ),
       ),
     );
   }
 
   Future<void> _confirmStatusChange(BuildContext context, String status) async {
+    if (status == 'relist_adoption') {
+      await _confirmReturnedPetRelist(context);
+      return;
+    }
     final isMatched = status == 'matched';
     final confirmed = await showDialog<bool>(
       context: context,
@@ -2244,6 +3062,73 @@ class _MyPetCard extends StatelessWidget {
       'isActive': false,
       'updatedAt': FieldValue.serverTimestamp(),
     });
+  }
+
+  Future<void> _confirmReturnedPetRelist(BuildContext context) async {
+    final name = data['name']?.toString() ?? 'this pet';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text(
+          'Publish for Adoption?',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          '$name will use the same pet profile and become visible in adoption listings again. The previous return history will remain recorded.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
+            child: const Text('Publish'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    final locationResult = await CabuyaoAccessService.instance.checkAccess();
+    if (!context.mounted) return;
+    if (!locationResult.isAllowed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Location access in Cabuyao is required before publishing a pet.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    try {
+      await PetService.instance.relistReturnedPetForAdoption(petId);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$name is published for adoption again.')),
+      );
+    } on FirebaseException catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            error.code == 'permission-denied'
+                ? 'You do not have permission to publish this pet.'
+                : 'Unable to publish this pet right now.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    }
   }
 }
 
@@ -2287,9 +3172,7 @@ class _AddPetCard extends StatelessWidget {
 class _MyPetPreviewScreen extends StatelessWidget {
   final Map<String, dynamic> data;
 
-  const _MyPetPreviewScreen({
-    required this.data,
-  });
+  const _MyPetPreviewScreen({required this.data});
 
   @override
   Widget build(BuildContext context) {
@@ -2305,11 +3188,16 @@ class _MyPetPreviewScreen extends StatelessWidget {
     final status = data['status'] as String? ?? purpose;
     final displayStatus = status == 'published' ? purpose : status;
     final location = data['locationName'] as String? ?? '';
-    final photoUrl = (data['petProfilePhoto'] as String?) ??
+    final photoUrl =
+        (data['petProfilePhoto'] as String?) ??
         (data['profilePhoto'] as String?) ??
         '';
-    final images = (data['additionalImages'] as List?)?.cast<String>() ??
-        const <String>[];
+    final images = _imageListFromAny(
+      data['additionalImages'] ??
+          data['additionalPhotos'] ??
+          data['additionalPhotoUrls'] ??
+          data['morePhotos'],
+    );
     final records = (data['healthRecords'] as List?) ?? const [];
     final adoption = data['adoptionDetails'] as Map<String, dynamic>?;
     final price = adoption?['price'];
@@ -2387,14 +3275,16 @@ class _MyPetPreviewScreen extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 20),
-              _PreviewGrid(rows: {
-                'Species': species,
-                'Breed': breed,
-                'Age': age,
-                'Gender': gender,
-                'Color': color,
-                'Size': size,
-              }),
+              _PreviewGrid(
+                rows: {
+                  'Species': species,
+                  'Breed': breed,
+                  'Age': age,
+                  'Gender': gender,
+                  'Color': color,
+                  'Size': size,
+                },
+              ),
               const SizedBox(height: 20),
               _PreviewSectionTitle('ABOUT ${name.toUpperCase()}'),
               const SizedBox(height: 10),
@@ -2434,6 +3324,16 @@ class _MyPetPreviewScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+List<String> _imageListFromAny(Object? value) {
+  if (value is Iterable) {
+    return value
+        .map((item) => item?.toString().trim() ?? '')
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+  return const [];
 }
 
 class _PetProfileFallbackBlock extends StatelessWidget {
@@ -2506,13 +3406,20 @@ class _PreviewGrid extends StatelessWidget {
             (entry) => Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(entry.key,
-                    style: const TextStyle(
-                        color: Color(0xFF888888), fontSize: 11)),
-                Text(entry.value,
-                    style: const TextStyle(
-                        color: Color(0xFF111111),
-                        fontWeight: FontWeight.w700)),
+                Text(
+                  entry.key,
+                  style: const TextStyle(
+                    color: Color(0xFF888888),
+                    fontSize: 11,
+                  ),
+                ),
+                Text(
+                  entry.value,
+                  style: const TextStyle(
+                    color: Color(0xFF111111),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ],
             ),
           )
@@ -2566,18 +3473,20 @@ class _PreviewHealthRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.description_outlined,
-              color: Color(0xFF3D8BFF)),
+          const Icon(Icons.description_outlined, color: Color(0xFF3D8BFF)),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(type,
-                    style: const TextStyle(fontWeight: FontWeight.bold)),
-                Text(file,
-                    style: const TextStyle(
-                        color: Color(0xFF888888), fontSize: 11)),
+                Text(type, style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text(
+                  file,
+                  style: const TextStyle(
+                    color: Color(0xFF888888),
+                    fontSize: 11,
+                  ),
+                ),
               ],
             ),
           ),
@@ -2633,14 +3542,17 @@ class _PreviewHealthRow extends StatelessWidget {
                   ),
                 ],
               ),
-              Text(fileName,
-                  style: const TextStyle(color: Color(0xFF666666))),
+              Text(fileName, style: const TextStyle(color: Color(0xFF666666))),
               if (dateIssued.isNotEmpty)
-                Text('Issued: $dateIssued',
-                    style: const TextStyle(color: Color(0xFF666666))),
+                Text(
+                  'Issued: $dateIssued',
+                  style: const TextStyle(color: Color(0xFF666666)),
+                ),
               if (clinic.isNotEmpty)
-                Text('Clinic: $clinic',
-                    style: const TextStyle(color: Color(0xFF666666))),
+                Text(
+                  'Clinic: $clinic',
+                  style: const TextStyle(color: Color(0xFF666666)),
+                ),
               const SizedBox(height: 14),
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
@@ -2682,11 +3594,7 @@ class _ProfileFallbackIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Icon(
-      Icons.person,
-      color: AppColors.primary,
-      size: 56,
-    );
+    return const Icon(Icons.person, color: AppColors.primary, size: 56);
   }
 }
 
@@ -2708,10 +3616,7 @@ class _ProfileAvatar extends StatelessWidget {
   final String photoUrl;
   final double size;
 
-  const _ProfileAvatar({
-    required this.photoUrl,
-    required this.size,
-  });
+  const _ProfileAvatar({required this.photoUrl, required this.size});
 
   @override
   Widget build(BuildContext context) {
@@ -2738,9 +3643,7 @@ class _ProfileAvatar extends StatelessWidget {
 class _PetAvatar extends StatelessWidget {
   final String photoUrl;
 
-  const _PetAvatar({
-    required this.photoUrl,
-  });
+  const _PetAvatar({required this.photoUrl});
 
   @override
   Widget build(BuildContext context) {
@@ -2828,9 +3731,7 @@ class _SectionTitle extends StatelessWidget {
 class _AboutBox extends StatelessWidget {
   final String text;
 
-  const _AboutBox({
-    required this.text,
-  });
+  const _AboutBox({required this.text});
 
   @override
   Widget build(BuildContext context) {
@@ -2866,9 +3767,7 @@ class _InfoRow {
 class _InfoBox extends StatelessWidget {
   final List<_InfoRow> rows;
 
-  const _InfoBox({
-    required this.rows,
-  });
+  const _InfoBox({required this.rows});
 
   @override
   Widget build(BuildContext context) {
@@ -2921,9 +3820,7 @@ class _InfoBox extends StatelessWidget {
 class _MoreUserPhotos extends StatelessWidget {
   final List<String> images;
 
-  const _MoreUserPhotos({
-    required this.images,
-  });
+  const _MoreUserPhotos({required this.images});
 
   @override
   Widget build(BuildContext context) {
@@ -2965,10 +3862,7 @@ class _MiniMeta extends StatelessWidget {
   final IconData icon;
   final String text;
 
-  const _MiniMeta({
-    required this.icon,
-    required this.text,
-  });
+  const _MiniMeta({required this.icon, required this.text});
 
   @override
   Widget build(BuildContext context) {
@@ -2979,32 +3873,115 @@ class _MiniMeta extends StatelessWidget {
         const SizedBox(width: 4),
         Text(
           text,
-          style: const TextStyle(
-            color: Color(0xFF777777),
-            fontSize: 11,
-          ),
+          style: const TextStyle(color: Color(0xFF777777), fontSize: 11),
         ),
       ],
     );
   }
 }
 
-class _SettingsSectionLabel extends StatelessWidget {
-  final String label;
+class _SettingsCircleButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
 
-  const _SettingsSectionLabel(this.label);
+  const _SettingsCircleButton({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      shape: const CircleBorder(),
+      elevation: 2,
+      shadowColor: AppColors.primary.withValues(alpha: 0.12),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: SizedBox(
+          width: 36,
+          height: 36,
+          child: Icon(icon, color: AppColors.primary, size: 20),
+        ),
+      ),
+    );
+  }
+}
+
+class _SettingsExpandableSection extends StatelessWidget {
+  final String title;
+  final bool open;
+  final VoidCallback onToggle;
+  final Widget child;
+
+  const _SettingsExpandableSection({
+    required this.title,
+    required this.open,
+    required this.onToggle,
+    required this.child,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: Color(0xFF888888),
-          fontSize: 12,
-          fontWeight: FontWeight.w900,
-        ),
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: onToggle,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(4, 10, 4, 10),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        color: Color(0xFF8D8494),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                  ),
+                  AnimatedRotation(
+                    turns: open ? 0.25 : 0,
+                    duration: const Duration(milliseconds: 180),
+                    child: const Icon(
+                      Icons.chevron_right,
+                      color: Color(0xFF8D8494),
+                      size: 20,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          AnimatedCrossFade(
+            firstChild: const SizedBox(width: double.infinity),
+            secondChild: Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: const Color(0xFFF3E4E8), width: 1.4),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primary.withValues(alpha: 0.08),
+                    blurRadius: 22,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: child,
+            ),
+            crossFadeState: open
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 220),
+            sizeCurve: Curves.easeOutCubic,
+          ),
+        ],
       ),
     );
   }
@@ -3013,31 +3990,380 @@ class _SettingsSectionLabel extends StatelessWidget {
 class _SettingsTile extends StatelessWidget {
   final IconData icon;
   final String label;
+  final String subtitle;
   final VoidCallback onTap;
+  final Widget? trailing;
+  final String? badge;
 
   const _SettingsTile({
     required this.icon,
     required this.label,
+    required this.subtitle,
     required this.onTap,
+    this.trailing,
+    this.badge,
   });
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(icon, color: AppColors.primary),
-      title: Text(
-        label,
-        style: const TextStyle(
-          color: AppColors.primary,
-          fontSize: 16,
-          fontWeight: FontWeight.w800,
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(15, 14, 14, 14),
+        child: Row(
+          children: [
+            _SettingsIconBox(icon: icon),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: Color(0xFFD5384C),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      color: Color(0xFF8D8494),
+                      fontSize: 11,
+                      height: 1.25,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (trailing != null)
+              trailing!
+            else ...[
+              if (badge != null) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFE8EF),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    badge!,
+                    style: const TextStyle(
+                      color: AppColors.primary,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+              const Icon(
+                Icons.chevron_right,
+                color: Color(0xFFD8CFD9),
+                size: 20,
+              ),
+            ],
+          ],
         ),
       ),
-      trailing: const Icon(Icons.chevron_right, color: AppColors.primary),
-      onTap: onTap,
     );
   }
+}
+
+class _SettingSwitchInline extends StatefulWidget {
+  final String preferenceKey;
+  final bool initialValue;
+
+  const _SettingSwitchInline({
+    required this.preferenceKey,
+    required this.initialValue,
+  });
+
+  @override
+  State<_SettingSwitchInline> createState() => _SettingSwitchInlineState();
+}
+
+class _SettingSwitchInlineState extends State<_SettingSwitchInline> {
+  late bool _value;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _value = widget.initialValue;
+  }
+
+  Future<void> _update(bool next) async {
+    if (_saving) return;
+
+    final user = UserSessionService.instance.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please sign in again.')));
+      return;
+    }
+
+    setState(() {
+      _value = next;
+      _saving = true;
+    });
+
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        widget.preferenceKey: next,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (error) {
+      debugPrint('Settings preference update failed: $error');
+      if (!mounted) return;
+      setState(() => _value = !next);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to update this setting.')),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Transform.scale(
+      scale: 0.82,
+      child: Switch(
+        activeThumbColor: Colors.white,
+        activeTrackColor: AppColors.primary,
+        inactiveThumbColor: Colors.white,
+        inactiveTrackColor: const Color(0xFFE4DEE6),
+        value: _value,
+        onChanged: _saving ? null : _update,
+      ),
+    );
+  }
+}
+
+class _SettingsIconBox extends StatelessWidget {
+  final IconData icon;
+
+  const _SettingsIconBox({required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF5F6),
+        borderRadius: BorderRadius.circular(11),
+      ),
+      child: Icon(icon, color: AppColors.primary, size: 19),
+    );
+  }
+}
+
+class _ModerationInfoRow extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _ModerationInfoRow({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: AppColors.primary, size: 17),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                color: Color(0xFF6F6574),
+                fontSize: 12,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SafetyRecordStatusCard extends StatelessWidget {
+  final ModerationState moderation;
+
+  const _SafetyRecordStatusCard({required this.moderation});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = moderation.isPermanent
+        ? const Color(0xFF8B1E3F)
+        : moderation.isSuspended
+        ? const Color(0xFFB56A12)
+        : AppColors.primary;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF0F3),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFFCBD5)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            moderation.isPermanent
+                ? Icons.block
+                : moderation.isSuspended
+                ? Icons.pause_circle_outline
+                : Icons.warning_amber_rounded,
+            color: color,
+            size: 23,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  moderation.title,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  moderation.body,
+                  style: const TextStyle(
+                    color: Color(0xFF6F6574),
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+                if (moderation.suspensionEndsAt != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Ends ${_formatModerationDate(moderation.suspensionEndsAt!)}',
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SafetyRecordHistoryTile extends StatelessWidget {
+  final Map<String, dynamic> entry;
+
+  const _SafetyRecordHistoryTile({required this.entry});
+
+  @override
+  Widget build(BuildContext context) {
+    final category = (entry['category'] ?? 'Account standing review')
+        .toString()
+        .trim();
+    final action = (entry['action'] ?? entry['actionKey'] ?? 'Reviewed')
+        .toString()
+        .trim();
+    final date = _readModerationDate(entry['createdAt'] ?? entry['actionAt']);
+    final guidance = moderationGuidanceFor(category);
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFFD6DD)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.shield_outlined,
+                color: AppColors.primary,
+                size: 19,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  action,
+                  style: const TextStyle(
+                    color: Color(0xFF241C29),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              if (date != null)
+                Text(
+                  _formatModerationDate(date),
+                  style: const TextStyle(
+                    color: Color(0xFF8D8494),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            category,
+            style: const TextStyle(
+              color: AppColors.primary,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            guidance.body,
+            maxLines: 4,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Color(0xFF6F6574),
+              fontSize: 11.5,
+              height: 1.35,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+DateTime? _readModerationDate(dynamic value) {
+  if (value is Timestamp) return value.toDate();
+  if (value is DateTime) return value;
+  if (value is String) return DateTime.tryParse(value);
+  return null;
+}
+
+String _formatModerationDate(DateTime value) {
+  final local = value.toLocal();
+  return '${local.month}/${local.day}/${local.year}';
 }
 
 class _SettingSwitch extends StatefulWidget {
@@ -3072,9 +4398,9 @@ class _SettingSwitchState extends State<_SettingSwitch> {
 
     final user = UserSessionService.instance.currentUser;
     if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please sign in again.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please sign in again.')));
       return;
     }
 
@@ -3084,15 +4410,10 @@ class _SettingSwitchState extends State<_SettingSwitch> {
     });
 
     try {
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set(
-        {
-          'notificationPreferences': {
-            widget.preferenceKey: next,
-          },
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'notificationPreferences': {widget.preferenceKey: next},
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
     } catch (error) {
       debugPrint('Notification preference update failed: $error');
       if (!mounted) return;
@@ -3109,28 +4430,134 @@ class _SettingSwitchState extends State<_SettingSwitch> {
 
   @override
   Widget build(BuildContext context) {
-    return SwitchListTile(
-      contentPadding: EdgeInsets.zero,
-      activeThumbColor: Colors.white,
-      activeTrackColor: AppColors.primary,
-      title: Text(
-        widget.title,
-        style: const TextStyle(
-          color: AppColors.primary,
-          fontSize: 16,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-      subtitle: Text(
-        widget.subtitle,
-        style: const TextStyle(
-          color: Color(0xFF777777),
-          fontSize: 9,
-          fontStyle: FontStyle.italic,
-        ),
-      ),
+    return _SettingsSwitchRow(
+      title: widget.title,
+      subtitle: widget.subtitle,
       value: _value,
-      onChanged: _saving ? null : _update,
+      saving: _saving,
+      onChanged: _update,
+    );
+  }
+}
+
+class _SettingsSwitchRow extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final bool value;
+  final bool saving;
+  final ValueChanged<bool> onChanged;
+
+  const _SettingsSwitchRow({
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.saving,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(15, 13, 12, 13),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: AppColors.primary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: Color(0xFF8D8494),
+                    fontSize: 11,
+                    height: 1.25,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Transform.scale(
+            scale: 0.88,
+            child: Switch(
+              activeThumbColor: Colors.white,
+              activeTrackColor: AppColors.primary,
+              inactiveThumbColor: Colors.white,
+              inactiveTrackColor: const Color(0xFFE4DEE6),
+              value: value,
+              onChanged: saving ? null : onChanged,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsDivider extends StatelessWidget {
+  const _SettingsDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Divider(
+      height: 1,
+      thickness: 1,
+      color: Color(0xFFF3E4E8),
+      indent: 62,
+    );
+  }
+}
+
+class _SeparatedSettingsColumn extends StatelessWidget {
+  final List<Widget> children;
+
+  const _SeparatedSettingsColumn({required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        for (var index = 0; index < children.length; index++) ...[
+          children[index],
+          if (index != children.length - 1) const _SettingsDivider(),
+        ],
+      ],
+    );
+  }
+}
+
+class _ActivityStatusContent extends StatelessWidget {
+  final bool value;
+  final bool saving;
+  final ValueChanged<bool> onChanged;
+
+  const _ActivityStatusContent({
+    required this.value,
+    required this.saving,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        _SettingsSwitchRow(
+          title: 'Show Activity Status',
+          subtitle:
+              'When disabled, you will not see other owners activity status either.',
+          value: value,
+          saving: saving,
+          onChanged: onChanged,
+        ),
+      ],
     );
   }
 }
@@ -3138,13 +4565,10 @@ class _SettingSwitchState extends State<_SettingSwitch> {
 class _ActivityStatusSwitch extends StatefulWidget {
   final bool initialValue;
 
-  const _ActivityStatusSwitch({
-    required this.initialValue,
-  });
+  const _ActivityStatusSwitch({required this.initialValue});
 
   @override
-  State<_ActivityStatusSwitch> createState() =>
-      _ActivityStatusSwitchState();
+  State<_ActivityStatusSwitch> createState() => _ActivityStatusSwitchState();
 }
 
 class _ActivityStatusSwitchState extends State<_ActivityStatusSwitch> {
@@ -3170,9 +4594,7 @@ class _ActivityStatusSwitchState extends State<_ActivityStatusSwitch> {
       if (!mounted) return;
       setState(() => _value = !next);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Unable to update activity status.'),
-        ),
+        const SnackBar(content: Text('Unable to update activity status.')),
       );
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -3181,28 +4603,10 @@ class _ActivityStatusSwitchState extends State<_ActivityStatusSwitch> {
 
   @override
   Widget build(BuildContext context) {
-    return SwitchListTile(
-      contentPadding: EdgeInsets.zero,
-      activeThumbColor: Colors.white,
-      activeTrackColor: AppColors.primary,
-      title: const Text(
-        'Show Activity Status',
-        style: TextStyle(
-          color: AppColors.primary,
-          fontSize: 16,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-      subtitle: const Text(
-        'When disabled, you will not see other owners activity status either.',
-        style: TextStyle(
-          color: Color(0xFF777777),
-          fontSize: 9,
-          fontStyle: FontStyle.italic,
-        ),
-      ),
+    return _ActivityStatusContent(
       value: _value,
-      onChanged: _saving ? null : _update,
+      saving: _saving,
+      onChanged: _update,
     );
   }
 }
@@ -3210,9 +4614,7 @@ class _ActivityStatusSwitchState extends State<_ActivityStatusSwitch> {
 class _PurposePill extends StatelessWidget {
   final String label;
 
-  const _PurposePill({
-    required this.label,
-  });
+  const _PurposePill({required this.label});
 
   @override
   Widget build(BuildContext context) {

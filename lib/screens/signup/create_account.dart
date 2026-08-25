@@ -4,6 +4,7 @@ import '../auth/welcome_screen.dart';
 import '../auth/login_screen.dart';
 import '../../models/onboarding_data.dart';
 import '../../services/user_session_service.dart';
+import '../auth/cabuyao_access_gate_screen.dart';
 
 //done 5/28
 class Step1AboutYou extends StatefulWidget {
@@ -73,28 +74,25 @@ class _Step1AboutYouState extends State<Step1AboutYou> {
 
   // NAVIGATE TO NEXT SCREEN ONLY
 
-  final onboardingData = OnboardingData(
-  authProvider: 'email',
-  fullName: _nameCtrl.text.trim(),
+    final onboardingData = OnboardingData(
+      authProvider: 'email',
+      fullName: _nameCtrl.text.trim(),
+      userName: _usernameCtrl.text.trim().toLowerCase(),
+      email: _emailCtrl.text.trim(),
+      password: _passCtrl.text.trim(),
+    );
 
-  userName: _usernameCtrl.text
-      .trim()
-      .toLowerCase(),
-
-  email: _emailCtrl.text.trim(),
-
-  password: _passCtrl.text.trim(),
-);
-
-Navigator.push(
-  context,
-  MaterialPageRoute(
-    builder: (_) => WelcomeScreen(
-      onboardingData: onboardingData,
-    ),
-  ),
-);
-}
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CabuyaoAccessGate(
+          child: WelcomeScreen(
+            onboardingData: onboardingData,
+          ),
+        ),
+      ),
+    );
+  }
 
   Future<void> _signUpWithGoogle() async {
     setState(() => _isGoogleLoading = true);
@@ -125,9 +123,11 @@ Navigator.push(
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => WelcomeScreen(
-            onboardingData: onboardingData,
-            photoUrl: onboardingData.profilePhoto,
+          builder: (_) => CabuyaoAccessGate(
+            child: WelcomeScreen(
+              onboardingData: onboardingData,
+              photoUrl: onboardingData.profilePhoto,
+            ),
           ),
         ),
       );

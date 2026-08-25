@@ -17,10 +17,7 @@ import 'match_screen.dart';
 class BreedingScreen extends StatefulWidget {
   final ValueListenable<int>? activationSignal;
 
-  const BreedingScreen({
-    super.key,
-    this.activationSignal,
-  });
+  const BreedingScreen({super.key, this.activationSignal});
 
   @override
   State<BreedingScreen> createState() => _BreedingScreenState();
@@ -118,9 +115,7 @@ class _BreedingScreenState extends State<BreedingScreen> {
       backgroundColor: const Color(0xFFFFF0F5),
       body: SafeArea(
         child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: FirebaseFirestore.instance
-              .collection('pets')
-              .snapshots(),
+          stream: FirebaseFirestore.instance.collection('pets').snapshots(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(
@@ -128,21 +123,24 @@ class _BreedingScreenState extends State<BreedingScreen> {
               );
             }
 
-            final pets = snapshot.data?.docs
+            final pets =
+                snapshot.data?.docs
                     .map((doc) => _BreedingPet.fromDoc(doc))
                     .where((pet) => pet.isAvailableForBreeding)
                     .toList() ??
                 const <_BreedingPet>[];
 
-            final myPets =
-                pets.where((pet) => pet.ownerId.trim() == uid).toList();
+            final myPets = pets
+                .where((pet) => pet.ownerId.trim() == uid)
+                .toList();
 
             if (_selectedMyPetIndex >= myPets.length) {
               _selectedMyPetIndex = 0;
             }
 
-            final selectedPet =
-                myPets.isEmpty ? null : myPets[_selectedMyPetIndex];
+            final selectedPet = myPets.isEmpty
+                ? null
+                : myPets[_selectedMyPetIndex];
             if (_pendingInitialLocationSearch && selectedPet != null) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (!mounted || !_pendingInitialLocationSearch) return;
@@ -153,15 +151,12 @@ class _BreedingScreenState extends State<BreedingScreen> {
             final compatibleCandidates = selectedPet == null
                 ? const <_BreedingPet>[]
                 : pets
-                    .where(
-                      (pet) => _isEligibleBreedingCandidate(
-                        pet,
-                        selectedPet,
-                        uid,
-                      ),
-                    )
-                    .where(_filter.matches)
-                    .toList();
+                      .where(
+                        (pet) =>
+                            _isEligibleBreedingCandidate(pet, selectedPet, uid),
+                      )
+                      .where(_filter.matches)
+                      .toList();
             if (selectedPet != null) {
               compatibleCandidates.sort(
                 (a, b) => a
@@ -173,8 +168,9 @@ class _BreedingScreenState extends State<BreedingScreen> {
             return StreamBuilder<Set<String>>(
               stream: selectedPet == null
                   ? null
-                  : BreedingMatchService.instance
-                      .watchSwipedPetIds(selectedPet.id),
+                  : BreedingMatchService.instance.watchSwipedPetIds(
+                      selectedPet.id,
+                    ),
               initialData: const <String>{},
               builder: (context, swipeSnapshot) {
                 final swipedIds = swipeSnapshot.data ?? const <String>{};
@@ -191,8 +187,9 @@ class _BreedingScreenState extends State<BreedingScreen> {
                   _candidateIndex = 0;
                 }
 
-                final candidate =
-                    candidates.isEmpty ? null : candidates[_candidateIndex];
+                final candidate = candidates.isEmpty
+                    ? null
+                    : candidates[_candidateIndex];
 
                 return Column(
                   children: [
@@ -213,15 +210,19 @@ class _BreedingScreenState extends State<BreedingScreen> {
                       }),
                     ),
                     Padding(
-                      padding:
-                          const EdgeInsets.only(right: 16, top: 4, bottom: 8),
+                      padding: const EdgeInsets.only(
+                        right: 16,
+                        top: 4,
+                        bottom: 8,
+                      ),
                       child: Align(
                         alignment: Alignment.centerRight,
                         child: _FilterButton(onTap: _showFilterSheet),
                       ),
                     ),
                     Expanded(
-                      child: (_showLocationSearch ||
+                      child:
+                          (_showLocationSearch ||
                                   _pendingInitialLocationSearch) &&
                               selectedPet != null
                           ? _LocationSearchView(
@@ -229,41 +230,40 @@ class _BreedingScreenState extends State<BreedingScreen> {
                               candidates: candidates,
                             )
                           : candidate == null
-                              ? _BreedingEmptyState(
-                                  icon: Icons.pets,
-                                  title: 'No breeding pets yet.',
-                                  subtitle: myPets.isEmpty
-                                      ? 'Add one of your pets for breeding, then nearby listings from other owners will show here.'
-                                      : 'No ${selectedPet?.species.toLowerCase() ?? 'pet'} listings match your current filters.',
-                                  actionLabel:
-                                      myPets.isEmpty ? 'Register a pet' : null,
-                                  onAction: myPets.isEmpty
-                                      ? () => Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (_) =>
-                                                  const PetRegistrationScreen(),
-                                            ),
-                                          )
-                                      : null,
-                                )
-                              : Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                  ),
-                                  child: _BreedingPetCard(
-                                    pet: candidate,
-                                    swipingAs: selectedPet,
-                                    showDetails: _showDetails,
-                                    onPass: () =>
-                                        _onPass(selectedPet!, candidate),
-                                    onLike: () =>
-                                        _onLike(selectedPet!, candidate),
-                                    onToggleDetails: () => setState(
-                                      () => _showDetails = !_showDetails,
-                                    ),
-                                  ),
+                          ? _BreedingEmptyState(
+                              icon: Icons.pets,
+                              title: 'No breeding pets yet.',
+                              subtitle: myPets.isEmpty
+                                  ? 'Add one of your pets for breeding, then nearby listings from other owners will show here.'
+                                  : 'No ${selectedPet?.species.toLowerCase() ?? 'pet'} listings match your current filters.',
+                              actionLabel: myPets.isEmpty
+                                  ? 'Register a pet'
+                                  : null,
+                              onAction: myPets.isEmpty
+                                  ? () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            const PetRegistrationScreen(),
+                                      ),
+                                    )
+                                  : null,
+                            )
+                          : Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              child: _BreedingPetCard(
+                                pet: candidate,
+                                swipingAs: selectedPet,
+                                showDetails: _showDetails,
+                                onPass: () => _onPass(selectedPet!, candidate),
+                                onLike: () => _onLike(selectedPet!, candidate),
+                                onToggleDetails: () => setState(
+                                  () => _showDetails = !_showDetails,
                                 ),
+                              ),
+                            ),
                     ),
                   ],
                 );
@@ -275,10 +275,7 @@ class _BreedingScreenState extends State<BreedingScreen> {
     );
   }
 
-  Future<void> _onPass(
-    _BreedingPet swipingPet,
-    _BreedingPet targetPet,
-  ) async {
+  Future<void> _onPass(_BreedingPet swipingPet, _BreedingPet targetPet) async {
     setState(() => _showDetails = false);
 
     try {
@@ -306,10 +303,7 @@ class _BreedingScreenState extends State<BreedingScreen> {
     }
   }
 
-  Future<void> _onLike(
-    _BreedingPet swipingPet,
-    _BreedingPet targetPet,
-  ) async {
+  Future<void> _onLike(_BreedingPet swipingPet, _BreedingPet targetPet) async {
     setState(() => _showDetails = false);
 
     try {
@@ -408,11 +402,9 @@ class _BreedingScreenState extends State<BreedingScreen> {
       message = 'These pets were previously unmatched and cannot match again.';
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-      ),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _showFilterSheet() async {
@@ -429,10 +421,7 @@ class _BreedingScreenState extends State<BreedingScreen> {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (_) => _FilterSheet(
-        species: species,
-        initialFilter: _filter,
-      ),
+      builder: (_) => _FilterSheet(species: species, initialFilter: _filter),
     );
 
     if (filter == null || !mounted) return;
@@ -471,6 +460,12 @@ class _BreedingPet {
   final String status;
   final bool isActive;
   final String purpose;
+  final String adminListingStatus;
+  final bool adminHidden;
+  final bool adminRemoved;
+  final DateTime? adminHiddenUntil;
+  final String moderationListingStatus;
+  final DateTime? moderationHiddenUntil;
 
   const _BreedingPet({
     required this.id,
@@ -496,11 +491,38 @@ class _BreedingPet {
     required this.status,
     required this.isActive,
     required this.purpose,
+    required this.adminListingStatus,
+    required this.adminHidden,
+    required this.adminRemoved,
+    required this.adminHiddenUntil,
+    required this.moderationListingStatus,
+    required this.moderationHiddenUntil,
   });
 
   factory _BreedingPet.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data() ?? {};
     final rawRecords = data['healthRecords'] as List? ?? const [];
+    final additionalImages = _stringListFromAny(
+      data['additionalImages'] ??
+          data['additionalPhotos'] ??
+          data['additionalPhotoUrls'] ??
+          data['morePhotos'],
+    );
+    final breed = data['breed'] as String? ?? '';
+    final primaryBreed = data['primaryBreed'] as String? ?? '';
+    final secondaryBreed = data['secondaryBreed'] as String? ?? '';
+    final isMixedBreed = data['isMixedBreed'] as bool? ?? false;
+    final storedBreedTags =
+        (data['breedTags'] as List?)?.whereType<String>().toList() ??
+        const <String>[];
+    final derivedBreedTags = storedBreedTags.isNotEmpty
+        ? storedBreedTags
+        : _deriveBreedTags(
+            breed: breed,
+            primaryBreed: primaryBreed,
+            secondaryBreed: secondaryBreed,
+            isMixedBreed: isMixedBreed,
+          );
 
     return _BreedingPet(
       id: doc.id,
@@ -509,9 +531,8 @@ class _BreedingPet {
       ownerPhoto: data['ownerPhoto'] as String? ?? '',
       name: data['name'] as String? ?? 'Pet',
       species: data['species'] as String? ?? '',
-      breed: data['breed'] as String? ?? '',
-      breedTags:
-          (data['breedTags'] as List?)?.whereType<String>().toList() ?? const [],
+      breed: breed,
+      breedTags: derivedBreedTags,
       age: data['age'] as String? ?? '',
       gender: data['gender'] as String? ?? '',
       color: data['color'] as String? ?? '',
@@ -520,11 +541,11 @@ class _BreedingPet {
       locationName: data['locationName'] as String? ?? '',
       latitude: (data['latitude'] as num?)?.toDouble(),
       longitude: (data['longitude'] as num?)?.toDouble(),
-      photoUrl: (data['petProfilePhoto'] as String?) ??
+      photoUrl:
+          (data['petProfilePhoto'] as String?) ??
           (data['profilePhoto'] as String?) ??
           '',
-      additionalImages:
-          (data['additionalImages'] as List?)?.cast<String>() ?? const [],
+      additionalImages: additionalImages,
       healthRecords: rawRecords
           .whereType<Map>()
           .map((record) => Map<String, dynamic>.from(record))
@@ -532,8 +553,47 @@ class _BreedingPet {
       vetVerified: data['vetVerified'] as bool? ?? rawRecords.isNotEmpty,
       status: data['status'] as String? ?? '',
       isActive: data['isActive'] as bool? ?? true,
-      purpose: data['purpose'] as String? ?? '',
+      purpose:
+          (data['normalizedPurpose'] as String? ??
+                  data['purpose'] as String? ??
+                  '')
+              .toString(),
+      adminListingStatus:
+          (data['adminListingStatus'] ?? '').toString().trim().toLowerCase(),
+      adminHidden: data['adminHidden'] as bool? ?? false,
+      adminRemoved: data['adminRemoved'] as bool? ?? false,
+      adminHiddenUntil: _dateTimeFromAny(data['adminHiddenUntil']),
+      moderationListingStatus:
+          (data['moderationListingStatus'] ?? '').toString().trim().toLowerCase(),
+      moderationHiddenUntil:
+          _dateTimeFromAny(data['moderationHiddenUntil']),
     );
+  }
+
+  static List<String> _deriveBreedTags({
+    required String breed,
+    required String primaryBreed,
+    required String secondaryBreed,
+    required bool isMixedBreed,
+  }) {
+    final tags = breedTagsFor(
+      isMixedBreed: isMixedBreed,
+      primaryBreed: primaryBreed.isNotEmpty ? primaryBreed : breed,
+      secondaryBreed: secondaryBreed,
+    );
+    if (tags.isNotEmpty) return tags;
+    final fallback = breed.trim();
+    return fallback.isEmpty ? const [] : [fallback];
+  }
+
+  List<String> get galleryImages {
+    final seen = <String>{};
+    return [photoUrl, ...additionalImages].where((url) {
+      final trimmed = url.trim();
+      if (trimmed.isEmpty || seen.contains(trimmed)) return false;
+      seen.add(trimmed);
+      return true;
+    }).toList();
   }
 
   bool get isAvailableForBreeding {
@@ -542,11 +602,27 @@ class _BreedingPet {
 
     if (normalizedPurpose != 'breeding') return false;
     if (!isActive) return false;
+    if (isHiddenByAdmin) return false;
     if (normalizedStatus == 'matched' || normalizedStatus == 'adopted') {
       return false;
     }
+    if (normalizedStatus == 'removed') return false;
 
     return true;
+  }
+
+  bool get isHiddenByAdmin {
+    if (moderationListingStatus == 'removed') return true;
+    if (moderationListingStatus == 'hidden') {
+      final until = moderationHiddenUntil;
+      return until == null || until.isAfter(DateTime.now());
+    }
+    if (adminRemoved || adminListingStatus == 'removed') return true;
+    if (adminListingStatus == 'hidden') {
+      final until = adminHiddenUntil;
+      return until == null || until.isAfter(DateTime.now());
+    }
+    return adminHidden;
   }
 
   String distanceFrom(_BreedingPet? other) {
@@ -614,7 +690,8 @@ class _BreedingPet {
     const earthRadius = 6371.0;
     final dLat = _toRadians(lat2 - lat1);
     final dLon = _toRadians(lon2 - lon1);
-    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+    final a =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
         math.cos(_toRadians(lat1)) *
             math.cos(_toRadians(lat2)) *
             math.sin(dLon / 2) *
@@ -623,6 +700,22 @@ class _BreedingPet {
   }
 
   static double _toRadians(double degrees) => degrees * math.pi / 180;
+}
+
+List<String> _stringListFromAny(Object? value) {
+  if (value is Iterable) {
+    return value
+        .map((item) => item?.toString().trim() ?? '')
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+  return const [];
+}
+
+DateTime? _dateTimeFromAny(Object? value) {
+  if (value is Timestamp) return value.toDate();
+  if (value is DateTime) return value;
+  return null;
 }
 
 class _BreedingFilter {
@@ -646,9 +739,15 @@ class _BreedingFilter {
       final petBreeds = [
         pet.breed,
         ...pet.breedTags,
-      ].map((value) => value.trim().toLowerCase()).toSet();
-      final matchesBreed = petBreeds.contains(target) ||
-          petBreeds.any((value) => value.contains(target) || target.contains(value));
+      ]
+          .map((value) => value.trim().toLowerCase())
+          .where((value) => value.isNotEmpty)
+          .toSet();
+      final matchesBreed =
+          petBreeds.contains(target) ||
+          petBreeds.any(
+            (value) => value.contains(target) || target.contains(value),
+          );
       if (!matchesBreed) return false;
     }
 
@@ -773,7 +872,9 @@ class _TopBar extends StatelessWidget {
                             if (selected) ...[
                               const SizedBox(width: 16),
                               ConstrainedBox(
-                                constraints: const BoxConstraints(maxWidth: 112),
+                                constraints: const BoxConstraints(
+                                  maxWidth: 112,
+                                ),
                                 child: Text(
                                   pet.name,
                                   maxLines: 1,
@@ -1019,10 +1120,7 @@ class _MapSearchPainter extends CustomPainter {
       ),
       textDirection: TextDirection.ltr,
     )..layout();
-    labelPainter.paint(
-      canvas,
-      Offset(size.width * 0.63, size.height * 0.58),
-    );
+    labelPainter.paint(canvas, Offset(size.width * 0.63, size.height * 0.58));
   }
 
   @override
@@ -1101,9 +1199,7 @@ class _BreedingPetCardState extends State<_BreedingPetCard>
     _snapAnimation = Tween<double>(
       begin: _dragX,
       end: direction * screenWidth * 1.4,
-    ).animate(
-      CurvedAnimation(parent: _snapController, curve: Curves.easeIn),
-    );
+    ).animate(CurvedAnimation(parent: _snapController, curve: Curves.easeIn));
     _snapAnimation.addListener(() {
       if (mounted) setState(() => _dragX = _snapAnimation.value);
     });
@@ -1189,6 +1285,8 @@ class _ExpandedPetProfile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final galleryImages = pet.galleryImages;
+
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1207,14 +1305,16 @@ class _ExpandedPetProfile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _InfoGrid(rows: {
-                  'Species': pet.species,
-                  'Breed': pet.breed,
-                  'Age': pet.age,
-                  'Gender': pet.gender,
-                  'Color': pet.color,
-                  'Size': pet.size,
-                }),
+                _InfoGrid(
+                  rows: {
+                    'Species': pet.species,
+                    'Breed': pet.breed,
+                    'Age': pet.age,
+                    'Gender': pet.gender,
+                    'Color': pet.color,
+                    'Size': pet.size,
+                  },
+                ),
                 const SizedBox(height: 18),
                 const _ThinDivider(),
                 const SizedBox(height: 14),
@@ -1245,14 +1345,14 @@ class _ExpandedPetProfile extends StatelessWidget {
                       child: _HealthRecordRow(record: record),
                     ),
                   ),
-                if (pet.additionalImages.isNotEmpty) ...[
+                if (galleryImages.isNotEmpty) ...[
                   const SizedBox(height: 18),
                   const _ThinDivider(),
                   const SizedBox(height: 14),
                   _SectionTitle('MORE PHOTOS OF ${pet.name.toUpperCase()}'),
                   const SizedBox(height: 10),
                   _PetMorePhotosCarousel(
-                    images: pet.additionalImages,
+                    images: galleryImages,
                     species: pet.species,
                   ),
                 ],
@@ -1270,7 +1370,7 @@ class _ExpandedPetProfile extends StatelessWidget {
   }
 }
 
-class _PhotoHero extends StatelessWidget {
+class _PhotoHero extends StatefulWidget {
   final _BreedingPet pet;
   final _BreedingPet? swipingAs;
   final bool expanded;
@@ -1284,21 +1384,76 @@ class _PhotoHero extends StatelessWidget {
   });
 
   @override
+  State<_PhotoHero> createState() => _PhotoHeroState();
+}
+
+class _PhotoHeroState extends State<_PhotoHero> {
+  int _index = 0;
+
+  @override
+  void didUpdateWidget(covariant _PhotoHero oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.pet.id != widget.pet.id) {
+      _index = 0;
+      return;
+    }
+    final count = widget.pet.galleryImages.length;
+    if (count > 0 && _index >= count) {
+      _index = count - 1;
+    }
+  }
+
+  void _showPreviousPhoto() {
+    if (_index == 0) return;
+    setState(() => _index--);
+  }
+
+  void _showNextPhoto() {
+    final count = widget.pet.galleryImages.length;
+    if (_index >= count - 1) return;
+    setState(() => _index++);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final distance = pet.distanceFrom(swipingAs);
+    final pet = widget.pet;
+    final images = pet.galleryImages;
+    final distance = pet.distanceFrom(widget.swipingAs);
+    final currentImage = images.isEmpty ? pet.photoUrl : images[_index];
 
     return Stack(
       fit: StackFit.expand,
       children: [
         BreedrNetworkImage(
-          imageUrl: pet.photoUrl,
+          imageUrl: currentImage,
           fallback: const _PetFallbackBlock(),
         ),
-        const Positioned(
+        Positioned.fill(
+          child: Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: _showPreviousPhoto,
+                ),
+              ),
+              Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: _showNextPhoto,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Positioned(
           top: 18,
           left: 46,
           right: 46,
-          child: _PhotoProgressBars(),
+          child: _PhotoProgressBars(
+            count: images.isEmpty ? 1 : images.length,
+            activeIndex: _index,
+          ),
         ),
         Positioned(
           left: 0,
@@ -1353,8 +1508,11 @@ class _PhotoHero extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 7),
-                    const Icon(Icons.verified,
-                        color: Color(0xFF35A4FF), size: 18),
+                    const Icon(
+                      Icons.verified,
+                      color: Color(0xFF35A4FF),
+                      size: 18,
+                    ),
                   ],
                 ),
                 const SizedBox(height: 6),
@@ -1404,7 +1562,7 @@ class _PhotoHero extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               InkWell(
-                onTap: onToggleDetails,
+                onTap: widget.onToggleDetails,
                 customBorder: const CircleBorder(),
                 child: Container(
                   width: 44,
@@ -1415,7 +1573,7 @@ class _PhotoHero extends StatelessWidget {
                     border: Border.all(color: Colors.white54, width: 1.5),
                   ),
                   child: Icon(
-                    expanded
+                    widget.expanded
                         ? Icons.keyboard_arrow_up
                         : Icons.keyboard_arrow_down,
                     color: Colors.white,
@@ -1432,19 +1590,26 @@ class _PhotoHero extends StatelessWidget {
 }
 
 class _PhotoProgressBars extends StatelessWidget {
-  const _PhotoProgressBars();
+  final int count;
+  final int activeIndex;
+
+  const _PhotoProgressBars({required this.count, required this.activeIndex});
 
   @override
   Widget build(BuildContext context) {
+    final visibleCount = count.clamp(1, 10);
+
     return Row(
       children: List.generate(
-        6,
+        visibleCount,
         (index) => Expanded(
           child: Container(
             height: 3,
             margin: const EdgeInsets.symmetric(horizontal: 3),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.75),
+              color: index == activeIndex
+                  ? Colors.white
+                  : Colors.white.withValues(alpha: 0.45),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -1492,10 +1657,7 @@ class _ActionButtons extends StatelessWidget {
   final VoidCallback onPass;
   final VoidCallback onLike;
 
-  const _ActionButtons({
-    required this.onPass,
-    required this.onLike,
-  });
+  const _ActionButtons({required this.onPass, required this.onLike});
 
   @override
   Widget build(BuildContext context) {
@@ -1549,10 +1711,7 @@ class _PetMorePhotosCarousel extends StatefulWidget {
   final List<String> images;
   final String species;
 
-  const _PetMorePhotosCarousel({
-    required this.images,
-    required this.species,
-  });
+  const _PetMorePhotosCarousel({required this.images, required this.species});
 
   @override
   State<_PetMorePhotosCarousel> createState() => _PetMorePhotosCarouselState();
@@ -1714,25 +1873,27 @@ class _OwnerCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      future: FirebaseFirestore.instance.collection('users').doc(pet.ownerId).get(),
+      future: FirebaseFirestore.instance
+          .collection('users')
+          .doc(pet.ownerId)
+          .get(),
       builder: (context, snapshot) {
         final data = snapshot.data?.data();
-        final ownerName =
-            data?['fullName'] as String? ?? pet.ownerName;
+        final ownerName = data?['fullName'] as String? ?? pet.ownerName;
         final handle = data?['userName'] as String? ?? '';
         final location = data?['locationName'] as String? ?? pet.locationName;
         final photoUrl = data?['profilePhoto'] as String? ?? pet.ownerPhoto;
         void openRatings() => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => OwnerRatingsScreen(
-                  ownerId: pet.ownerId,
-                  fallbackName: ownerName,
-                  fallbackPhoto: photoUrl,
-                  initialFilter: OwnerReviewFilter.breeding,
-                ),
-              ),
-            );
+          context,
+          MaterialPageRoute(
+            builder: (_) => OwnerRatingsScreen(
+              ownerId: pet.ownerId,
+              fallbackName: ownerName,
+              fallbackPhoto: photoUrl,
+              initialFilter: OwnerReviewFilter.petOwner,
+            ),
+          ),
+        );
 
         return InkWell(
           onTap: openRatings,
@@ -1841,16 +2002,18 @@ class _OwnerStats extends StatelessWidget {
                   children: [
                     Expanded(
                       child: _StatBox(
-                        value:
-                            average == null ? 'New' : average.toStringAsFixed(1),
+                        value: average == null
+                            ? 'New'
+                            : average.toStringAsFixed(1),
                         label: 'Breeding Rating',
                       ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: _StatBox(
-                        value:
-                            reviews.isEmpty ? '0' : reviews.length.toString(),
+                        value: reviews.isEmpty
+                            ? '0'
+                            : reviews.length.toString(),
                         label: reviews.length == 1 ? 'Review' : 'Reviews',
                       ),
                     ),
@@ -1913,10 +2076,7 @@ class _OwnerMeta extends StatelessWidget {
   final IconData icon;
   final String text;
 
-  const _OwnerMeta({
-    required this.icon,
-    required this.text,
-  });
+  const _OwnerMeta({required this.icon, required this.text});
 
   @override
   Widget build(BuildContext context) {
@@ -1938,10 +2098,7 @@ class _StatBox extends StatelessWidget {
   final String value;
   final String label;
 
-  const _StatBox({
-    required this.value,
-    required this.label,
-  });
+  const _StatBox({required this.value, required this.label});
 
   @override
   Widget build(BuildContext context) {
@@ -2089,8 +2246,11 @@ class _HealthRecordRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.description_outlined,
-              color: Color(0xFF2D95E8), size: 22),
+          const Icon(
+            Icons.description_outlined,
+            color: Color(0xFF2D95E8),
+            size: 22,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -2160,43 +2320,43 @@ class _HealthRecordRow extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                type,
-                style: const TextStyle(
-                  color: AppColors.primary,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 12),
-              _RecordDetailRow(label: 'File', value: fileName),
-              _RecordDetailRow(label: 'Date issued', value: dateIssued),
-              _RecordDetailRow(label: 'Clinic', value: clinic),
-              _RecordDetailRow(label: 'Veterinarian', value: veterinarian),
-              const SizedBox(height: 14),
-              if (fileUrl.isNotEmpty)
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: BreedrNetworkImage(
-                    imageUrl: fileUrl,
-                    height: 260,
-                    width: double.infinity,
-                    fit: BoxFit.contain,
-                    fallback: const _RecordFallback(),
+              children: [
+                Text(
+                  type,
+                  style: const TextStyle(
+                    color: AppColors.primary,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
                   ),
-                )
-              else
-                const _RecordFallback(),
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Close'),
                 ),
-              ),
-            ],
+                const SizedBox(height: 12),
+                _RecordDetailRow(label: 'File', value: fileName),
+                _RecordDetailRow(label: 'Date issued', value: dateIssued),
+                _RecordDetailRow(label: 'Clinic', value: clinic),
+                _RecordDetailRow(label: 'Veterinarian', value: veterinarian),
+                const SizedBox(height: 14),
+                if (fileUrl.isNotEmpty)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: BreedrNetworkImage(
+                      imageUrl: fileUrl,
+                      height: 260,
+                      width: double.infinity,
+                      fit: BoxFit.contain,
+                      fallback: const _RecordFallback(),
+                    ),
+                  )
+                else
+                  const _RecordFallback(),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Close'),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -2209,10 +2369,7 @@ class _RecordDetailRow extends StatelessWidget {
   final String label;
   final String value;
 
-  const _RecordDetailRow({
-    required this.label,
-    required this.value,
-  });
+  const _RecordDetailRow({required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
@@ -2264,8 +2421,11 @@ class _RecordFallback extends StatelessWidget {
       ),
       child: const Column(
         children: [
-          Icon(Icons.image_not_supported_outlined,
-              color: AppColors.primary, size: 34),
+          Icon(
+            Icons.image_not_supported_outlined,
+            color: AppColors.primary,
+            size: 34,
+          ),
           SizedBox(height: 8),
           Text(
             'No image preview available.',
@@ -2336,10 +2496,7 @@ class _SpeciesAvatar extends StatelessWidget {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: const Color(0xFFFFDDE5),
-        border: Border.all(
-          color: const Color(0xFFFFC9D4),
-          width: borderWidth,
-        ),
+        border: Border.all(color: const Color(0xFFFFC9D4), width: borderWidth),
       ),
       child: ClipOval(
         child: BreedrNetworkImage(
@@ -2467,10 +2624,7 @@ class _BreedingEmptyState extends StatelessWidget {
             Text(
               subtitle,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Color(0xFF666666),
-                height: 1.45,
-              ),
+              style: const TextStyle(color: Color(0xFF666666), height: 1.45),
             ),
             if (actionLabel != null && onAction != null) ...[
               const SizedBox(height: 18),
@@ -2545,10 +2699,7 @@ class _FilterSheet extends StatefulWidget {
   final String species;
   final _BreedingFilter initialFilter;
 
-  const _FilterSheet({
-    required this.species,
-    required this.initialFilter,
-  });
+  const _FilterSheet({required this.species, required this.initialFilter});
 
   @override
   State<_FilterSheet> createState() => _FilterSheetState();
@@ -2566,20 +2717,24 @@ class _FilterSheetState extends State<_FilterSheet> {
   String _maxUnit = 'years old';
   String? _warning;
 
-  List<_BreedOption> get _speciesBreeds =>
-      _BreedOption.all.where((breed) => breed.species == widget.species).toList();
+  List<_BreedOption> get _speciesBreeds => _BreedOption.all
+      .where((breed) => breed.species == widget.species)
+      .toList();
 
   List<String> get _quickBreeds {
     final names = _speciesBreeds.map((breed) => breed.name).toList();
     if (widget.species == 'Dog') {
       return [
-        'Any Breed',
-        'Golden Retriever',
-        'Labrador Retriever',
-        'Shih Tzu',
-        'Siberian Husky',
-        'Pomeranian',
-      ].where((breed) => breed == 'Any Breed' || names.contains(breed)).toList();
+            'Any Breed',
+            'Golden Retriever',
+            'Labrador Retriever',
+            'Shih Tzu',
+            'Siberian Husky',
+            'Pomeranian',
+            'Mixed Breed',
+          ]
+          .where((breed) => breed == 'Any Breed' || names.contains(breed))
+          .toList();
     }
 
     return [
@@ -2588,6 +2743,7 @@ class _FilterSheetState extends State<_FilterSheet> {
       'Persian',
       'Siamese',
       'Maine Coon',
+      'Mixed Breed',
     ].where((breed) => breed == 'Any Breed' || names.contains(breed)).toList();
   }
 
@@ -2595,7 +2751,8 @@ class _FilterSheetState extends State<_FilterSheet> {
   void initState() {
     super.initState();
     _selectedBreed = widget.initialFilter.breed;
-    final breedBelongsToSpecies = _selectedBreed == 'Any Breed' ||
+    final breedBelongsToSpecies =
+        _selectedBreed == 'Any Breed' ||
         _speciesBreeds.any((breed) => breed.name == _selectedBreed);
     if (!breedBelongsToSpecies) {
       _selectedBreed = 'Any Breed';
@@ -2707,7 +2864,8 @@ class _FilterSheetState extends State<_FilterSheet> {
                       child: _AgeInput(
                         controller: _minAgeController,
                         unit: _minUnit,
-                        onUnitChanged: (unit) => setState(() => _minUnit = unit),
+                        onUnitChanged: (unit) =>
+                            setState(() => _minUnit = unit),
                       ),
                     ),
                     const SizedBox(width: 20),
@@ -2723,7 +2881,8 @@ class _FilterSheetState extends State<_FilterSheet> {
                       child: _AgeInput(
                         controller: _maxAgeController,
                         unit: _maxUnit,
-                        onUnitChanged: (unit) => setState(() => _maxUnit = unit),
+                        onUnitChanged: (unit) =>
+                            setState(() => _maxUnit = unit),
                       ),
                     ),
                   ],
@@ -2745,7 +2904,8 @@ class _FilterSheetState extends State<_FilterSheet> {
                   title: 'Vet Verified Only',
                   subtitle: 'Show only vet-verified profiles',
                   value: _vetVerifiedOnly,
-                  onChanged: (value) => setState(() => _vetVerifiedOnly = value),
+                  onChanged: (value) =>
+                      setState(() => _vetVerifiedOnly = value),
                 ),
                 const SizedBox(height: 34),
                 SizedBox(
@@ -2846,9 +3006,7 @@ class _FilterSheetState extends State<_FilterSheet> {
     if (lowerBound != null && lowerBound < 12) {
       return 'This age range is too young for breeding. Pets must be at least 12 months old before breeding.';
     }
-    if (widget.species == 'Dog' &&
-        lowerBound != null &&
-        lowerBound < 18) {
+    if (widget.species == 'Dog' && lowerBound != null && lowerBound < 18) {
       return 'This age range is too young for breeding. Larger breeds should be at least 18 months old.';
     }
     if (effectiveMin != null &&
@@ -2869,10 +3027,7 @@ class _BreedPickerSheet extends StatefulWidget {
   final String species;
   final String selectedBreed;
 
-  const _BreedPickerSheet({
-    required this.species,
-    required this.selectedBreed,
-  });
+  const _BreedPickerSheet({required this.species, required this.selectedBreed});
 
   @override
   State<_BreedPickerSheet> createState() => _BreedPickerSheetState();
@@ -2887,8 +3042,9 @@ class _BreedPickerSheetState extends State<_BreedPickerSheet> {
     final query = _query.trim().toLowerCase();
     return _BreedOption.all
         .where((breed) => breed.species == widget.species)
-        .where((breed) =>
-            query.isEmpty || breed.name.toLowerCase().contains(query))
+        .where(
+          (breed) => query.isEmpty || breed.name.toLowerCase().contains(query),
+        )
         .toList();
   }
 
@@ -2937,8 +3093,7 @@ class _BreedPickerSheetState extends State<_BreedPickerSheet> {
                       ),
                     ),
                     TextButton(
-                      onPressed: () =>
-                          Navigator.pop(context, _selectedBreed),
+                      onPressed: () => Navigator.pop(context, _selectedBreed),
                       child: const Text(
                         'DONE',
                         style: TextStyle(
@@ -3019,9 +3174,8 @@ class _BreedPickerSheetState extends State<_BreedPickerSheet> {
                         name: 'Any Breed',
                         species: widget.species,
                         selected: _selectedBreed == 'Any Breed',
-                        onTap: () => setState(
-                          () => _selectedBreed = 'Any Breed',
-                        ),
+                        onTap: () =>
+                            setState(() => _selectedBreed = 'Any Breed'),
                       );
                     }
 
@@ -3030,8 +3184,7 @@ class _BreedPickerSheetState extends State<_BreedPickerSheet> {
                       name: breed.name,
                       species: breed.species,
                       selected: _selectedBreed == breed.name,
-                      onTap: () =>
-                          setState(() => _selectedBreed = breed.name),
+                      onTap: () => setState(() => _selectedBreed = breed.name),
                     );
                   },
                 ),
@@ -3120,7 +3273,9 @@ class _BreedOption {
 
   static final all = [
     ...dogBreedOptions.map((breed) => _BreedOption(breed, 'Dog')),
+    const _BreedOption('Mixed Breed', 'Dog'),
     ...catBreedOptions.map((breed) => _BreedOption(breed, 'Cat')),
+    const _BreedOption('Mixed Breed', 'Cat'),
   ];
 }
 
@@ -3234,8 +3389,9 @@ class _AgeInput extends StatelessWidget {
           Expanded(
             child: TextField(
               controller: controller,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               textAlign: TextAlign.center,
               decoration: const InputDecoration(
                 border: InputBorder.none,
@@ -3247,26 +3403,17 @@ class _AgeInput extends StatelessWidget {
             child: DropdownButton<String>(
               value: unit,
               items: const [
-                DropdownMenuItem(
-                  value: 'years old',
-                  child: Text('years old'),
-                ),
+                DropdownMenuItem(value: 'years old', child: Text('years old')),
                 DropdownMenuItem(
                   value: 'months old',
                   child: Text('months old'),
                 ),
-                DropdownMenuItem(
-                  value: 'weeks old',
-                  child: Text('weeks old'),
-                ),
+                DropdownMenuItem(value: 'weeks old', child: Text('weeks old')),
               ],
               onChanged: (value) {
                 if (value != null) onUnitChanged(value);
               },
-              style: const TextStyle(
-                color: Color(0xFF333333),
-                fontSize: 11,
-              ),
+              style: const TextStyle(color: Color(0xFF333333), fontSize: 11),
             ),
           ),
           const SizedBox(width: 6),

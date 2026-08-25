@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/breedr_network_image.dart';
 import '../home_screen.dart';
+import '../auth/cabuyao_access_gate_screen.dart';
 import '../pet/pet_registration_screen.dart';
 
 class AccountCreatedScreen extends StatelessWidget {
@@ -152,7 +153,7 @@ class AccountCreatedScreen extends StatelessWidget {
                           onPressed: () => Navigator.pushAndRemoveUntil(
                             context,
                             MaterialPageRoute(
-                                builder: (_) => const HomeScreen()),
+                                builder: (_) => const CabuyaoAccessGate(child: HomeScreen())),
                             (route) => false,
                           ),
                           style: OutlinedButton.styleFrom(

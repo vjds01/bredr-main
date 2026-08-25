@@ -786,6 +786,13 @@ class _NotificationProfile {
         actionColor: AppColors.primary,
       );
     }
+    if (type == 'adoption_return_decision') {
+      return const _NotificationProfile(
+        icon: Icons.gavel_outlined,
+        actionLabel: 'OPEN CHAT',
+        actionColor: AppColors.primary,
+      );
+    }
     if (type.contains('completion') || type.contains('completed')) {
       return const _NotificationProfile(
         icon: Icons.check_circle_outline,
@@ -835,18 +842,27 @@ String? _preferenceKeyForType(String type) {
       type == 'match_ended') {
     return 'breedingLikes';
   }
-  if (type.startsWith('adoption_request') ||
-      type.startsWith('adoption_process') ||
+  if (type.startsWith('adoption_request')) {
+    return 'adoptionRequests';
+  }
+  if (type == 'adoption_process_contract_started') {
+    return 'contractUpdates';
+  }
+  if (type.startsWith('adoption_process') ||
       type == 'adoption_ready_to_complete' ||
       type.startsWith('adoption_update') ||
-      type == 'adoption_return_requested') {
-    return 'adoptionRequests';
+      type == 'adoption_return_requested' ||
+      type == 'adoption_return_decision') {
+    return 'adoptionUpdates';
   }
   if (type == 'new_message') {
     return 'newMessages';
   }
   if (type.startsWith('pet_health')) {
     return 'petHealth';
+  }
+  if (type.startsWith('review')) {
+    return 'reviewsReceived';
   }
   return null;
 }

@@ -442,7 +442,11 @@ class _QuestionCard extends StatelessWidget {
                   value: option,
                   groupValue: value as String?,
                   activeColor: color,
-                  title: Text(option, style: const TextStyle(fontSize: 11)),
+                  title: Text(
+                    option,
+                    softWrap: true,
+                    style: const TextStyle(fontSize: 11, height: 1.25),
+                  ),
                   onChanged: onChanged,
                 ),
               )

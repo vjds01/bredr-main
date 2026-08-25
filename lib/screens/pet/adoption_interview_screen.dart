@@ -530,20 +530,42 @@ class _QuestionCard extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
               child: Column(
-                children: question.choices.map((c) => Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Row(children: [
-                    Container(
-                      width: 16, height: 16,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: _typeColor, width: 1.5),
+                children: question.choices
+                    .map(
+                      (c) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: 16,
+                              height: 16,
+                              margin: const EdgeInsets.only(top: 1),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: _typeColor,
+                                  width: 1.5,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                c,
+                                softWrap: true,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  height: 1.25,
+                                  color: Color(0xFF555555),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(c, style: const TextStyle(fontSize: 12, color: Color(0xFF555555))),
-                  ]),
-                )).toList(),
+                    )
+                    .toList(),
               ),
             ),
           if (question.type == QuestionType.textAnswer)

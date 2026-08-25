@@ -9,6 +9,7 @@ build/
 
 # Android
 android/.gradle/
+android/.kotlin/errors/
 android/local.properties
 android/key.properties
 **/android/gradlew

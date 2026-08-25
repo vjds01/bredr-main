@@ -48,12 +48,12 @@ class _Step3WelcomeState extends State<Step3Welcome> {
       //cloudinary image uploading 
       final cloudinary = CloudinaryService();
 
-        String? profilePhotoUrl = widget.onboardingData.profilePhoto;
+        var profilePhotoUrl = widget.onboardingData.profilePhoto ?? '';
 
         if (widget.onboardingData.profilePhotoFile != null) {
           debugPrint('Uploading profile photo...');
 
-          profilePhotoUrl = await cloudinary.uploadImage(
+          profilePhotoUrl = await cloudinary.uploadImageOrThrow(
             widget.onboardingData.profilePhotoFile!,
           );
 
@@ -64,11 +64,8 @@ class _Step3WelcomeState extends State<Step3Welcome> {
 
         for (final photo
             in widget.onboardingData.additionalPhotoFiles) {
-          final url = await cloudinary.uploadImage(photo);
-
-          if (url != null) {
-            additionalPhotoUrls.add(url);
-          }
+          final url = await cloudinary.uploadImageOrThrow(photo);
+          additionalPhotoUrls.add(url);
         }
 
         debugPrint(
@@ -99,15 +96,17 @@ class _Step3WelcomeState extends State<Step3Welcome> {
         'latitude': widget.onboardingData.latitude,
         'longitude': widget.onboardingData.longitude,
 
-        'profilePhoto': profilePhotoUrl ?? '',
+        'profilePhoto': profilePhotoUrl,
 
         'additionalImages': additionalPhotoUrls, 
+        'additionalPhotos': additionalPhotoUrls,
+        'additionalPhotoUrls': additionalPhotoUrls,
         'coverPhoto': coverPhotoUrl,
 
-        'hasProfilePhoto': profilePhotoUrl != null,
+        'hasProfilePhoto': profilePhotoUrl.isNotEmpty,
 
         'profileCompleted':
-            profilePhotoUrl != null &&
+            profilePhotoUrl.isNotEmpty &&
             widget.onboardingData.bio != null &&
             widget.onboardingData.bio!.isNotEmpty &&
             widget.onboardingData.homeType != null &&
@@ -154,9 +153,11 @@ class _Step3WelcomeState extends State<Step3Welcome> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
-            'Unable to create your account right now. Please try again.',
+            e is CloudinaryUploadException
+                ? 'Unable to upload your photos. Please check your internet connection and try again.'
+                : 'Unable to create your account right now. Please try again.',
           ),
         ),
       );

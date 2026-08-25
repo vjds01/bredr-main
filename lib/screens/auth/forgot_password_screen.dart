@@ -1,12 +1,13 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../../services/user_session_service.dart';
+import '../../services/password_reset_otp_service.dart';
 import '../../theme/app_colors.dart';
-import 'reset_link_sent_screen.dart';
+import 'otp_verification_screen.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
-  const ForgotPasswordScreen({super.key});
+  final String? initialEmail;
+
+  const ForgotPasswordScreen({super.key, this.initialEmail});
 
   @override
   State<ForgotPasswordScreen> createState() => _ForgotPasswordScreenState();
@@ -17,12 +18,21 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   bool _sending = false;
 
   @override
+  void initState() {
+    super.initState();
+    final initialEmail = widget.initialEmail?.trim();
+    if (initialEmail != null && initialEmail.isNotEmpty) {
+      _emailController.text = initialEmail;
+    }
+  }
+
+  @override
   void dispose() {
     _emailController.dispose();
     super.dispose();
   }
 
-  Future<void> _sendResetLink() async {
+  Future<void> _sendResetCode() async {
     final email = _emailController.text.trim();
     if (email.isEmpty) {
       _showMessage('Please enter the email linked to your Breedr account.');
@@ -31,48 +41,34 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
     setState(() => _sending = true);
     try {
-      await UserSessionService.instance.sendPasswordResetLink(email);
+      final result = await PasswordResetOtpService.instance.requestCode(email);
       if (!mounted) return;
+      if (result.resetId.isEmpty) {
+        _showMessage(result.message);
+        return;
+      }
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => ResetLinkSentScreen(email: email),
+          builder: (_) =>
+              OtpVerificationScreen(email: email, resetId: result.resetId),
         ),
       );
-    } on FirebaseAuthException catch (error) {
+    } on PasswordResetOtpException catch (error) {
       if (!mounted) return;
-      _showMessage(_resetEmailMessage(error));
+      _showMessage(error.message);
     } catch (_) {
       if (!mounted) return;
-      _showMessage('Unable to send the reset link. Please try again.');
+      _showMessage('Unable to send the reset code. Please try again.');
     } finally {
       if (mounted) setState(() => _sending = false);
     }
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
-  }
-
-  String _resetEmailMessage(FirebaseAuthException error) {
-    switch (error.code) {
-      case 'invalid-email':
-        return 'Please enter a valid email address.';
-      case 'user-not-found':
-        return 'No Breedr account was found for that email.';
-      case 'missing-android-pkg-name':
-      case 'invalid-continue-uri':
-      case 'unauthorized-continue-uri':
-        return 'Password reset is not fully configured yet. Please check the Firebase reset link settings.';
-      case 'network-request-failed':
-        return 'Please check your internet connection and try again.';
-      default:
-        return error.message?.trim().isNotEmpty == true
-            ? error.message!
-            : 'Unable to send the reset link. Please try again.';
-    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -91,7 +87,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               ),
               const SizedBox(height: 28),
               const Text(
-                "Enter the email associated with your account and we'll send you a password reset link.",
+                "Enter the email associated with your account and we'll send you a verification code.",
                 style: TextStyle(
                   color: Color(0xFF777777),
                   fontSize: 15,
@@ -112,7 +108,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               _PrimaryAuthButton(
                 label: 'CONTINUE',
                 loading: _sending,
-                onPressed: _sendResetLink,
+                onPressed: _sendResetCode,
               ),
             ],
           ),
@@ -126,10 +122,7 @@ class _AuthBackHeader extends StatelessWidget {
   final String title;
   final VoidCallback onBack;
 
-  const _AuthBackHeader({
-    required this.title,
-    required this.onBack,
-  });
+  const _AuthBackHeader({required this.title, required this.onBack});
 
   @override
   Widget build(BuildContext context) {
@@ -177,30 +170,24 @@ class _AuthInput extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
   final IconData icon;
-  final bool obscureText;
   final TextInputType? keyboardType;
-  final Widget? suffix;
 
   const _AuthInput({
     required this.controller,
     required this.hint,
     required this.icon,
-    this.obscureText = false,
     this.keyboardType,
-    this.suffix,
   });
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
-      obscureText: obscureText,
       keyboardType: keyboardType,
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: const TextStyle(color: Color(0xFFAAAAAA), fontSize: 12),
         prefixIcon: Icon(icon, color: const Color(0xFFB0B0B0), size: 19),
-        suffixIcon: suffix,
         filled: true,
         fillColor: Colors.white,
         contentPadding: const EdgeInsets.symmetric(

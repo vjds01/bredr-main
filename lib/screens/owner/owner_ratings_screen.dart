@@ -5,7 +5,7 @@ import '../../services/breeding_match_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/breedr_network_image.dart';
 
-enum OwnerReviewFilter { all, adoption, breeding }
+enum OwnerReviewFilter { all, petOwner, adopter }
 
 class OwnerRatingsScreen extends StatefulWidget {
   final String ownerId;
@@ -55,15 +55,15 @@ class _OwnerRatingsScreenState extends State<OwnerRatingsScreen> {
                     <_OwnerReview>[];
                 reviews.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-                final adoptionReviews = reviews
-                    .where((review) => review.purpose == 'adoption')
+                final petOwnerReviews = reviews
+                    .where((review) => review.reviewedUserRole == 'petOwner')
                     .toList();
-                final breedingReviews = reviews
-                    .where((review) => review.purpose == 'breeding')
+                final adopterReviews = reviews
+                    .where((review) => review.reviewedUserRole == 'adopter')
                     .toList();
                 final visibleReviews = switch (_filter) {
-                  OwnerReviewFilter.adoption => adoptionReviews,
-                  OwnerReviewFilter.breeding => breedingReviews,
+                  OwnerReviewFilter.petOwner => petOwnerReviews,
+                  OwnerReviewFilter.adopter => adopterReviews,
                   OwnerReviewFilter.all => reviews,
                 };
 
@@ -77,7 +77,6 @@ class _OwnerRatingsScreenState extends State<OwnerRatingsScreen> {
                           _OwnerSummary(
                             ownerName: ownerName,
                             ownerPhoto: ownerPhoto,
-                            reviews: visibleReviews,
                             allReviews: reviews,
                           ),
                           const SizedBox(height: 18),
@@ -86,7 +85,7 @@ class _OwnerRatingsScreenState extends State<OwnerRatingsScreen> {
                             child: Row(
                               children: [
                                 _FilterPill(
-                                  label: 'All (${reviews.length})',
+                                  label: 'All Reviews',
                                   selected: _filter == OwnerReviewFilter.all,
                                   onTap: () => setState(
                                     () => _filter = OwnerReviewFilter.all,
@@ -94,24 +93,22 @@ class _OwnerRatingsScreenState extends State<OwnerRatingsScreen> {
                                 ),
                                 const SizedBox(width: 8),
                                 _FilterPill(
-                                  label:
-                                      'Adoption (${adoptionReviews.length})',
-                                  icon: Icons.home_outlined,
+                                  label: 'As Pet Owner',
+                                  icon: Icons.pets,
                                   selected:
-                                      _filter == OwnerReviewFilter.adoption,
+                                      _filter == OwnerReviewFilter.petOwner,
                                   onTap: () => setState(
-                                    () => _filter = OwnerReviewFilter.adoption,
+                                    () => _filter = OwnerReviewFilter.petOwner,
                                   ),
                                 ),
                                 const SizedBox(width: 8),
                                 _FilterPill(
-                                  label:
-                                      'Breeding (${breedingReviews.length})',
-                                  icon: Icons.pets,
+                                  label: 'As Adopter',
+                                  icon: Icons.home_outlined,
                                   selected:
-                                      _filter == OwnerReviewFilter.breeding,
+                                      _filter == OwnerReviewFilter.adopter,
                                   onTap: () => setState(
-                                    () => _filter = OwnerReviewFilter.breeding,
+                                    () => _filter = OwnerReviewFilter.adopter,
                                   ),
                                 ),
                               ],
@@ -177,32 +174,30 @@ class _RatingsHeader extends StatelessWidget {
 class _OwnerSummary extends StatelessWidget {
   final String ownerName;
   final String ownerPhoto;
-  final List<_OwnerReview> reviews;
   final List<_OwnerReview> allReviews;
 
   const _OwnerSummary({
     required this.ownerName,
     required this.ownerPhoto,
-    required this.reviews,
     required this.allReviews,
   });
 
   @override
   Widget build(BuildContext context) {
-    final counts = _ratingCounts(reviews);
-    final average = _average(reviews);
+    final counts = _ratingCounts(allReviews);
+    final displayedAverage = _average(allReviews);
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: const Color(0xFFFFE1E8),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFFFB9C5)),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFFF9EB0)),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x33FE5062),
+            color: Color(0x55FE5062),
             blurRadius: 0,
-            offset: Offset(5, 6),
+            offset: Offset(6, 7),
           ),
         ],
       ),
@@ -235,18 +230,23 @@ class _OwnerSummary extends StatelessWidget {
                 width: 104,
                 child: Column(
                   children: [
-                    Text(
-                      average == null ? 'New' : average.toStringAsFixed(1),
-                      style: const TextStyle(
-                        color: Color(0xFFF2AA32),
-                        fontSize: 34,
-                        fontWeight: FontWeight.w900,
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        displayedAverage == null
+                            ? 'New'
+                            : displayedAverage.toStringAsFixed(1),
+                        style: const TextStyle(
+                          color: Color(0xFFF2AA32),
+                          fontSize: 42,
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
                     ),
-                    _Stars(rating: average?.round() ?? 0, size: 18),
+                    _Stars(rating: displayedAverage?.round() ?? 0, size: 18),
                     const SizedBox(height: 4),
                     Text(
-                      '${reviews.length} ${reviews.length == 1 ? 'review' : 'reviews'}',
+                      '${allReviews.length} ${allReviews.length == 1 ? 'review' : 'reviews'}',
                       style: const TextStyle(
                         color: Color(0xFF777777),
                         fontSize: 10,
@@ -261,7 +261,7 @@ class _OwnerSummary extends StatelessWidget {
                   children: List.generate(5, (index) {
                     final star = 5 - index;
                     final count = counts[star] ?? 0;
-                    final total = reviews.isEmpty ? 1 : reviews.length;
+                    final total = allReviews.isEmpty ? 1 : allReviews.length;
 
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 5),
@@ -277,12 +277,12 @@ class _OwnerSummary extends StatelessWidget {
                           const SizedBox(width: 5),
                           Expanded(
                             child: SizedBox(
-                              height: 7,
+                              height: 8,
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
                                 child: LinearProgressIndicator(
                                   value: count / total,
-                                  backgroundColor: const Color(0xFFFFF7D9),
+                                  backgroundColor: const Color(0xFFFFF6D2),
                                   color: const Color(0xFFFFDA47),
                                 ),
                               ),
@@ -403,11 +403,18 @@ class _ReviewCard extends StatelessWidget {
         final reviewerPhoto = reviewer?['profilePhoto'] as String? ?? '';
 
         return Container(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(18),
             border: Border.all(color: const Color(0xFFFFCDD5)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x12FE5062),
+                blurRadius: 12,
+                offset: Offset(0, 6),
+              ),
+            ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -442,7 +449,28 @@ class _ReviewCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  _Stars(rating: review.overall, size: 15),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      _ReviewRoleBadge(role: review.reviewedUserRole),
+                      const SizedBox(height: 7),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _Stars(rating: review.overall, size: 15),
+                          const SizedBox(width: 5),
+                          Text(
+                            review.overall.toStringAsFixed(1),
+                            style: const TextStyle(
+                              color: Color(0xFF333333),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ],
               ),
               if (review.text.isNotEmpty) ...[
@@ -487,8 +515,8 @@ class _NoReviewsPlaceholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = switch (filter) {
-      OwnerReviewFilter.adoption => 'adoption',
-      OwnerReviewFilter.breeding => 'breeding',
+      OwnerReviewFilter.petOwner => 'pet owner',
+      OwnerReviewFilter.adopter => 'adopter',
       OwnerReviewFilter.all => 'public',
     };
 
@@ -622,9 +650,36 @@ class _PurposeBadge extends StatelessWidget {
   }
 }
 
+class _ReviewRoleBadge extends StatelessWidget {
+  final String role;
+
+  const _ReviewRoleBadge({required this.role});
+
+  @override
+  Widget build(BuildContext context) {
+    final isAdopter = role == 'adopter';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: isAdopter ? const Color(0xFFFFF0D9) : const Color(0xFFFFE8EE),
+        borderRadius: BorderRadius.circular(99),
+      ),
+      child: Text(
+        isAdopter ? 'As Adopter' : 'As Pet Owner',
+        style: TextStyle(
+          color: isAdopter ? const Color(0xFFF2AA32) : AppColors.primary,
+          fontSize: 9,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
 class _OwnerReview {
   final String reviewerId;
   final String purpose;
+  final String reviewedUserRole;
   final int overall;
   final String text;
   final DateTime createdAt;
@@ -632,6 +687,7 @@ class _OwnerReview {
   const _OwnerReview({
     required this.reviewerId,
     required this.purpose,
+    required this.reviewedUserRole,
     required this.overall,
     required this.text,
     required this.createdAt,
@@ -643,10 +699,13 @@ class _OwnerReview {
     final data = document.data();
     final timestamp = data['createdAt'] as Timestamp?;
     final completedAt = data['completedAt'] as Timestamp?;
+    final purpose = data['purpose'] as String? ?? 'breeding';
+    final role = data['reviewedUserRole'] as String?;
 
     return _OwnerReview(
       reviewerId: data['reviewerId'] as String? ?? '',
-      purpose: data['purpose'] as String? ?? 'breeding',
+      purpose: purpose,
+      reviewedUserRole: role == 'adopter' ? 'adopter' : 'petOwner',
       overall: ((data['overall'] as num?)?.round() ?? 0).clamp(0, 5).toInt(),
       text: data['reviewText'] as String? ?? '',
       createdAt: timestamp?.toDate() ??

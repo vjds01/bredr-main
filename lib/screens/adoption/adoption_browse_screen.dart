@@ -11,15 +11,18 @@ import '../../services/user_session_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/breedr_network_image.dart';
 import 'adoption_request_detail_screen.dart';
+import '../chat/chats_screen.dart';
 import 'owner_adoption_request_detail_screen.dart';
 import 'pet_adoption_profile_screen.dart';
 
 class AdoptionBrowseScreen extends StatefulWidget {
   final ValueListenable<int>? activationSignal;
+  final int initialTab;
 
   const AdoptionBrowseScreen({
     super.key,
     this.activationSignal,
+    this.initialTab = 0,
   });
 
   @override
@@ -37,7 +40,11 @@ class _AdoptionBrowseScreenState extends State<AdoptionBrowseScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(
+      length: 4,
+      vsync: this,
+      initialIndex: widget.initialTab.clamp(0, 3).toInt(),
+    );
     widget.activationSignal?.addListener(_handleActivation);
     _startLocationSearch();
   }
@@ -103,8 +110,33 @@ class _AdoptionBrowseScreenState extends State<AdoptionBrowseScreen>
                 purpose: 'adoption',
               ),
             ),
+            if (widget.initialTab != 0)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 0, 14, 6),
+                child: Row(
+                  children: [
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(
+                        Icons.arrow_back,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _tabTitle(widget.initialTab),
+                      style: const TextStyle(
+                        color: Color(0xFF222222),
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             TabBar(
               controller: _tabController,
+              isScrollable: true,
               labelColor: const Color(0xFF222222),
               unselectedLabelColor: const Color(0xFF555555),
               labelStyle: const TextStyle(
@@ -117,6 +149,7 @@ class _AdoptionBrowseScreenState extends State<AdoptionBrowseScreen>
                 Tab(text: 'Browse'),
                 Tab(text: 'My Request'),
                 Tab(text: 'My Listings'),
+                Tab(text: 'History'),
               ],
             ),
             Expanded(
@@ -135,6 +168,7 @@ class _AdoptionBrowseScreenState extends State<AdoptionBrowseScreen>
                       setState(() => _listingFilter = filter);
                     },
                   ),
+                  const _AdoptionHistoryTab(),
                 ],
               ),
             ),
@@ -143,6 +177,15 @@ class _AdoptionBrowseScreenState extends State<AdoptionBrowseScreen>
       ),
     );
   }
+}
+
+String _tabTitle(int tabIndex) {
+  return switch (tabIndex) {
+    1 => 'My Request',
+    2 => 'My Listings',
+    3 => 'Adoption History',
+    _ => 'Adoption',
+  };
 }
 
 class _AdoptionHeader extends StatelessWidget {
@@ -1228,6 +1271,211 @@ class _MyListingsTab extends StatelessWidget {
   }
 }
 
+class _AdoptionHistoryTab extends StatelessWidget {
+  const _AdoptionHistoryTab();
+
+  @override
+  Widget build(BuildContext context) {
+    final userId = UserSessionService.instance.currentUser?.uid ?? '';
+    return StreamBuilder<List<AdoptionRequest>>(
+      stream: AdoptionService.instance.watchMyAdoptionHistory(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const _AdoptionEmptyState(
+            icon: Icons.cloud_off_outlined,
+            title: 'Adoption history is unavailable',
+            message: 'Check your connection and try again.',
+          );
+        }
+        if (!snapshot.hasData) {
+          return const Center(
+            child: CircularProgressIndicator(color: AppColors.primary),
+          );
+        }
+
+        final history = snapshot.data!;
+        if (history.isEmpty) {
+          return const _AdoptionEmptyState(
+            icon: Icons.history,
+            title: 'No adoption history yet',
+            message:
+                'Completed adoptions will appear here for both the former owner and adopter.',
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+          itemCount: history.length,
+          itemBuilder: (context, index) => Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: _AdoptionHistoryCard(
+              request: history[index],
+              currentUserId: userId,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _AdoptionHistoryCard extends StatelessWidget {
+  final AdoptionRequest request;
+  final String currentUserId;
+
+  const _AdoptionHistoryCard({
+    required this.request,
+    required this.currentUserId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pet = request.petSnapshot;
+    final applicant = request.applicantSnapshot;
+    final isFormerOwner = currentUserId == request.ownerId;
+    final petName = _snapshotText(pet['name'], fallback: 'Adopted pet');
+    final petPhoto = _snapshotText(pet['petProfilePhoto']);
+    final otherName = isFormerOwner
+        ? _snapshotText(applicant['fullName'], fallback: 'Adopter')
+        : _snapshotText(pet['ownerName'], fallback: 'Previous owner');
+    final completedAt = request.completedAt ?? request.updatedAt;
+    final returned = request.outcome == 'returned';
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFFFCAD5)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x12000000),
+            blurRadius: 8,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                _OwnerAvatar(url: petPhoto, size: 58),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        petName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.primary,
+                          fontSize: 21,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        returned
+                            ? 'Returned to the original owner'
+                            : isFormerOwner
+                            ? 'Adopted by $otherName'
+                            : 'Adopted from $otherName',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF555555),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                _InfoChip(
+                  text: returned ? 'Returned' : 'Completed',
+                  color: Color(0xFFDDF5DE),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              [
+                _snapshotText(pet['breed']),
+                _snapshotText(pet['gender']),
+                _snapshotText(pet['age']),
+              ].where((value) => value.isNotEmpty).join('  |  '),
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+            ),
+            if (completedAt != null) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.event_available,
+                    color: Color(0xFF3FA34D),
+                    size: 16,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Completed ${_historyDate(completedAt)}',
+                    style: const TextStyle(
+                      color: Color(0xFF3FA34D),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () => _openHistoryChat(context),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                ),
+                icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                label: const Text('Open Chat'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openHistoryChat(BuildContext context) async {
+    final conversationId =
+        request.conversationId ??
+        AdoptionService.instance.conversationId(request.id);
+    final isFormerOwner = currentUserId == request.ownerId;
+    final otherOwnerId = isFormerOwner ? request.applicantId : request.ownerId;
+    final petName = _snapshotText(
+      request.petSnapshot['name'],
+      fallback: 'Adoption Chat',
+    );
+    final petPhoto = _snapshotText(request.petSnapshot['petProfilePhoto']);
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatConversationScreen(
+          matchId: conversationId,
+          otherPetName: petName,
+          otherPetPhoto: petPhoto,
+          otherOwnerId: otherOwnerId,
+          otherParticipantLabel: isFormerOwner ? 'Adopter' : 'Previous owner',
+        ),
+      ),
+    );
+  }
+}
+
 class _OwnerListingCard extends StatelessWidget {
   final AdoptionListing listing;
 
@@ -1805,30 +2053,43 @@ class _AdoptionFilterSheetState extends State<_AdoptionFilterSheet> {
   late double? _maxPrice = widget.initialFilter.maxPrice;
   String? _error;
 
+  @override
+  void initState() {
+    super.initState();
+    if (_species.toLowerCase() == 'all') _breed = null;
+  }
+
   List<String> get _availableBreeds {
     final species = _species.toLowerCase();
+    if (species == 'all') return const [];
     final breeds = widget.listings
         .where((listing) =>
-            species == 'all' ||
             listing.species.toLowerCase() == species.toLowerCase())
         .expand((listing) => [
               listing.breed,
               ...listing.breedTags,
             ])
         .map((breed) => breed.trim())
-        .where((breed) => breed.isNotEmpty && breed != 'Mixed Breed')
+        .where((breed) => breed.isNotEmpty)
         .toSet()
         .toList()
       ..sort();
-    final fallback =
-        species == 'cat' ? _catBreeds : species == 'dog' ? _dogBreeds : [];
+    final fallback = breedNamesForSpecies(_species);
     for (final breed in fallback) {
       if (!breeds.contains(breed)) breeds.add(breed);
     }
+    if (!breeds.contains('Mixed Breed')) breeds.add('Mixed Breed');
     return breeds;
   }
 
   Future<void> _selectBreed() async {
+    if (_species.toLowerCase() == 'all') {
+      setState(() {
+        _breed = null;
+        _error = 'Choose Dogs or Cats to filter by breed.';
+      });
+      return;
+    }
     final selected = await showModalBottomSheet<String?>(
       context: context,
       isScrollControlled: true,
@@ -1875,7 +2136,7 @@ class _AdoptionFilterSheetState extends State<_AdoptionFilterSheet> {
       context,
       _AdoptionFilter(
         species: _species,
-        breed: _breed,
+        breed: _species.toLowerCase() == 'all' ? null : _breed,
         minAgeWeeks: _minAgeWeeks,
         maxAgeWeeks: _maxAgeWeeks,
         vaccinatedOnly: _vaccinatedOnly,
@@ -1940,12 +2201,27 @@ class _AdoptionFilterSheetState extends State<_AdoptionFilterSheet> {
             const _FilterLabel('Breed'),
             const SizedBox(height: 8),
             OutlinedButton(
-              onPressed: _selectBreed,
+              onPressed: _species.toLowerCase() == 'all' ? null : _selectBreed,
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text(_breed ?? 'Any Breed'),
+                child: Text(
+                  _species.toLowerCase() == 'all'
+                      ? 'Any Breed'
+                      : _breed ?? 'Any ${_species.toLowerCase() == 'dog' ? 'Dog' : 'Cat'} Breed',
+                ),
               ),
             ),
+            if (_species.toLowerCase() == 'all') ...[
+              const SizedBox(height: 6),
+              const Text(
+                'Choose Dogs or Cats to filter by breed.',
+                style: TextStyle(
+                  color: Color(0xFF8A7D83),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
             const SizedBox(height: 22),
             const _FilterLabel('Age Range'),
             const SizedBox(height: 8),
@@ -2344,12 +2620,15 @@ class _AdoptionFilter {
         listing.species.toLowerCase() != species.toLowerCase()) {
       return false;
     }
-    if (breed != null) {
-      final target = breed!.toLowerCase();
+    if (species.toLowerCase() != 'all' && breed != null) {
+      final target = breed!.trim().toLowerCase();
       final listingBreeds = [
         listing.breed,
         ...listing.breedTags,
-      ].map((value) => value.trim().toLowerCase()).toSet();
+      ]
+          .map((value) => value.trim().toLowerCase())
+          .where((value) => value.isNotEmpty)
+          .toSet();
       final matchesBreed = listingBreeds.contains(target) ||
           listingBreeds.any(
             (value) => value.contains(target) || target.contains(value),
@@ -2804,6 +3083,15 @@ String _formatPrice(num value) {
   return buffer.toString();
 }
 
-const _dogBreeds = dogBreedOptions;
+String _snapshotText(Object? value, {String fallback = ''}) {
+  final text = value?.toString().trim() ?? '';
+  return text.isEmpty ? fallback : text;
+}
 
-const _catBreeds = catBreedOptions;
+String _historyDate(Timestamp timestamp) {
+  final date = timestamp.toDate().toLocal();
+  final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
+  final minute = date.minute.toString().padLeft(2, '0');
+  final suffix = date.hour >= 12 ? 'PM' : 'AM';
+  return '${date.month}/${date.day}/${date.year} at $hour:$minute $suffix';
+}
