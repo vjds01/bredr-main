@@ -12,6 +12,7 @@ build/
 # Android
 android/.gradle/
 android/.kotlin/errors/
+android/.kotlin/sessions/
 android/local.properties
 android/key.properties
 **/android/gradlew
