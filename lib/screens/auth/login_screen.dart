@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../models/onboarding_data.dart';
 import '../../theme/app_colors.dart';
 import '../admin/admin_dashboard_screen.dart';
 import '../home_screen.dart';
@@ -11,10 +10,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'forgot_password_screen.dart';
 import 'cabuyao_access_gate_screen.dart';
 import 'moderation_gate_screen.dart';
-import 'welcome_screen.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({super.key, this.initialMessage});
+
+  final String? initialMessage;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -39,6 +39,16 @@ class _LoginScreenState extends State<LoginScreen> {
   void initState() {
     super.initState();
 
+    final initialMessage = widget.initialMessage;
+    if (initialMessage != null && initialMessage.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(initialMessage)));
+      });
+    }
+
     debugPrint('===== LOGIN SCREEN LOCATION CHECK =====');
     debugPrint('Latitude: ${LocationService.instance.latitude}');
     debugPrint('Longitude: ${LocationService.instance.longitude}');
@@ -50,7 +60,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _login() async {
     if (_emailCtrl.text.trim().isEmpty || _passCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter email and password')),
+        const SnackBar(content: Text('Please enter your email and password.')),
       );
       return;
     }
@@ -86,8 +96,8 @@ class _LoginScreenState extends State<LoginScreen> {
       if (isAdmin) {
         destination = const AdminDashboardScreen();
       } else {
-        final moderation =
-            await ModerationService.instance.getCurrentUserModeration();
+        final moderation = await ModerationService.instance
+            .getCurrentUserModeration();
         if (moderation?.isBlocked == true) {
           destination = ModerationGateScreen(state: moderation!);
         }
@@ -101,23 +111,41 @@ class _LoginScreenState extends State<LoginScreen> {
     } on FirebaseAuthException catch (e) {
       debugPrint('Firebase login error: ${e.code}');
 
-      String message = 'Login failed';
+      String message;
 
       switch (e.code) {
         case 'user-not-found':
-          message = 'No account found with that email';
+          message = 'No Breedr account was found. Please sign up first.';
           break;
 
         case 'wrong-password':
-          message = 'Incorrect password';
+        case 'invalid-credential':
+          message = 'Incorrect email or password.';
           break;
 
         case 'invalid-email':
-          message = 'Invalid email address';
+          message = 'Please enter a valid email address.';
           break;
 
-        case 'invalid-credential':
-          message = 'Invalid email or password';
+        case 'user-disabled':
+          message = 'This account has been disabled. Please contact support.';
+          break;
+
+        case 'too-many-requests':
+          message = 'Too many sign-in attempts. Please wait and try again.';
+          break;
+
+        case 'network-request-failed':
+          message = 'Please check your internet connection and try again.';
+          break;
+
+        case 'operation-not-allowed':
+          message =
+              'Email sign-in is currently unavailable. Please contact support.';
+          break;
+
+        default:
+          message = 'Unable to sign in right now. Please try again.';
           break;
       }
 
@@ -160,28 +188,8 @@ class _LoginScreenState extends State<LoginScreen> {
       final hasProfile = await UserSessionService.instance.hasBreedrProfile();
 
       if (!hasProfile) {
-        if (!mounted) return;
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => CabuyaoAccessGate(
-              child: WelcomeScreen(
-                onboardingData: OnboardingData(
-                  authProvider: 'google',
-                  fullName: user.displayName?.trim().isNotEmpty == true
-                      ? user.displayName!.trim()
-                      : 'Breedr User',
-                  userName: _usernameFromEmail(user.email ?? ''),
-                  email: user.email ?? '',
-                  password: '',
-                  profilePhoto: user.photoURL,
-                ),
-                photoUrl: user.photoURL,
-              ),
-            ),
-          ),
-        );
-        return;
+        await UserSessionService.instance.signOut();
+        throw Exception('No Breedr account found. Please sign up first.');
       }
 
       if (!mounted) return;
@@ -192,8 +200,8 @@ class _LoginScreenState extends State<LoginScreen> {
       if (isAdmin) {
         destination = const AdminDashboardScreen();
       } else {
-        final moderation =
-            await ModerationService.instance.getCurrentUserModeration();
+        final moderation = await ModerationService.instance
+            .getCurrentUserModeration();
         if (moderation?.isBlocked == true) {
           destination = ModerationGateScreen(state: moderation!);
         }
@@ -231,27 +239,36 @@ class _LoginScreenState extends State<LoginScreen> {
       return 'Please check your internet connection and try again.';
     }
 
-    return 'Unable to log in right now. Please try again.';
-  }
-
-  String _usernameFromEmail(String email) {
-    final name = email.split('@').first.toLowerCase();
-    final cleaned = name.replaceAll(RegExp(r'[^a-z0-9_]'), '_');
-    return cleaned.isEmpty ? 'breedr_user' : cleaned;
+    return 'Unable to sign in right now. Please try again.';
   }
 
   String _googleSignInMessage(Object error) {
+    if (error is FirebaseAuthException) {
+      switch (error.code) {
+        case 'user-disabled':
+          return 'This account has been disabled. Please contact support.';
+        case 'too-many-requests':
+          return 'Too many sign-in attempts. Please wait and try again.';
+        case 'network-request-failed':
+          return 'Please check your internet connection and try again.';
+        case 'account-exists-with-different-credential':
+          return 'An account with this email already exists. Please use its original sign-in method.';
+        case 'operation-not-allowed':
+          return 'Google sign-in is currently unavailable. Please contact support.';
+      }
+    }
+
     final message = error.toString().toLowerCase();
     if (message.contains('canceled') || message.contains('cancelled')) {
-      return 'Google login was cancelled.';
+      return 'Google sign-in was cancelled.';
     }
     if (message.contains('clientconfigurationerror') ||
         message.contains('providerconfigurationerror') ||
         message.contains('developer console')) {
-      return 'Google login is not configured correctly yet. Please contact support.';
+      return 'Google sign-in is not configured correctly. Please contact support.';
     }
     if (message.contains('uiunavailable')) {
-      return 'Google login is unavailable on this device. Please try email login.';
+      return 'Google sign-in is unavailable on this device. Please use email sign-in.';
     }
     if (message.contains('usermismatch')) {
       return 'Please use the same Google account and try again.';
@@ -263,7 +280,7 @@ class _LoginScreenState extends State<LoginScreen> {
       return 'Please check your internet connection and try again.';
     }
 
-    return 'Google login could not be completed. Please try again.';
+    return 'Google sign-in could not be completed. Please try again.';
   }
 
   @override
@@ -465,9 +482,8 @@ class _LoginScreenState extends State<LoginScreen> {
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => const CabuyaoAccessGate(
-                              child: Step1AboutYou(),
-                            ),
+                            builder: (_) =>
+                                const CabuyaoAccessGate(child: Step1AboutYou()),
                           ),
                         ),
                         child: RichText(

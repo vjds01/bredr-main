@@ -15,12 +15,16 @@ class OwnerProfileScreen extends StatefulWidget {
   final String ownerId;
   final String fallbackName;
   final String fallbackPhoto;
+  final String ratingPurpose;
+  final bool showReportAction;
 
   const OwnerProfileScreen({
     super.key,
     required this.ownerId,
     this.fallbackName = 'Pet Owner',
     this.fallbackPhoto = '',
+    this.ratingPurpose = 'adoption',
+    this.showReportAction = true,
   });
 
   @override
@@ -48,7 +52,8 @@ class _OwnerProfileScreenState extends State<OwnerProfileScreen> {
         foregroundColor: AppColors.primary,
         elevation: 0,
         actions: [
-          if (UserSessionService.instance.currentUser?.uid != widget.ownerId)
+          if (widget.showReportAction &&
+              UserSessionService.instance.currentUser?.uid != widget.ownerId)
             PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert),
               onSelected: (value) {
@@ -224,7 +229,7 @@ class _OwnerProfileScreenState extends State<OwnerProfileScreen> {
           ],
         ),
         const SizedBox(height: 20),
-        _OwnerStats(ownerId: widget.ownerId),
+        _OwnerStats(ownerId: widget.ownerId, purpose: widget.ratingPurpose),
         const SizedBox(height: 22),
         const _OwnerSectionTitle('ABOUT ME'),
         const SizedBox(height: 9),
@@ -298,12 +303,15 @@ class _OwnerProfileScreenState extends State<OwnerProfileScreen> {
             ),
           ),
         const SizedBox(height: 22),
-        const _OwnerSectionTitle('ADOPTION RATINGS'),
+        _OwnerSectionTitle(
+          '${widget.ratingPurpose == 'breeding' ? 'BREEDING' : 'ADOPTION'} RATINGS',
+        ),
         const SizedBox(height: 9),
-        _AdoptionRatingsCard(
+        _PurposeRatingsCard(
           ownerId: widget.ownerId,
           ownerName: name,
           ownerPhoto: photo,
+          purpose: widget.ratingPurpose,
         ),
       ],
     );
@@ -551,23 +559,34 @@ class _ReportUserSheetState extends State<_ReportUserSheet> {
                   ),
                 ),
                 const Divider(height: 28),
-                ..._reasons.map(
-                  (reason) => RadioListTile<String>(
-                    value: reason.$1,
-                    groupValue: _reason,
-                    activeColor: AppColors.primary,
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(
-                      reason.$1,
-                      style: const TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                    subtitle: Text(
-                      reason.$2,
-                      style: const TextStyle(fontSize: 11),
-                    ),
-                    onChanged: _submitting
-                        ? null
-                        : (value) => setState(() => _reason = value ?? _reason),
+                RadioGroup<String>(
+                  groupValue: _reason,
+                  onChanged: (value) {
+                    if (!_submitting && value != null) {
+                      setState(() => _reason = value);
+                    }
+                  },
+                  child: Column(
+                    children: _reasons
+                        .map(
+                          (reason) => RadioListTile<String>(
+                            value: reason.$1,
+                            enabled: !_submitting,
+                            activeColor: AppColors.primary,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(
+                              reason.$1,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            subtitle: Text(
+                              reason.$2,
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                          ),
+                        )
+                        .toList(),
                   ),
                 ),
                 const Divider(height: 24),
@@ -738,8 +757,9 @@ class _ReportInlineMessage extends StatelessWidget {
 
 class _OwnerStats extends StatelessWidget {
   final String ownerId;
+  final String purpose;
 
-  const _OwnerStats({required this.ownerId});
+  const _OwnerStats({required this.ownerId, required this.purpose});
 
   @override
   Widget build(BuildContext context) {
@@ -749,11 +769,8 @@ class _OwnerStats extends StatelessWidget {
       ),
       builder: (context, reviewSnapshot) {
         final reviews = reviewSnapshot.data?.docs ?? const [];
-        final adoption = reviews
-            .where((document) => document.data()['purpose'] == 'adoption')
-            .toList();
-        final breeding = reviews
-            .where((document) => document.data()['purpose'] == 'breeding')
+        final purposeReviews = reviews
+            .where((document) => document.data()['purpose'] == purpose)
             .toList();
         return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: FirebaseFirestore.instance
@@ -765,15 +782,17 @@ class _OwnerStats extends StatelessWidget {
               children: [
                 Expanded(
                   child: _Stat(
-                    value: _average(adoption),
-                    label: 'Adoption Rating',
+                    value: _average(purposeReviews),
+                    label: purpose == 'breeding'
+                        ? 'Breeding Rating'
+                        : 'Adoption Rating',
                   ),
                 ),
                 const SizedBox(width: 7),
                 Expanded(
                   child: _Stat(
-                    value: _average(breeding),
-                    label: 'Breeder Rating',
+                    value: '${purposeReviews.length}',
+                    label: purposeReviews.length == 1 ? 'Review' : 'Reviews',
                   ),
                 ),
                 const SizedBox(width: 7),
@@ -804,15 +823,17 @@ class _OwnerStats extends StatelessWidget {
   }
 }
 
-class _AdoptionRatingsCard extends StatelessWidget {
+class _PurposeRatingsCard extends StatelessWidget {
   final String ownerId;
   final String ownerName;
   final String ownerPhoto;
+  final String purpose;
 
-  const _AdoptionRatingsCard({
+  const _PurposeRatingsCard({
     required this.ownerId,
     required this.ownerName,
     required this.ownerPhoto,
+    required this.purpose,
   });
 
   @override
@@ -831,7 +852,7 @@ class _AdoptionRatingsCard extends StatelessWidget {
           );
         }
         final reviews = (snapshot.data?.docs ?? const [])
-            .where((document) => document.data()['purpose'] == 'adoption')
+            .where((document) => document.data()['purpose'] == purpose)
             .toList();
         final ratings = reviews
             .map((document) => document.data()['overall'])
@@ -849,7 +870,8 @@ class _AdoptionRatingsCard extends StatelessWidget {
                 ownerId: ownerId,
                 fallbackName: ownerName,
                 fallbackPhoto: ownerPhoto,
-                initialFilter: OwnerReviewFilter.petOwner,
+                initialFilter: OwnerReviewFilter.all,
+                purpose: purpose,
               ),
             ),
           ),
@@ -885,10 +907,10 @@ class _AdoptionRatingsCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(width: 16),
-                const Expanded(
+                Expanded(
                   child: Text(
-                    'View all adoption reviews',
-                    style: TextStyle(fontWeight: FontWeight.w800),
+                    'View all $purpose reviews',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
                 ),
                 const Icon(Icons.chevron_right, color: AppColors.primary),

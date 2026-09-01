@@ -5,13 +5,14 @@ import '../../services/breeding_match_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/breedr_network_image.dart';
 
-enum OwnerReviewFilter { all, petOwner, adopter }
+enum OwnerReviewFilter { all, petOwner, adopter, breeder }
 
 class OwnerRatingsScreen extends StatefulWidget {
   final String ownerId;
   final String fallbackName;
   final String fallbackPhoto;
   final OwnerReviewFilter initialFilter;
+  final String? purpose;
 
   const OwnerRatingsScreen({
     super.key,
@@ -19,6 +20,7 @@ class OwnerRatingsScreen extends StatefulWidget {
     this.fallbackName = 'Pet Owner',
     this.fallbackPhoto = '',
     this.initialFilter = OwnerReviewFilter.all,
+    this.purpose,
   });
 
   @override
@@ -49,21 +51,42 @@ class _OwnerRatingsScreenState extends State<OwnerRatingsScreen> {
               stream: BreedingMatchService.instance
                   .watchPublishedReviewsForUser(widget.ownerId),
               builder: (context, reviewSnapshot) {
-                final reviews = reviewSnapshot.data?.docs
+                final allPublishedReviews =
+                    reviewSnapshot.data?.docs
                         .map((document) => _OwnerReview.fromDocument(document))
                         .toList() ??
                     <_OwnerReview>[];
+                final normalizedPurpose = widget.purpose?.trim().toLowerCase();
+                final reviews = normalizedPurpose == null
+                    ? allPublishedReviews
+                    : allPublishedReviews
+                          .where(
+                            (review) => review.purpose == normalizedPurpose,
+                          )
+                          .toList();
                 reviews.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
                 final petOwnerReviews = reviews
-                    .where((review) => review.reviewedUserRole == 'petOwner')
+                    .where(
+                      (review) =>
+                          review.purpose == 'adoption' &&
+                          review.reviewedUserRole == 'petOwner',
+                    )
                     .toList();
                 final adopterReviews = reviews
-                    .where((review) => review.reviewedUserRole == 'adopter')
+                    .where(
+                      (review) =>
+                          review.purpose == 'adoption' &&
+                          review.reviewedUserRole == 'adopter',
+                    )
+                    .toList();
+                final breederReviews = reviews
+                    .where((review) => review.purpose == 'breeding')
                     .toList();
                 final visibleReviews = switch (_filter) {
                   OwnerReviewFilter.petOwner => petOwnerReviews,
                   OwnerReviewFilter.adopter => adopterReviews,
+                  OwnerReviewFilter.breeder => breederReviews,
                   OwnerReviewFilter.all => reviews,
                 };
 
@@ -80,41 +103,53 @@ class _OwnerRatingsScreenState extends State<OwnerRatingsScreen> {
                             allReviews: reviews,
                           ),
                           const SizedBox(height: 18),
-                          SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: Row(
-                              children: [
-                                _FilterPill(
-                                  label: 'All Reviews',
-                                  selected: _filter == OwnerReviewFilter.all,
-                                  onTap: () => setState(
-                                    () => _filter = OwnerReviewFilter.all,
+                          if (normalizedPurpose == null)
+                            SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                children: [
+                                  _FilterPill(
+                                    label: 'All Reviews',
+                                    selected: _filter == OwnerReviewFilter.all,
+                                    onTap: () => setState(
+                                      () => _filter = OwnerReviewFilter.all,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(width: 8),
-                                _FilterPill(
-                                  label: 'As Pet Owner',
-                                  icon: Icons.pets,
-                                  selected:
-                                      _filter == OwnerReviewFilter.petOwner,
-                                  onTap: () => setState(
-                                    () => _filter = OwnerReviewFilter.petOwner,
+                                  const SizedBox(width: 8),
+                                  _FilterPill(
+                                    label: 'As Pet Owner',
+                                    icon: Icons.pets,
+                                    selected:
+                                        _filter == OwnerReviewFilter.petOwner,
+                                    onTap: () => setState(
+                                      () =>
+                                          _filter = OwnerReviewFilter.petOwner,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(width: 8),
-                                _FilterPill(
-                                  label: 'As Adopter',
-                                  icon: Icons.home_outlined,
-                                  selected:
-                                      _filter == OwnerReviewFilter.adopter,
-                                  onTap: () => setState(
-                                    () => _filter = OwnerReviewFilter.adopter,
+                                  const SizedBox(width: 8),
+                                  _FilterPill(
+                                    label: 'As Adopter',
+                                    icon: Icons.home_outlined,
+                                    selected:
+                                        _filter == OwnerReviewFilter.adopter,
+                                    onTap: () => setState(
+                                      () => _filter = OwnerReviewFilter.adopter,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                  const SizedBox(width: 8),
+                                  _FilterPill(
+                                    label: 'As Breeder',
+                                    icon: Icons.favorite_outline,
+                                    selected:
+                                        _filter == OwnerReviewFilter.breeder,
+                                    onTap: () => setState(
+                                      () => _filter = OwnerReviewFilter.breeder,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 16),
+                          SizedBox(height: normalizedPurpose == null ? 16 : 4),
                           if (visibleReviews.isEmpty)
                             _NoReviewsPlaceholder(filter: _filter)
                           else
@@ -308,10 +343,7 @@ class _OwnerSummary extends StatelessWidget {
             const SizedBox(height: 14),
             const Text(
               'This owner is still building their public review history.',
-              style: TextStyle(
-                color: Color(0xFF666666),
-                fontSize: 12,
-              ),
+              style: TextStyle(color: Color(0xFF666666), fontSize: 12),
             ),
           ],
         ],
@@ -330,7 +362,10 @@ class _OwnerSummary extends StatelessWidget {
 
   double? _average(List<_OwnerReview> reviews) {
     if (reviews.isEmpty) return null;
-    final total = reviews.fold<int>(0, (sum, review) => sum + review.overall);
+    final total = reviews.fold<int>(
+      0,
+      (total, review) => total + review.overall,
+    );
     return total / reviews.length;
   }
 }
@@ -398,8 +433,7 @@ class _ReviewCard extends StatelessWidget {
           .snapshots(),
       builder: (context, snapshot) {
         final reviewer = snapshot.data?.data();
-        final reviewerName =
-            reviewer?['fullName'] as String? ?? 'Breedr owner';
+        final reviewerName = reviewer?['fullName'] as String? ?? 'Breedr owner';
         final reviewerPhoto = reviewer?['profilePhoto'] as String? ?? '';
 
         return Container(
@@ -517,6 +551,7 @@ class _NoReviewsPlaceholder extends StatelessWidget {
     final label = switch (filter) {
       OwnerReviewFilter.petOwner => 'pet owner',
       OwnerReviewFilter.adopter => 'adopter',
+      OwnerReviewFilter.breeder => 'breeder',
       OwnerReviewFilter.all => 'public',
     };
 
@@ -563,10 +598,7 @@ class _Avatar extends StatelessWidget {
   final String photoUrl;
   final double size;
 
-  const _Avatar({
-    required this.photoUrl,
-    required this.size,
-  });
+  const _Avatar({required this.photoUrl, required this.size});
 
   @override
   Widget build(BuildContext context) {
@@ -582,10 +614,7 @@ class _Avatar extends StatelessWidget {
         imageUrl: photoUrl,
         width: size,
         height: size,
-        fallback: const Icon(
-          Icons.person,
-          color: AppColors.primary,
-        ),
+        fallback: const Icon(Icons.person, color: AppColors.primary),
       ),
     );
   }
@@ -595,10 +624,7 @@ class _Stars extends StatelessWidget {
   final int rating;
   final double size;
 
-  const _Stars({
-    required this.rating,
-    required this.size,
-  });
+  const _Stars({required this.rating, required this.size});
 
   @override
   Widget build(BuildContext context) {
@@ -634,7 +660,11 @@ class _PurposeBadge extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(isAdoption ? Icons.home_outlined : Icons.pets, size: 10, color: color),
+          Icon(
+            isAdoption ? Icons.home_outlined : Icons.pets,
+            size: 10,
+            color: color,
+          ),
           const SizedBox(width: 4),
           Text(
             isAdoption ? 'Adoption' : 'Breeding',
@@ -657,6 +687,23 @@ class _ReviewRoleBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (role == 'breeder') {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF3E0),
+          borderRadius: BorderRadius.circular(99),
+        ),
+        child: const Text(
+          'As Breeder',
+          style: TextStyle(
+            color: Color(0xFFF2AA58),
+            fontSize: 9,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      );
+    }
     final isAdopter = role == 'adopter';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -699,16 +746,23 @@ class _OwnerReview {
     final data = document.data();
     final timestamp = data['createdAt'] as Timestamp?;
     final completedAt = data['completedAt'] as Timestamp?;
-    final purpose = data['purpose'] as String? ?? 'breeding';
+    final purpose = (data['purpose'] as String? ?? 'breeding')
+        .trim()
+        .toLowerCase();
     final role = data['reviewedUserRole'] as String?;
 
     return _OwnerReview(
       reviewerId: data['reviewerId'] as String? ?? '',
       purpose: purpose,
-      reviewedUserRole: role == 'adopter' ? 'adopter' : 'petOwner',
+      reviewedUserRole: purpose == 'breeding'
+          ? 'breeder'
+          : role == 'adopter'
+          ? 'adopter'
+          : 'petOwner',
       overall: ((data['overall'] as num?)?.round() ?? 0).clamp(0, 5).toInt(),
       text: data['reviewText'] as String? ?? '',
-      createdAt: timestamp?.toDate() ??
+      createdAt:
+          timestamp?.toDate() ??
           completedAt?.toDate() ??
           DateTime.fromMillisecondsSinceEpoch(0),
     );

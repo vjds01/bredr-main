@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -10,9 +11,11 @@ import '../services/cloudinary_service.dart';
 import '../services/app_guide_service.dart';
 import '../services/breeding_match_service.dart';
 import '../services/cabuyao_access_service.dart';
+import '../services/cabuyao_barangay_service.dart';
 import '../services/moderation_service.dart';
 import '../services/pet_service.dart';
 import '../services/presence_service.dart';
+import '../services/realtime_notification_service.dart';
 import '../services/user_session_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/breedr_network_image.dart';
@@ -27,6 +30,11 @@ import 'notifications/notifications_screen.dart';
 import 'owner/owner_ratings_screen.dart';
 import 'pet/health_vault_screen.dart';
 import 'pet/location_settings_screen.dart';
+import 'settings/report_history_screen.dart';
+import 'settings/account_status_screen.dart';
+import 'settings/reviews_given_screen.dart';
+import 'settings/breeding_history_screen.dart';
+import 'settings/returned_pets_screen.dart';
 import 'pet/pet_registration_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -44,12 +52,13 @@ class _HomeScreenState extends State<HomeScreen> {
   int _guideIndex = 0;
   final ValueNotifier<int> _breedingActivation = ValueNotifier<int>(0);
   final ValueNotifier<int> _adoptionActivation = ValueNotifier<int>(0);
+  final ValueNotifier<int> _notificationActivation = ValueNotifier<int>(0);
 
   late final List<Widget> _tabs = [
     BreedingScreen(activationSignal: _breedingActivation),
     AdoptionBrowseScreen(activationSignal: _adoptionActivation),
     const ChatsScreen(),
-    const NotificationsScreen(),
+    NotificationsScreen(activationSignal: _notificationActivation),
     _ProfileTab(onLogout: _logout, onShowGuide: _startGuideFromSettings),
   ];
 
@@ -185,6 +194,17 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    RealtimeNotificationService.instance.tappedNotificationId.addListener(
+      _handleLocalNotificationTap,
+    );
+    final userId = UserSessionService.instance.currentUser?.uid;
+    if (userId != null) {
+      RealtimeNotificationService.instance.startForUser(userId).catchError((
+        Object error,
+      ) {
+        debugPrint('Realtime notifications could not start: $error');
+      });
+    }
     _loadGuideState();
     PresenceService.instance.start().catchError((Object error) {
       debugPrint('Presence service could not start: $error');
@@ -201,6 +221,20 @@ class _HomeScreenState extends State<HomeScreen> {
         });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkModerationStatus();
+      _handleLocalNotificationTap();
+    });
+  }
+
+  void _handleLocalNotificationTap() {
+    if (RealtimeNotificationService.instance.tappedNotificationId.value ==
+            null ||
+        !mounted) {
+      return;
+    }
+    setState(() => _selectedIndex = 3);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _notificationActivation.value++;
     });
   }
 
@@ -423,8 +457,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    RealtimeNotificationService.instance.tappedNotificationId.removeListener(
+      _handleLocalNotificationTap,
+    );
+    RealtimeNotificationService.instance.stop().catchError((Object error) {
+      debugPrint('Realtime notifications could not stop: $error');
+    });
     _breedingActivation.dispose();
     _adoptionActivation.dispose();
+    _notificationActivation.dispose();
     PresenceService.instance.stop().catchError((Object error) {
       debugPrint('Presence service could not stop: $error');
     });
@@ -475,9 +516,14 @@ class _HomeScreenState extends State<HomeScreen> {
               Expanded(
                 child: IndexedStack(index: _selectedIndex, children: _tabs),
               ),
-              _HomeBottomNav(
-                selectedIndex: _selectedIndex,
-                onTap: _handleTabNavigation,
+              ValueListenableBuilder<int>(
+                valueListenable:
+                    RealtimeNotificationService.instance.unreadCount,
+                builder: (context, unreadCount, _) => _HomeBottomNav(
+                  selectedIndex: _selectedIndex,
+                  unreadCount: unreadCount,
+                  onTap: _handleTabNavigation,
+                ),
               ),
             ],
           ),
@@ -499,9 +545,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
 class _HomeBottomNav extends StatelessWidget {
   final int selectedIndex;
+  final int unreadCount;
   final ValueChanged<int> onTap;
 
-  const _HomeBottomNav({required this.selectedIndex, required this.onTap});
+  const _HomeBottomNav({
+    required this.selectedIndex,
+    required this.unreadCount,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -541,12 +592,44 @@ class _HomeBottomNav extends StatelessWidget {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        item.icon,
-                        size: 24,
-                        color: isSelected
-                            ? AppColors.primary
-                            : const Color(0xFF888888),
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Icon(
+                            item.icon,
+                            size: 24,
+                            color: isSelected
+                                ? AppColors.primary
+                                : const Color(0xFF888888),
+                          ),
+                          if (index == 3 && unreadCount > 0)
+                            Positioned(
+                              right: -10,
+                              top: -7,
+                              child: Container(
+                                constraints: const BoxConstraints(
+                                  minWidth: 18,
+                                  minHeight: 18,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                ),
+                                alignment: Alignment.center,
+                                decoration: const BoxDecoration(
+                                  color: AppColors.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Text(
+                                  unreadCount > 99 ? '99+' : '$unreadCount',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                       const SizedBox(height: 3),
                       Text(
@@ -1114,6 +1197,8 @@ class _SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<_SettingsScreen> {
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _userSubscription;
+  Map<String, dynamic>? _liveData;
   bool _petManagementOpen = true;
   bool _notificationsOpen = false;
   bool _privacySafetyOpen = false;
@@ -1122,20 +1207,39 @@ class _SettingsScreenState extends State<_SettingsScreen> {
   bool _aboutOpen = false;
 
   @override
+  void initState() {
+    super.initState();
+    _liveData = widget.data;
+    final userId = UserSessionService.instance.currentUser?.uid;
+    if (userId != null) {
+      _userSubscription = FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .snapshots()
+          .listen((snapshot) {
+            if (mounted && snapshot.data() != null) {
+              setState(() => _liveData = snapshot.data());
+            }
+          });
+    }
+  }
+
+  @override
+  void dispose() {
+    _userSubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final user = UserSessionService.instance.currentUser;
+    final data = _liveData ?? widget.data;
     final fullName =
-        widget.data?['fullName'] as String? ??
-        user?.displayName ??
-        'Breedr User';
-    final userName = widget.data?['userName'] as String? ?? '';
-    final locationName =
-        widget.data?['locationName'] as String? ?? 'Location not set';
-    final photoUrl =
-        widget.data?['profilePhoto'] as String? ?? user?.photoURL ?? '';
-    final moderation = widget.data == null
-        ? null
-        : ModerationState.fromUserData(widget.data!);
+        data?['fullName'] as String? ?? user?.displayName ?? 'Breedr User';
+    final userName = data?['userName'] as String? ?? '';
+    final locationName = data?['locationName'] as String? ?? 'Location not set';
+    final photoUrl = data?['profilePhoto'] as String? ?? user?.photoURL ?? '';
+    final moderation = data == null ? null : ModerationState.fromUserData(data);
     final hasModerationIssue = moderation != null && !moderation.isActive;
 
     return Scaffold(
@@ -1213,8 +1317,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                           final updated = await Navigator.push<bool>(
                             context,
                             MaterialPageRoute(
-                              builder: (_) =>
-                                  _EditProfileScreen(data: widget.data),
+                              builder: (_) => _EditProfileScreen(data: data),
                             ),
                           );
                           if (updated == true && context.mounted) {
@@ -1301,7 +1404,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                           title: 'Breeding Likes',
                           subtitle: 'When someone likes your pet',
                           initialValue: _notificationPreference(
-                            widget.data,
+                            data,
                             'breedingLikes',
                           ),
                         ),
@@ -1310,7 +1413,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                           title: 'Adoption Requests',
                           subtitle: 'When an adopter answers your questions',
                           initialValue: _notificationPreference(
-                            widget.data,
+                            data,
                             'adoptionRequests',
                           ),
                         ),
@@ -1319,7 +1422,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                           title: 'New Messages',
                           subtitle: 'Chat notifications',
                           initialValue: _notificationPreference(
-                            widget.data,
+                            data,
                             'newMessages',
                           ),
                         ),
@@ -1329,7 +1432,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                           subtitle:
                               'Handover, protection window and status changes',
                           initialValue: _notificationPreference(
-                            widget.data,
+                            data,
                             'adoptionUpdates',
                           ),
                         ),
@@ -1338,7 +1441,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                           title: 'Contract Updates',
                           subtitle: 'Signatures and agreement changes',
                           initialValue: _notificationPreference(
-                            widget.data,
+                            data,
                             'contractUpdates',
                           ),
                         ),
@@ -1347,7 +1450,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                           title: 'Pet Health',
                           subtitle: 'Vaccination and document renewals',
                           initialValue: _notificationPreference(
-                            widget.data,
+                            data,
                             'petHealth',
                           ),
                         ),
@@ -1356,7 +1459,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                           title: 'Reviews Received',
                           subtitle: 'When someone reviews you',
                           initialValue: _notificationPreference(
-                            widget.data,
+                            data,
                             'reviewsReceived',
                           ),
                         ),
@@ -1373,8 +1476,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                       children: [
                         _ActivityStatusSwitch(
                           initialValue:
-                              widget.data?['showActivityStatus'] as bool? ??
-                              true,
+                              data?['showActivityStatus'] as bool? ?? true,
                         ),
                         _SettingsTile(
                           icon: Icons.visibility_off_outlined,
@@ -1383,7 +1485,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                           trailing: _SettingSwitchInline(
                             preferenceKey: 'hideDistance',
                             initialValue:
-                                widget.data?['hideDistance'] as bool? ?? false,
+                                data?['hideDistance'] as bool? ?? false,
                           ),
                           onTap: () {},
                         ),
@@ -1391,11 +1493,11 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                           icon: Icons.flag_outlined,
                           label: 'Report History',
                           subtitle: 'Reports you have filed or received',
-                          onTap: () => _showSettingsInfo(
+                          onTap: () => Navigator.push(
                             context,
-                            title: 'Report History',
-                            message:
-                                'Reports you file, reports you receive, and admin decisions will appear here once the admin module is connected.',
+                            MaterialPageRoute<void>(
+                              builder: (_) => const ReportHistoryScreen(),
+                            ),
                           ),
                         ),
                         _SettingsTile(
@@ -1406,12 +1508,19 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                           badge: hasModerationIssue
                               ? moderation.badge
                               : 'No active issue',
-                          onTap: () => _showSettingsInfo(
+                          onTap: () => Navigator.push(
                             context,
-                            title: 'Account Status',
-                            message: hasModerationIssue
-                                ? moderation.body
-                                : 'Your account is in good standing. Active warnings, suspensions, and restrictions will appear here if the Breedr Team needs to contact you about your account.',
+                            MaterialPageRoute<void>(
+                              builder: (_) => AccountStatusDetailsScreen(
+                                state:
+                                    moderation ??
+                                    ModerationState.fromUserData(
+                                      Map<String, dynamic>.from(
+                                        data ?? const <String, dynamic>{},
+                                      ),
+                                    ),
+                              ),
+                            ),
                           ),
                         ),
                         _SettingsTile(
@@ -1458,11 +1567,11 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                           icon: Icons.rate_review_outlined,
                           label: 'Reviews Given',
                           subtitle: 'Reviews you have left for others',
-                          onTap: () => _showSettingsInfo(
+                          onTap: () => Navigator.push(
                             context,
-                            title: 'Reviews Given',
-                            message:
-                                'Reviews you leave for adopters and breeders will show up here.',
+                            MaterialPageRoute<void>(
+                              builder: (_) => const ReviewsGivenScreen(),
+                            ),
                           ),
                         ),
                       ],
@@ -1491,22 +1600,22 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                           icon: Icons.favorite_border,
                           label: 'Breeding History',
                           subtitle: 'Past breeding matches',
-                          onTap: () => _showSettingsInfo(
+                          onTap: () => Navigator.push(
                             context,
-                            title: 'Breeding History',
-                            message:
-                                'Completed breeding transactions will appear here once the breeding history screen is connected.',
+                            MaterialPageRoute<void>(
+                              builder: (_) => const BreedingHistoryScreen(),
+                            ),
                           ),
                         ),
                         _SettingsTile(
                           icon: Icons.assignment_return_outlined,
                           label: 'Returned Pets',
                           subtitle: 'Adoptions that did not work out',
-                          onTap: () => _showSettingsInfo(
+                          onTap: () => Navigator.push(
                             context,
-                            title: 'Returned Pets',
-                            message:
-                                'Return requests and resolved returned-pet records will appear here once admin review is connected.',
+                            MaterialPageRoute<void>(
+                              builder: (_) => const ReturnedPetsScreen(),
+                            ),
                           ),
                         ),
                       ],
@@ -1956,19 +2065,22 @@ class _EditProfileScreenState extends State<_EditProfileScreen> {
         position.longitude,
       );
       final place = placemarks.isNotEmpty ? placemarks.first : null;
-      final locationName = [
-        place?.subLocality,
-        place?.locality,
-      ].whereType<String>().where((part) => part.trim().isNotEmpty).join(', ');
+      var locationName = await CabuyaoBarangayService.fromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+      locationName ??= CabuyaoBarangayService.fromPlacemark(place);
 
       if (!mounted) return;
+      if (locationName == null) {
+        _showMessage('Breedr is available in Cabuyao only.');
+        return;
+      }
 
       setState(() {
         _latitude = position.latitude;
         _longitude = position.longitude;
-        _locationController.text = locationName.isNotEmpty
-            ? locationName
-            : '${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)}';
+        _locationController.text = locationName!;
       });
 
       _showMessage('Location detected.');
@@ -1988,6 +2100,16 @@ class _EditProfileScreenState extends State<_EditProfileScreen> {
       _showMessage('Please sign in again before saving changes.');
       return;
     }
+    final barangay = CabuyaoBarangayService.canonicalName(
+      _locationController.text,
+    );
+    if (barangay == null) {
+      _showMessage(
+        'Please detect a valid Cabuyao barangay before saving your profile.',
+      );
+      return;
+    }
+    final canonicalLocation = CabuyaoBarangayService.format(barangay);
 
     setState(() => _saving = true);
 
@@ -2019,7 +2141,9 @@ class _EditProfileScreenState extends State<_EditProfileScreen> {
         'homeType': _homeType,
         'childrenAtHome': _childrenAtHome,
         'otherPetsAtHome': _otherPetsAtHome,
-        'locationName': _locationController.text.trim(),
+        'locationName': canonicalLocation,
+        'barangay': barangay,
+        'city': 'Cabuyao Laguna',
         'latitude': _latitude,
         'longitude': _longitude,
         'profilePhoto': profilePhotoUrl,
@@ -2635,7 +2759,7 @@ class _EditToggleRow extends StatelessWidget {
           ),
           Switch(
             value: value,
-            activeColor: Colors.white,
+            activeThumbColor: Colors.white,
             activeTrackColor: AppColors.primary,
             inactiveThumbColor: Colors.white,
             inactiveTrackColor: const Color(0xFFB6AEB3),
@@ -4286,72 +4410,245 @@ class _SafetyRecordHistoryTile extends StatelessWidget {
         .trim();
     final date = _readModerationDate(entry['createdAt'] ?? entry['actionAt']);
     final guidance = moderationGuidanceFor(category);
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
+    final userNote = (entry['userNote'] ?? entry['note'] ?? '')
+        .toString()
+        .trim();
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFFFD6DD)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+        onTap: () => _showSafetyRecordDetails(context, entry),
+        child: Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFFFD6DD)),
+          ),
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(
-                Icons.shield_outlined,
-                color: AppColors.primary,
-                size: 19,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  action,
-                  style: const TextStyle(
-                    color: Color(0xFF241C29),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.shield_outlined,
+                    color: AppColors.primary,
+                    size: 19,
                   ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      action,
+                      style: const TextStyle(
+                        color: Color(0xFF241C29),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  if (date != null)
+                    Text(
+                      _formatModerationDate(date),
+                      style: const TextStyle(
+                        color: Color(0xFF8D8494),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                category,
+                style: const TextStyle(
+                  color: AppColors.primary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
-              if (date != null)
-                Text(
-                  _formatModerationDate(date),
-                  style: const TextStyle(
-                    color: Color(0xFF8D8494),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                  ),
+              const SizedBox(height: 5),
+              Text(
+                userNote.isNotEmpty ? userNote : guidance.body,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFF6F6574),
+                  fontSize: 11.5,
+                  height: 1.35,
                 ),
+              ),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            category,
+        ),
+      ),
+    );
+  }
+}
+
+void _showSafetyRecordDetails(
+  BuildContext context,
+  Map<String, dynamic> entry,
+) {
+  final category = (entry['category'] ?? 'Account standing review').toString();
+  final action = (entry['action'] ?? entry['actionKey'] ?? 'Reviewed')
+      .toString();
+  final userNote = (entry['userNote'] ?? entry['note'] ?? '').toString().trim();
+  final date = _readModerationDate(entry['createdAt'] ?? entry['actionAt']);
+  final endDate = _readModerationDate(
+    entry['suspensionEndsAt'] ?? entry['moderationEndsAt'],
+  );
+  final guidance = moderationGuidanceFor(category);
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (sheetContext) => SafeArea(
+      child: Container(
+        margin: const EdgeInsets.all(14),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF5F7),
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Center(
+                child: Container(
+                  width: 42,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE4DCE5),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Safety Record Details',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(sheetContext),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _SafetyDetailRow(label: 'Action', value: action),
+              _SafetyDetailRow(label: 'Report category', value: category),
+              if (date != null)
+                _SafetyDetailRow(
+                  label: 'Date issued',
+                  value: _formatModerationDate(date),
+                ),
+              if (endDate != null)
+                _SafetyDetailRow(
+                  label: 'Access restored',
+                  value: _formatModerationDate(endDate),
+                ),
+              const SizedBox(height: 16),
+              const Text(
+                "ADMIN'S EXPLANATION",
+                style: TextStyle(
+                  color: Color(0xFF918796),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              _SafetyDetailText(
+                text: userNote.isNotEmpty
+                    ? userNote
+                    : 'The Breedr Team reviewed this account action.',
+              ),
+              const SizedBox(height: 16),
+              Text(
+                guidance.title.toUpperCase(),
+                style: const TextStyle(
+                  color: Color(0xFF918796),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              _SafetyDetailText(text: guidance.body),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _SafetyDetailRow extends StatelessWidget {
+  final String label;
+  final String value;
+  const _SafetyDetailRow({required this.label, required this.value});
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(vertical: 12),
+    decoration: const BoxDecoration(
+      border: Border(bottom: BorderSide(color: Color(0xFFEEDDE2))),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(color: Color(0xFF918796), fontSize: 12),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
             style: const TextStyle(
-              color: AppColors.primary,
+              color: Color(0xFF2B2230),
               fontSize: 12,
               fontWeight: FontWeight.w800,
             ),
           ),
-          const SizedBox(height: 5),
-          Text(
-            guidance.body,
-            maxLines: 4,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Color(0xFF6F6574),
-              fontSize: 11.5,
-              height: 1.35,
-            ),
-          ),
-        ],
+        ),
+      ],
+    ),
+  );
+}
+
+class _SafetyDetailText extends StatelessWidget {
+  final String text;
+  const _SafetyDetailText({required this.text});
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(15),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+    ),
+    child: Text(
+      text,
+      style: const TextStyle(
+        color: Color(0xFF706675),
+        fontSize: 13,
+        height: 1.45,
       ),
-    );
-  }
+    ),
+  );
 }
 
 DateTime? _readModerationDate(dynamic value) {

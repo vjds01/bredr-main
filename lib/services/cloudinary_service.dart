@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -20,6 +19,18 @@ class CloudinaryService {
   static const String cloudName = 'dfzwbn5tk';
   static const String uploadPreset = 'breedr_upload';
 
+  static String compatibleVideoUrl(String originalUrl) {
+    final uri = Uri.tryParse(originalUrl);
+    if (uri == null || uri.host != 'res.cloudinary.com') return originalUrl;
+    const marker = '/video/upload/';
+    if (!uri.path.contains(marker)) return originalUrl;
+    final compatiblePath = uri.path.replaceFirst(
+      marker,
+      '${marker}f_mp4,vc_h264,ac_aac,q_auto/',
+    );
+    return uri.replace(path: compatiblePath).toString();
+  }
+
   Future<String?> uploadImage(File file) async {
     try {
       return await uploadImageOrThrow(file);
@@ -31,6 +42,10 @@ class CloudinaryService {
 
   Future<String> uploadImageOrThrow(File file) async {
     return _uploadOrThrow(file, resourceType: 'image', noun: 'photo');
+  }
+
+  Future<String> uploadVideoOrThrow(File file) async {
+    return _uploadOrThrow(file, resourceType: 'video', noun: 'video');
   }
 
   Future<String> uploadEvidenceOrThrow(File file) async {
@@ -50,14 +65,11 @@ class CloudinaryService {
       final originalName = file.uri.pathSegments.isNotEmpty
           ? file.uri.pathSegments.last
           : 'evidence.pdf';
-      final safeName = originalName.replaceAll(
-        RegExp(r'[^A-Za-z0-9._-]'),
-        '_',
-      );
+      final safeName = originalName.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
       final timestamp = DateTime.now().microsecondsSinceEpoch;
-      final ref = FirebaseStorage.instance
-          .ref()
-          .child('evidence/pdfs/${timestamp}_$safeName');
+      final ref = FirebaseStorage.instance.ref().child(
+        'evidence/pdfs/${timestamp}_$safeName',
+      );
 
       final task = await ref.putFile(
         file,
@@ -75,7 +87,8 @@ class CloudinaryService {
           'PDF evidence upload is blocked by Firebase Storage rules. Please deploy the latest storage rules and try again.',
         'bucket-not-found' =>
           'Firebase Storage is not ready for PDF evidence uploads.',
-        _ => 'The PDF evidence could not be uploaded right now. ${e.message ?? 'Please try again.'}',
+        _ =>
+          'The PDF evidence could not be uploaded right now. ${e.message ?? 'Please try again.'}',
       };
       throw CloudinaryUploadException(message);
     } catch (e) {

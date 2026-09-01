@@ -6,8 +6,10 @@ import '../../theme/app_colors.dart';
 import '../../models/pet_listing_data.dart';
 import '../../services/pet_registration_draft_service.dart';
 import '../../services/pet_service.dart';
+import '../../services/cloudinary_service.dart';
 import '../../services/cabuyao_access_service.dart';
 import '../../services/user_session_service.dart';
+import '../../services/cabuyao_barangay_service.dart';
 import '../../widgets/breedr_network_image.dart';
 import 'pet_published_screen.dart';
 
@@ -20,10 +22,7 @@ const _orange = Color(0xFFF2AA58);
 class PetReviewScreen extends StatefulWidget {
   final PetListingData petData;
 
-  const PetReviewScreen({
-    super.key,
-    required this.petData,
-  });
+  const PetReviewScreen({super.key, required this.petData});
 
   @override
   State<PetReviewScreen> createState() => _PetReviewScreenState();
@@ -34,26 +33,38 @@ class _PetReviewScreenState extends State<PetReviewScreen> {
   bool _isPublishing = false;
 
   int get _totalPhotos {
-    final total = widget.petData.additionalPhotoFiles.length;
-    return total == 0 ? 1 : total;
+    final photoTotal = widget.petData.additionalPhotoFiles.isEmpty
+        ? 1
+        : widget.petData.additionalPhotoFiles.length;
+    return photoTotal + widget.petData.additionalVideoFiles.length;
   }
 
   Future<void> _publishPet() async {
-    final isAdmin = await UserSessionService.instance.isCurrentUserAdmin();
-    final locationResult = isAdmin
-        ? const CabuyaoAccessResult(CabuyaoAccessStatus.allowed)
-        : await CabuyaoAccessService.instance.checkAccess();
-    if (!locationResult.isAllowed) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_locationErrorMessage(locationResult.status))),
-      );
+    if (_isPublishing) return;
+
+    final validationMessage = _validationMessage();
+    if (validationMessage != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(validationMessage)));
       return;
     }
 
     setState(() => _isPublishing = true);
 
     try {
+      final isAdmin = await UserSessionService.instance.isCurrentUserAdmin();
+      final locationResult = isAdmin
+          ? const CabuyaoAccessResult(CabuyaoAccessStatus.allowed)
+          : await CabuyaoAccessService.instance.checkAccess();
+      if (!locationResult.isAllowed) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_locationErrorMessage(locationResult.status))),
+        );
+        return;
+      }
+
       final result = await PetService.instance.publishPet(widget.petData);
       await PetRegistrationDraftService.instance.clearDraft();
 
@@ -74,14 +85,44 @@ class _PetReviewScreenState extends State<PetReviewScreen> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_publishErrorMessage(e))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_publishErrorMessage(e))));
     } finally {
       if (mounted) {
         setState(() => _isPublishing = false);
       }
     }
+  }
+
+  String? _validationMessage() {
+    final pet = widget.petData;
+    if (pet.profilePhotoFile == null) return 'A pet profile photo is required.';
+    if (pet.additionalVideoFiles.isNotEmpty &&
+        pet.additionalPhotoFiles.isEmpty) {
+      return 'Add a cover photo before adding pet videos.';
+    }
+    if (pet.additionalVideoFiles.any(
+      (video) => video.lengthSync() > 50 * 1024 * 1024,
+    )) {
+      return 'Videos must be 50 MB or smaller.';
+    }
+    if (pet.name.trim().isEmpty) return "Your pet's name is required.";
+    if (pet.primaryBreed.trim().isEmpty && pet.breed.trim().isEmpty) {
+      return "Your pet's breed is required.";
+    }
+    if (pet.color.trim().isEmpty) return "Your pet's color is required.";
+    if (pet.about.trim().isEmpty) return 'Pet profile details are required.';
+    if (!CabuyaoBarangayService.isCanonicalLocation(pet.locationName)) {
+      return 'A valid Cabuyao barangay is required.';
+    }
+    if (pet.purpose == null || pet.purpose!.trim().isEmpty) {
+      return 'Please select whether this pet is for breeding or adoption.';
+    }
+    if (pet.isAdoption && pet.adoptionType == 'FOR SALE' && pet.price <= 0) {
+      return 'Please enter a valid selling price.';
+    }
+    return null;
   }
 
   String _locationErrorMessage(CabuyaoAccessStatus status) {
@@ -104,6 +145,7 @@ class _PetReviewScreenState extends State<PetReviewScreen> {
     if (error is DuplicatePetListingException) {
       return 'You already have an active listing for ${error.petName}.';
     }
+    if (error is CloudinaryUploadException) return error.message;
 
     if (error is FirebaseException) {
       switch (error.code) {
@@ -142,8 +184,11 @@ class _PetReviewScreenState extends State<PetReviewScreen> {
                     Padding(
                       padding: const EdgeInsets.only(left: 16, top: 8),
                       child: IconButton(
-                        icon: const Icon(Icons.arrow_back_ios,
-                            color: AppColors.primary, size: 20),
+                        icon: const Icon(
+                          Icons.arrow_back_ios,
+                          color: AppColors.primary,
+                          size: 20,
+                        ),
                         onPressed: () => Navigator.pop(context),
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
@@ -158,11 +203,14 @@ class _PetReviewScreenState extends State<PetReviewScreen> {
                       padding: EdgeInsets.symmetric(horizontal: 24),
                       child: Align(
                         alignment: Alignment.centerRight,
-                        child: Text('Step 5 of 5',
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: AppColors.primary,
-                                fontWeight: FontWeight.w500)),
+                        child: Text(
+                          'Step 5 of 5',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 20),
@@ -185,18 +233,22 @@ class _PetReviewScreenState extends State<PetReviewScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('Review Profile',
-                                      style: TextStyle(
-                                          fontSize: 26,
-                                          fontWeight: FontWeight.bold,
-                                          color: AppColors.primary)),
+                                  Text(
+                                    'Review Profile',
+                                    style: TextStyle(
+                                      fontSize: 26,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
                                   SizedBox(height: 6),
                                   Text(
                                     'Take a moment to review your details before finishing. Once published, other pet owners nearby can see and request ${widget.petData.name}.',
                                     style: const TextStyle(
-                                        fontSize: 13,
-                                        color: Color(0xFF666666),
-                                        height: 1.5),
+                                      fontSize: 13,
+                                      color: Color(0xFF666666),
+                                      height: 1.5,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -210,7 +262,9 @@ class _PetReviewScreenState extends State<PetReviewScreen> {
                     // ── Pet Profile Card ──────────────────────────
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: _PetProfileCard(petData: widget.petData),
+                      child: widget.petData.isAdoption
+                          ? _AdoptionProfileCard(petData: widget.petData)
+                          : _PetProfileCard(petData: widget.petData),
                     ),
 
                     const SizedBox(height: 20),
@@ -220,14 +274,26 @@ class _PetReviewScreenState extends State<PetReviewScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 24),
                       child: Column(
                         children: [
-                          _InfoRow2Col('Species', widget.petData.species,
-                              'Breed', widget.petData.breed),
+                          _InfoRow2Col(
+                            'Species',
+                            widget.petData.species,
+                            'Breed',
+                            widget.petData.breed,
+                          ),
                           const SizedBox(height: 12),
-                          _InfoRow2Col('Age', widget.petData.age, 'Gender',
-                              widget.petData.gender),
+                          _InfoRow2Col(
+                            'Age',
+                            widget.petData.age,
+                            'Gender',
+                            widget.petData.gender,
+                          ),
                           const SizedBox(height: 12),
-                          _InfoRow2Col('Color', widget.petData.color, 'Size',
-                              widget.petData.breedSize),
+                          _InfoRow2Col(
+                            'Color',
+                            widget.petData.color,
+                            'Size',
+                            widget.petData.breedSize,
+                          ),
                         ],
                       ),
                     ),
@@ -240,12 +306,15 @@ class _PetReviewScreenState extends State<PetReviewScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('ABOUT ${widget.petData.name.toUpperCase()}',
-                              style: const TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF444444),
-                                  letterSpacing: 0.8)),
+                          Text(
+                            'ABOUT ${widget.petData.name.toUpperCase()}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF444444),
+                              letterSpacing: 0.8,
+                            ),
+                          ),
                           const SizedBox(height: 12),
                           _SpeechBubble(text: widget.petData.about),
                         ],
@@ -262,12 +331,15 @@ class _PetReviewScreenState extends State<PetReviewScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('${widget.petData.name.toUpperCase()} PET HEALTH RECORD',
-                              style: const TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF444444),
-                                  letterSpacing: 0.8)),
+                          Text(
+                            '${widget.petData.name.toUpperCase()} PET HEALTH RECORD',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF444444),
+                              letterSpacing: 0.8,
+                            ),
+                          ),
                           const SizedBox(height: 12),
                           if (widget.petData.healthRecords.isEmpty)
                             const Text(
@@ -302,20 +374,28 @@ class _PetReviewScreenState extends State<PetReviewScreen> {
                     // ── More Photos ───────────────────────────────
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: Row(children: [
-                        Text('MORE PHOTOS OF ${widget.petData.name.toUpperCase()}',
+                      child: Row(
+                        children: [
+                          Text(
+                            'MORE PHOTOS/VIDEOS OF ${widget.petData.name.toUpperCase()}',
                             style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF444444),
-                                letterSpacing: 0.8)),
-                        const Spacer(),
-                        Text('$_currentPhoto / $_totalPhotos',
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF444444),
+                              letterSpacing: 0.8,
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            '$_currentPhoto / $_totalPhotos',
                             style: const TextStyle(
-                                fontSize: 13,
-                                color: AppColors.primary,
-                                fontWeight: FontWeight.w600)),
-                      ]),
+                              fontSize: 13,
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 16),
                     // Photo carousel
@@ -340,8 +420,7 @@ class _PetReviewScreenState extends State<PetReviewScreen> {
             ),
             // Save and Publish button
             Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
               child: SizedBox(
                 width: double.infinity,
                 height: 52,
@@ -352,7 +431,8 @@ class _PetReviewScreenState extends State<PetReviewScreen> {
                     foregroundColor: Colors.white,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   child: _isPublishing
                       ? const SizedBox(
@@ -360,9 +440,13 @@ class _PetReviewScreenState extends State<PetReviewScreen> {
                           width: 20,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('Save and Publish Pet Profile',
+                      : const Text(
+                          'Save and Publish Pet Profile',
                           style: TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.w600)),
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                 ),
               ),
             ),
@@ -375,12 +459,121 @@ class _PetReviewScreenState extends State<PetReviewScreen> {
 
 // ── Pet Profile Card (Tinder-style) ──────────────────────────────
 
+class _AdoptionProfileCard extends StatelessWidget {
+  final PetListingData petData;
+
+  const _AdoptionProfileCard({required this.petData});
+
+  @override
+  Widget build(BuildContext context) {
+    final status = petData.adoptionType == 'FOR SALE'
+        ? 'PHP ${petData.price.toStringAsFixed(0)}'
+        : 'FREE';
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        color: Colors.white,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              height: 280,
+              width: double.infinity,
+              child: petData.profilePhotoFile == null
+                  ? const ColoredBox(
+                      color: Color(0xFFE0E0E0),
+                      child: Icon(Icons.pets, size: 80, color: Colors.grey),
+                    )
+                  : Image.file(petData.profilePhotoFile!, fit: BoxFit.cover),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 28,
+                    backgroundImage: petData.profilePhotoFile == null
+                        ? null
+                        : FileImage(petData.profilePhotoFile!),
+                    child: petData.profilePhotoFile == null
+                        ? const Icon(Icons.pets)
+                        : null,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          petData.name,
+                          style: const TextStyle(
+                            color: AppColors.primary,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          '${petData.breed} | ${petData.age}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF666666),
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.location_on,
+                              size: 13,
+                              color: AppColors.primary,
+                            ),
+                            const SizedBox(width: 3),
+                            Expanded(
+                              child: Text(
+                                petData.locationName,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: Color(0xFF888888),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFE7EC),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Text(
+                      status,
+                      style: const TextStyle(
+                        color: AppColors.primary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _PetProfileCard extends StatelessWidget {
   final PetListingData petData;
 
-  const _PetProfileCard({
-    required this.petData,
-  });
+  const _PetProfileCard({required this.petData});
 
   @override
   Widget build(BuildContext context) {
@@ -408,13 +601,13 @@ class _PetProfileCard extends StatelessWidget {
                   height: 280,
                   color: const Color(0xFFE0E0E0),
                   child: petData.profilePhotoFile != null
-                      ? Image.file(
-                          petData.profilePhotoFile!,
-                          fit: BoxFit.cover,
-                        )
+                      ? Image.file(petData.profilePhotoFile!, fit: BoxFit.cover)
                       : const Center(
-                          child: Icon(Icons.pets,
-                              size: 80, color: Color(0xFFBBBBBB)),
+                          child: Icon(
+                            Icons.pets,
+                            size: 80,
+                            color: Color(0xFFBBBBBB),
+                          ),
                         ),
                 ),
                 // Price badge top right
@@ -423,28 +616,30 @@ class _PetProfileCard extends StatelessWidget {
                   right: 12,
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6),
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: _darkBlue,
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                        petData.isAdoption
-                            ? 'PHP ${petData.price.toStringAsFixed(0)}'
-                            : 'BREEDING',
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold)),
+                      petData.isAdoption
+                          ? 'PHP ${petData.price.toStringAsFixed(0)}'
+                          : 'BREEDING',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
                 // Speech bubble
                 Positioned(
                   top: 20,
                   right: 16,
-                  child: _SpeechBubbleOverlay(
-                    text: petData.about,
-                  ),
+                  child: _SpeechBubbleOverlay(text: petData.about),
                 ),
                 // Bottom info overlay
                 Positioned(
@@ -463,99 +658,145 @@ class _PetProfileCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(children: [
-                          Text(petData.name,
+                        Row(
+                          children: [
+                            Text(
+                              petData.name,
                               style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.bold)),
-                          const Text('  |  ',
-                              style: TextStyle(
-                                  color: Colors.white54, fontSize: 18)),
-                          Text(petData.age,
-                              style: const TextStyle(
-                                  color: Colors.white, fontSize: 14)),
-                          const SizedBox(width: 6),
-                          Container(
-                            width: 10,
-                            height: 10,
-                            decoration: const BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: _blue,
-                            ),
-                          ),
-                          const Spacer(),
-                          // Profile mini avatar
-                          Container(
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                  color: Colors.white, width: 2),
-                              color: const Color(0xFFFFCDD5),
-                            ),
-                            child: ClipOval(
-                              child: Image.asset(
-                                'assets/images/profile.png',
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => const Icon(
-                                    Icons.person,
-                                    color: AppColors.primary,
-                                    size: 18),
+                                color: Colors.white,
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          // Download icon
-                          Container(
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.black45,
-                              border: Border.all(
-                                  color: Colors.white54, width: 1),
+                            const Text(
+                              '  |  ',
+                              style: TextStyle(
+                                color: Colors.white54,
+                                fontSize: 18,
+                              ),
                             ),
-                            child: const Icon(Icons.download_outlined,
-                                color: Colors.white, size: 18),
-                          ),
-                        ]),
+                            Text(
+                              petData.age,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Container(
+                              width: 10,
+                              height: 10,
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: _blue,
+                              ),
+                            ),
+                            const Spacer(),
+                            // Profile mini avatar
+                            Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 2,
+                                ),
+                                color: const Color(0xFFFFCDD5),
+                              ),
+                              child: ClipOval(
+                                child: Image.asset(
+                                  'assets/images/profile.png',
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) => const Icon(
+                                    Icons.person,
+                                    color: AppColors.primary,
+                                    size: 18,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            // Download icon
+                            Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.black45,
+                                border: Border.all(
+                                  color: Colors.white54,
+                                  width: 1,
+                                ),
+                              ),
+                              child: const Icon(
+                                Icons.download_outlined,
+                                color: Colors.white,
+                                size: 18,
+                              ),
+                            ),
+                          ],
+                        ),
                         const SizedBox(height: 4),
-                        Row(children: [
-                          const Icon(Icons.pets,
-                              size: 12, color: Colors.white70),
-                          const SizedBox(width: 4),
-                          Text('${petData.breed}  |  ${petData.breedSize}',
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.pets,
+                              size: 12,
+                              color: Colors.white70,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${petData.breed}  |  ${petData.breedSize}',
                               style: const TextStyle(
-                                  color: Colors.white70, fontSize: 12)),
-                        ]),
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
                         const SizedBox(height: 2),
-                        Row(children: [
-                          const Icon(Icons.location_on,
-                              size: 12, color: _orange),
-                          const SizedBox(width: 4),
-                          Text(petData.locationName,
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.location_on,
+                              size: 12,
+                              color: _orange,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              petData.locationName,
                               style: const TextStyle(
-                                  color: Colors.white70, fontSize: 12)),
-                        ]),
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
                         const SizedBox(height: 8),
-                        Wrap(spacing: 6, children: [
-                          if (petData.hasHealthRecords)
-                            const _BadgeChip(
-                              label: 'Vet Verified',
-                              color: _blue,
-                              textColor: Colors.white),
-                          _BadgeChip(
+                        Wrap(
+                          spacing: 6,
+                          children: [
+                            if (petData.hasHealthRecords)
+                              const _BadgeChip(
+                                label: 'Vet Verified',
+                                color: _blue,
+                                textColor: Colors.white,
+                              ),
+                            _BadgeChip(
                               label: petData.color,
                               color: const Color(0xFFEEEEEE),
-                              textColor: const Color(0xFF555555)),
-                          _BadgeChip(
-                              label:
-                                  petData.isAdoption ? 'FOR SALE' : 'BREEDING',
+                              textColor: const Color(0xFF555555),
+                            ),
+                            _BadgeChip(
+                              label: petData.isAdoption
+                                  ? 'FOR SALE'
+                                  : 'BREEDING',
                               color: petData.isAdoption ? _red : _blue,
-                              textColor: Colors.white),
-                        ]),
+                              textColor: Colors.white,
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                   ),
@@ -576,7 +817,9 @@ class _PetProfileCard extends StatelessWidget {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(
-                          color: _red.withValues(alpha: 0.5), width: 2),
+                        color: _red.withValues(alpha: 0.5),
+                        width: 2,
+                      ),
                       color: Colors.white,
                     ),
                     child: const Icon(Icons.close, color: _red, size: 30),
@@ -593,8 +836,11 @@ class _PetProfileCard extends StatelessWidget {
                         end: Alignment.bottomRight,
                       ),
                     ),
-                    child: const Icon(Icons.pets,
-                        color: Colors.white, size: 30),
+                    child: const Icon(
+                      Icons.pets,
+                      color: Colors.white,
+                      size: 30,
+                    ),
                   ),
                 ],
               ),
@@ -610,10 +856,11 @@ class _BadgeChip extends StatelessWidget {
   final String label;
   final Color color;
   final Color textColor;
-  const _BadgeChip(
-      {required this.label,
-      required this.color,
-      required this.textColor});
+  const _BadgeChip({
+    required this.label,
+    required this.color,
+    required this.textColor,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -623,11 +870,14 @@ class _BadgeChip extends StatelessWidget {
         color: color,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Text(label,
-          style: TextStyle(
-              fontSize: 10,
-              color: textColor,
-              fontWeight: FontWeight.w600)),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          color: textColor,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
     );
   }
 }
@@ -653,17 +903,17 @@ class _SpeechBubbleOverlay extends StatelessWidget {
         ),
         border: Border.all(color: _blue.withValues(alpha: 0.3)),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 8,
-          ),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 8),
         ],
       ),
-      child: Text(text,
-          style: const TextStyle(
-              fontSize: 11,
-              color: Color(0xFF333333),
-              height: 1.4)),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 11,
+          color: Color(0xFF333333),
+          height: 1.4,
+        ),
+      ),
     );
   }
 }
@@ -692,12 +942,15 @@ class _SpeechBubble extends StatelessWidget {
             ),
             border: Border.all(color: _blue.withValues(alpha: 0.4), width: 1.5),
           ),
-          child: Text(text,
-              style: const TextStyle(
-                  fontSize: 13,
-                  color: Color(0xFF444444),
-                  height: 1.6,
-                  fontStyle: FontStyle.italic)),
+          child: Text(
+            text,
+            style: const TextStyle(
+              fontSize: 13,
+              color: Color(0xFF444444),
+              height: 1.6,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
         ),
         const SizedBox(height: 6),
         // Small bubble tail
@@ -727,10 +980,16 @@ class _InfoRow2Col extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(children: [
-      Expanded(child: _InfoCell(label: label1, value: value1)),
-      Expanded(child: _InfoCell(label: label2, value: value2)),
-    ]);
+    return Row(
+      children: [
+        Expanded(
+          child: _InfoCell(label: label1, value: value1),
+        ),
+        Expanded(
+          child: _InfoCell(label: label2, value: value2),
+        ),
+      ],
+    );
   }
 }
 
@@ -741,16 +1000,24 @@ class _InfoCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(label,
-          style: const TextStyle(fontSize: 11, color: Color(0xFF888888))),
-      const SizedBox(height: 2),
-      Text(value,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(fontSize: 11, color: Color(0xFF888888)),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
           style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF333333))),
-    ]);
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF333333),
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -781,71 +1048,95 @@ class _HealthRecordRow extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: _blue.withValues(alpha: 0.3)),
       ),
-      child: Row(children: [
-        const Icon(Icons.description_outlined, size: 20, color: _blue),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(type,
-                style: const TextStyle(
+      child: Row(
+        children: [
+          const Icon(Icons.description_outlined, size: 20, color: _blue),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  type,
+                  style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.bold,
-                    color: Color(0xFF333333))),
-            Text(file,
-                style: const TextStyle(
-                    fontSize: 11, color: Color(0xFF888888))),
-          ]),
-        ),
-        // VACC mini doc
-        Container(
-          width: 36,
-          height: 44,
-          decoration: BoxDecoration(
-            color: const Color(0xFFF0FFF0),
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: _green.withValues(alpha: 0.4)),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
-                decoration: BoxDecoration(
-                  color: _green,
-                  borderRadius: BorderRadius.circular(3),
+                    color: Color(0xFF333333),
+                  ),
                 ),
-                child: const Text('VACC',
+                Text(
+                  file,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF888888),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // VACC mini doc
+          Container(
+            width: 36,
+            height: 44,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF0FFF0),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: _green.withValues(alpha: 0.4)),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 2,
+                    vertical: 1,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _green,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: const Text(
+                    'VACC',
                     style: TextStyle(
-                        fontSize: 5,
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold)),
+                      fontSize: 5,
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                const Icon(Icons.article_outlined, size: 14, color: _green),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () => _showPreview(context),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: _orange.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(6),
               ),
-              const SizedBox(height: 2),
-              const Icon(Icons.article_outlined, size: 14, color: _green),
-            ],
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(Icons.visibility_outlined, size: 12, color: _orange),
+                  SizedBox(width: 4),
+                  Text(
+                    'VIEW',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: _orange,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-        ),
-        const SizedBox(width: 8),
-        GestureDetector(
-          onTap: () => _showPreview(context),
-          child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          decoration: BoxDecoration(
-            color: _orange.withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: const [
-            Icon(Icons.visibility_outlined, size: 12, color: _orange),
-            SizedBox(width: 4),
-            Text('VIEW',
-                style: TextStyle(
-                    fontSize: 10,
-                    color: _orange,
-                    fontWeight: FontWeight.bold)),
-              ]),
-          ),
-        ),
-      ]),
+        ],
+      ),
     );
   }
 
@@ -863,11 +1154,14 @@ class _HealthRecordRow extends StatelessWidget {
               Row(
                 children: [
                   Expanded(
-                    child: Text(type,
-                        style: const TextStyle(
-                            color: _blue,
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold)),
+                    child: Text(
+                      type,
+                      style: const TextStyle(
+                        color: _blue,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                   IconButton(
                     onPressed: () => Navigator.pop(context),
@@ -877,40 +1171,47 @@ class _HealthRecordRow extends StatelessWidget {
               ),
               Text(file, style: const TextStyle(color: Color(0xFF666666))),
               if (dateIssued.isNotEmpty)
-                Text('Issued: $dateIssued',
-                    style: const TextStyle(color: Color(0xFF666666))),
+                Text(
+                  'Issued: $dateIssued',
+                  style: const TextStyle(color: Color(0xFF666666)),
+                ),
               if (clinic.isNotEmpty)
-                Text('Clinic: $clinic',
-                    style: const TextStyle(color: Color(0xFF666666))),
+                Text(
+                  'Clinic: $clinic',
+                  style: const TextStyle(color: Color(0xFF666666)),
+                ),
               const SizedBox(height: 14),
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                    child: imageFile != null
-                        ? Image.file(imageFile!, fit: BoxFit.cover)
-                        : fileUrl.isNotEmpty
-                        ? BreedrNetworkImage(
-                            imageUrl: fileUrl,
-                            fit: BoxFit.cover,
-                            fallback: Container(
-                              height: 180,
-                              color: const Color(0xFFEAF3FF),
-                              child: const Center(
-                                child: Icon(
-                                  Icons.description_outlined,
-                                  size: 54,
-                                  color: _blue,
-                                ),
-                              ),
-                            ),
-                          )
-                        : Container(
-                            height: 180,
-                            color: const Color(0xFFEAF3FF),
-                            child: const Center(
-                              child: Icon(Icons.description_outlined,
-                                  size: 54, color: _blue),
+                child: imageFile != null
+                    ? Image.file(imageFile!, fit: BoxFit.cover)
+                    : fileUrl.isNotEmpty
+                    ? BreedrNetworkImage(
+                        imageUrl: fileUrl,
+                        fit: BoxFit.cover,
+                        fallback: Container(
+                          height: 180,
+                          color: const Color(0xFFEAF3FF),
+                          child: const Center(
+                            child: Icon(
+                              Icons.description_outlined,
+                              size: 54,
+                              color: _blue,
                             ),
                           ),
+                        ),
+                      )
+                    : Container(
+                        height: 180,
+                        color: const Color(0xFFEAF3FF),
+                        child: const Center(
+                          child: Icon(
+                            Icons.description_outlined,
+                            size: 54,
+                            color: _blue,
+                          ),
+                        ),
+                      ),
               ),
             ],
           ),
@@ -942,9 +1243,8 @@ class _PhotoCarousel extends StatelessWidget {
   Widget build(BuildContext context) {
     final photos = petData.additionalPhotoFiles.isNotEmpty
         ? petData.additionalPhotoFiles
-        : [
-            if (petData.profilePhotoFile != null) petData.profilePhotoFile!,
-          ];
+        : [if (petData.profilePhotoFile != null) petData.profilePhotoFile!];
+    final videos = petData.additionalVideoFiles;
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -961,9 +1261,13 @@ class _PhotoCarousel extends StatelessWidget {
             itemCount: total,
             onPageChanged: onChanged,
             itemBuilder: (context, index) {
-              final photo = index < photos.length ? photos[index] : null;
-
-              return _ReviewPhotoCard(photo: photo);
+              if (index < photos.length) {
+                return _ReviewPhotoCard(photo: photos[index]);
+              }
+              final videoIndex = index - photos.length;
+              return _ReviewVideoCard(
+                video: videoIndex < videos.length ? videos[videoIndex] : null,
+              );
             },
           ),
         ),
@@ -977,53 +1281,85 @@ class _PhotoCarousel extends StatelessWidget {
 class _ReviewPhotoCard extends StatelessWidget {
   final File? photo;
 
-  const _ReviewPhotoCard({
-    required this.photo,
-  });
+  const _ReviewPhotoCard({required this.photo});
 
   @override
   Widget build(BuildContext context) {
-    return Stack(alignment: Alignment.center, children: [
-      Positioned(
-        top: 14,
-        left: 18,
-        right: 0,
-        bottom: 0,
-        child: Transform.rotate(
-          angle: 0.06,
-          child: Container(
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(18),
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Positioned(
+          top: 14,
+          left: 18,
+          right: 0,
+          bottom: 0,
+          child: Transform.rotate(
+            angle: 0.06,
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(18),
+              ),
             ),
           ),
         ),
-      ),
-      Positioned(
-        top: 0,
-        left: 0,
-        right: 14,
-        bottom: 14,
-        child: Transform.rotate(
-          angle: -0.03,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(18),
-            child: photo != null
-                ? Image.file(
-                    photo!,
-                    fit: BoxFit.cover,
-                  )
-                : Container(
-                    color: const Color(0xFFE0E0E0),
-                    child: const Center(
-                      child: Icon(Icons.pets,
-                          size: 64, color: Color(0xFFBBBBBB)),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 14,
+          bottom: 14,
+          child: Transform.rotate(
+            angle: -0.03,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: photo != null
+                  ? Image.file(photo!, fit: BoxFit.cover)
+                  : Container(
+                      color: const Color(0xFFE0E0E0),
+                      child: const Center(
+                        child: Icon(
+                          Icons.pets,
+                          size: 64,
+                          color: Color(0xFFBBBBBB),
+                        ),
+                      ),
                     ),
-                  ),
+            ),
           ),
         ),
+      ],
+    );
+  }
+}
+
+class _ReviewVideoCard extends StatelessWidget {
+  final File? video;
+
+  const _ReviewVideoCard({required this.video});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF333333),
+        borderRadius: BorderRadius.circular(18),
       ),
-    ]);
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.play_circle_fill, color: Colors.white, size: 72),
+          const SizedBox(height: 12),
+          Text(
+            video?.uri.pathSegments.last ?? 'MP4 video',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -1060,28 +1396,33 @@ class _PetStepBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       height: 72,
-      child: Stack(alignment: Alignment.center, children: [
-        Positioned.fill(
-          child: Row(children: [
-            const SizedBox(width: 28),
-            Expanded(child: _StepLine(active: currentStep > 1)),
-            const SizedBox(width: 56),
-            Expanded(child: _StepLine(active: currentStep > 2)),
-            const SizedBox(width: 56),
-            Expanded(child: _StepLine(active: currentStep > 3)),
-            const SizedBox(width: 56),
-            Expanded(child: _StepLine(active: currentStep > 4)),
-            const SizedBox(width: 28),
-          ]),
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            for (int i = 1; i <= 5; i++)
-              _StepDot(step: i, current: currentStep),
-          ],
-        ),
-      ]),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Positioned.fill(
+            child: Row(
+              children: [
+                const SizedBox(width: 28),
+                Expanded(child: _StepLine(active: currentStep > 1)),
+                const SizedBox(width: 56),
+                Expanded(child: _StepLine(active: currentStep > 2)),
+                const SizedBox(width: 56),
+                Expanded(child: _StepLine(active: currentStep > 3)),
+                const SizedBox(width: 56),
+                Expanded(child: _StepLine(active: currentStep > 4)),
+                const SizedBox(width: 28),
+              ],
+            ),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              for (int i = 1; i <= 5; i++)
+                _StepDot(step: i, current: currentStep),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1094,7 +1435,8 @@ class _StepDot extends StatelessWidget {
   Widget build(BuildContext context) {
     final isActive = step <= current;
     return Container(
-      width: 44, height: 44,
+      width: 44,
+      height: 44,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: isActive ? AppColors.primary : const Color(0xFFFFF0F5),
@@ -1103,13 +1445,20 @@ class _StepDot extends StatelessWidget {
           width: isActive ? 0 : 2,
         ),
         boxShadow: isActive
-            ? [BoxShadow(
-                color: AppColors.primary.withValues(alpha: 0.45),
-                blurRadius: 18, spreadRadius: 2)]
+            ? [
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: 0.45),
+                  blurRadius: 18,
+                  spreadRadius: 2,
+                ),
+              ]
             : [],
       ),
-      child: Icon(Icons.pets, size: 22,
-          color: isActive ? Colors.white : const Color(0xFFFFB3C1)),
+      child: Icon(
+        Icons.pets,
+        size: 22,
+        color: isActive ? Colors.white : const Color(0xFFFFB3C1),
+      ),
     );
   }
 }

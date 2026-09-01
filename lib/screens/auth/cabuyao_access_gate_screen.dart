@@ -3,14 +3,12 @@ import 'package:geolocator/geolocator.dart';
 
 import '../../services/cabuyao_access_service.dart';
 import '../../services/user_session_service.dart';
+import '../../services/location_service.dart';
 import '../../theme/app_colors.dart';
 import 'get_started_screen.dart';
 
 class CabuyaoAccessGate extends StatefulWidget {
-  const CabuyaoAccessGate({
-    super.key,
-    required this.child,
-  });
+  const CabuyaoAccessGate({super.key, required this.child});
 
   final Widget child;
 
@@ -62,6 +60,10 @@ class _CabuyaoAccessGateState extends State<CabuyaoAccessGate>
           );
 
     if (!mounted) return;
+    if (result.isAllowed && result.position != null) {
+      LocationService.instance.latitude = result.position!.latitude;
+      LocationService.instance.longitude = result.position!.longitude;
+    }
     setState(() {
       _isAdmin = isAdmin;
       _result = result;
@@ -110,11 +112,10 @@ class _CabuyaoAccessGateState extends State<CabuyaoAccessGate>
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(28),
               child: _AccessRequiredCard(
-                status: _result?.status ??
-                    CabuyaoAccessStatus.locationUnavailable,
+                status:
+                    _result?.status ?? CabuyaoAccessStatus.locationUnavailable,
                 onPrimaryPressed: () {
-                  if (_result?.status ==
-                      CabuyaoAccessStatus.serviceDisabled) {
+                  if (_result?.status == CabuyaoAccessStatus.serviceDisabled) {
                     _openLocationSettings();
                   } else if (_result?.status ==
                       CabuyaoAccessStatus.permissionDeniedForever) {

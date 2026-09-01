@@ -6,6 +6,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import '../../services/location_service.dart';
 import '../../services/cabuyao_access_service.dart';
+import '../../services/cabuyao_barangay_service.dart';
+import '../../widgets/cabuyao_barangay_picker.dart';
 
 class LocationPermissionScreen extends StatefulWidget {
   const LocationPermissionScreen({super.key});
@@ -91,37 +93,39 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen> {
       );
 
       final place = placemarks.isNotEmpty ? placemarks.first : null;
+      var locationName = CabuyaoBarangayService.fromPlacemark(place);
+      locationName ??= await CabuyaoBarangayService.fromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+      if (locationName == null && mounted) {
+        locationName = await showCabuyaoBarangayPicker(context);
+      }
+      if (locationName == null) return;
 
       //saving location
       LocationService.instance.latitude = position.latitude;
       LocationService.instance.longitude = position.longitude;
-      LocationService.instance.locationName =
-          place?.subLocality ?? place?.locality ?? '';
+      LocationService.instance.locationName = locationName;
 
       debugPrint("Latitude: ${position.latitude}");
       debugPrint("Longitude: ${position.longitude}");
-      debugPrint(
-        "Location: '${place?.subLocality}, ${place?.locality}'",
-      );
+      debugPrint("Location: '${place?.subLocality}, ${place?.locality}'");
 
       if (!mounted) return;
 
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(
-          builder: (_) => const LoginScreen(),
-        ),
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
       );
     } catch (e) {
       debugPrint('Location detection error: $e');
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_locationErrorMessage(e)),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_locationErrorMessage(e))));
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -140,6 +144,9 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen> {
     }
     if (message.contains('network') || message.contains('timed out')) {
       return 'Unable to detect your location. Please check your connection and try again.';
+    }
+    if (message.contains('barangay-unavailable')) {
+      return 'We could not identify your Cabuyao barangay. Please move to an open area and try again.';
     }
 
     return 'Unable to detect your location right now. Please try again.';
@@ -190,8 +197,9 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen> {
               child: Column(
                 children: [
                   _LocationButton(
-                    label:
-                        _isLoading ? 'Getting Location...' : 'Enable Location',
+                    label: _isLoading
+                        ? 'Getting Location...'
+                        : 'Enable Location',
                     filled: true,
                     onPressed: _isLoading ? null : _enableLocation,
                   ),

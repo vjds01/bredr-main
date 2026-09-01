@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/adoption_models.dart';
 import '../../services/adoption_service.dart';
@@ -84,10 +85,10 @@ class _PetAdoptionProfileScreenState extends State<PetAdoptionProfileScreen> {
   Widget _buildProfile(AdoptionListing listing) {
     final currentUserId = UserSessionService.instance.currentUser?.uid;
     final isOwnListing = currentUserId == listing.ownerId;
-    final images = <String>[
+    final images = <String>{
       if (listing.profilePhoto.isNotEmpty) listing.profilePhoto,
       ...listing.additionalImages.where((url) => url.isNotEmpty),
-    ].toSet().toList();
+    }.toList();
     if (images.isNotEmpty && _photoIndex.value >= images.length) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _photoIndex.value >= images.length) {
@@ -458,7 +459,18 @@ class _PetAdoptionProfileScreenState extends State<PetAdoptionProfileScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _ReportListingSheet(listing: listing),
+      builder: (_) => PetListingReportSheet(
+        target: PetListingReportTarget(
+          petId: listing.id,
+          petName: listing.name,
+          species: listing.species,
+          breed: listing.breed,
+          purpose: 'adoption',
+          profilePhoto: listing.profilePhoto,
+          ownerId: listing.ownerId,
+          ownerName: listing.ownerName,
+        ),
+      ),
     );
     if (submitted == true && mounted) {
       await showDialog<void>(
@@ -486,16 +498,38 @@ class _PetAdoptionProfileScreenState extends State<PetAdoptionProfileScreen> {
   }
 }
 
-class _ReportListingSheet extends StatefulWidget {
-  final AdoptionListing listing;
+class PetListingReportTarget {
+  final String petId;
+  final String petName;
+  final String species;
+  final String breed;
+  final String purpose;
+  final String profilePhoto;
+  final String ownerId;
+  final String ownerName;
 
-  const _ReportListingSheet({required this.listing});
-
-  @override
-  State<_ReportListingSheet> createState() => _ReportListingSheetState();
+  const PetListingReportTarget({
+    required this.petId,
+    required this.petName,
+    required this.species,
+    required this.breed,
+    required this.purpose,
+    required this.profilePhoto,
+    required this.ownerId,
+    required this.ownerName,
+  });
 }
 
-class _ReportListingSheetState extends State<_ReportListingSheet> {
+class PetListingReportSheet extends StatefulWidget {
+  final PetListingReportTarget target;
+
+  const PetListingReportSheet({super.key, required this.target});
+
+  @override
+  State<PetListingReportSheet> createState() => _PetListingReportSheetState();
+}
+
+class _PetListingReportSheetState extends State<PetListingReportSheet> {
   final _detailController = TextEditingController();
   final _evidenceFiles = <SelectedEvidenceFile>[];
   String _reason = 'Fake or misleading listing';
@@ -641,8 +675,16 @@ class _ReportListingSheetState extends State<_ReportListingSheet> {
           ),
         );
       }
-      await AdoptionService.instance.reportPetListing(
-        listing: widget.listing,
+      final target = widget.target;
+      await AdoptionService.instance.reportPetListingSnapshot(
+        petId: target.petId,
+        petName: target.petName,
+        species: target.species,
+        breed: target.breed,
+        purpose: target.purpose,
+        profilePhoto: target.profilePhoto,
+        ownerId: target.ownerId,
+        ownerName: target.ownerName,
         reason: _reason,
         detail: _detailController.text,
         evidenceFiles: evidence,
@@ -719,23 +761,34 @@ class _ReportListingSheetState extends State<_ReportListingSheet> {
                   style: TextStyle(color: Color(0xFF777777), fontSize: 12),
                 ),
                 const Divider(height: 28),
-                ..._reasons.map(
-                  (reason) => RadioListTile<String>(
-                    value: reason.$1,
-                    groupValue: _reason,
-                    activeColor: AppColors.primary,
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(
-                      reason.$1,
-                      style: const TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                    subtitle: Text(
-                      reason.$2,
-                      style: const TextStyle(fontSize: 11),
-                    ),
-                    onChanged: _submitting
-                        ? null
-                        : (value) => setState(() => _reason = value ?? _reason),
+                RadioGroup<String>(
+                  groupValue: _reason,
+                  onChanged: (value) {
+                    if (!_submitting && value != null) {
+                      setState(() => _reason = value);
+                    }
+                  },
+                  child: Column(
+                    children: _reasons
+                        .map(
+                          (reason) => RadioListTile<String>(
+                            value: reason.$1,
+                            enabled: !_submitting,
+                            activeColor: AppColors.primary,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(
+                              reason.$1,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            subtitle: Text(
+                              reason.$2,
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                          ),
+                        )
+                        .toList(),
                   ),
                 ),
                 const Divider(height: 24),
@@ -1254,10 +1307,12 @@ class _PhotoCarousel extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: _NetworkPetImage(
-                        url: images[imageIndex],
-                        species: species,
-                      ),
+                      child: _isVideoUrl(images[imageIndex])
+                          ? _RemoteVideoTile(url: images[imageIndex])
+                          : _NetworkPetImage(
+                              url: images[imageIndex],
+                              species: species,
+                            ),
                     ),
                   ),
                 ),
@@ -1275,6 +1330,36 @@ class _PhotoCarousel extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+bool _isVideoUrl(String url) =>
+    Uri.tryParse(url)?.path.toLowerCase().endsWith('.mp4') ?? false;
+
+class _RemoteVideoTile extends StatelessWidget {
+  final String url;
+
+  const _RemoteVideoTile({required this.url});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFF333333),
+      child: InkWell(
+        onTap: () =>
+            launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+        child: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.play_circle_fill, color: Colors.white, size: 72),
+              SizedBox(height: 8),
+              Text('Play video', style: TextStyle(color: Colors.white)),
+            ],
+          ),
+        ),
       ),
     );
   }

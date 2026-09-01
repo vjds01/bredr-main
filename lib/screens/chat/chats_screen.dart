@@ -3,12 +3,13 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:video_player/video_player.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/adoption_models.dart';
 import '../../services/adoption_service.dart';
@@ -18,6 +19,7 @@ import '../../services/presence_service.dart';
 import '../../services/user_session_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/breedr_network_image.dart';
+import '../breeding/breeding_likes_screen.dart';
 
 bool _shouldShowConversation(Map<String, dynamic> data, String currentUserId) {
   final isArchived =
@@ -56,6 +58,22 @@ bool _conversationContainsPet(Map<String, dynamic> data, String petId) {
   }
 
   return false;
+}
+
+bool _isAvailableBreedingLike(Map<String, dynamic> data) {
+  final purpose = (data['purpose'] ?? '').toString().trim().toLowerCase();
+  final status = (data['status'] ?? '').toString().trim().toLowerCase();
+  return purpose == 'breeding' &&
+      (data['isActive'] as bool? ?? true) &&
+      data['adminHidden'] != true &&
+      data['adminRemoved'] != true &&
+      !{
+        'matched',
+        'adopted',
+        'removed',
+        'inactive',
+        'deleted',
+      }.contains(status);
 }
 
 String _conversationTimeLabel(Timestamp? timestamp) {
@@ -112,8 +130,23 @@ String _chatFirebaseMessage(FirebaseException error) {
   }
 }
 
-class ChatsScreen extends StatelessWidget {
+class ChatsScreen extends StatefulWidget {
   const ChatsScreen({super.key});
+
+  @override
+  State<ChatsScreen> createState() => _ChatsScreenState();
+}
+
+class _ChatsScreenState extends State<ChatsScreen> {
+  final _searchController = TextEditingController();
+  bool _showSearch = false;
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -144,27 +177,57 @@ class ChatsScreen extends StatelessWidget {
                   )
                   .toList() ??
               const <_ChatPet>[];
-          final breedingPets = pets
+          final query = _searchQuery.trim().toLowerCase();
+          final visiblePets = query.isEmpty
+              ? pets
+              : pets.where((pet) => pet.matchesSearch(query)).toList();
+          final breedingPets = visiblePets
               .where((pet) => pet.purpose == 'breeding')
               .toList();
-          final adoptionPets = pets
+          final adoptionPets = visiblePets
               .where((pet) => pet.purpose == 'adoption')
               .toList();
 
           return SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(28, 20, 28, 30),
+            padding: const EdgeInsets.fromLTRB(28, 22, 28, 36),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'CHAT',
-                  style: TextStyle(
-                    color: Color(0xFF111111),
-                    fontSize: 24,
-                    fontWeight: FontWeight.w900,
-                  ),
+                Row(
+                  children: [
+                    const Text(
+                      'Chat',
+                      style: TextStyle(
+                        color: Color(0xFF111111),
+                        fontSize: 27,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(width: 7),
+                    const Icon(
+                      Icons.chat_bubble,
+                      color: AppColors.primary,
+                      size: 23,
+                    ),
+                    const Spacer(),
+                    IconButton.filled(
+                      tooltip: _showSearch ? 'Close search' : 'Search pets',
+                      onPressed: () => setState(() {
+                        _showSearch = !_showSearch;
+                        if (!_showSearch) {
+                          _searchController.clear();
+                          _searchQuery = '';
+                        }
+                      }),
+                      style: IconButton.styleFrom(
+                        backgroundColor: const Color(0xFFFFE5EC),
+                        foregroundColor: AppColors.primary,
+                      ),
+                      icon: Icon(_showSearch ? Icons.close : Icons.search),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 8),
                 const Text(
                   'Which pet?',
                   style: TextStyle(
@@ -174,19 +237,49 @@ class ChatsScreen extends StatelessWidget {
                   ),
                 ),
                 const Text(
-                  "Select a pet to see its conversations",
+                  "Select a pet to see its conversation",
                   style: TextStyle(color: Color(0xFF222222), fontSize: 14),
                 ),
-                const SizedBox(height: 24),
-                _AllConversationsSection(userId: user.uid),
-                const _AdoptionApplicantChatsSection(),
-                const SizedBox(height: 28),
+                if (_showSearch) ...[
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _searchController,
+                    autofocus: true,
+                    onChanged: (value) => setState(() => _searchQuery = value),
+                    decoration: InputDecoration(
+                      hintText: 'Search pet, breed, or barangay',
+                      prefixIcon: const Icon(
+                        Icons.search,
+                        color: AppColors.primary,
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 26),
                 _PetPurposeSection(title: 'Breeding', pets: breedingPets),
-                const SizedBox(height: 30),
-                _PetPurposeSection(title: 'Adoption', pets: adoptionPets),
+                if (breedingPets.isNotEmpty && adoptionPets.isNotEmpty)
+                  const SizedBox(height: 30),
+                _AdoptionPetPurposeSection(
+                  ownedPets: adoptionPets,
+                  searchQuery: query,
+                ),
                 if (pets.isEmpty) ...[
                   const SizedBox(height: 80),
                   const _EmptyPets(),
+                ] else if (visiblePets.isEmpty) ...[
+                  const SizedBox(height: 70),
+                  const Center(
+                    child: Text(
+                      'No pets match your search.',
+                      style: TextStyle(color: Color(0xFF777777)),
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -197,6 +290,8 @@ class ChatsScreen extends StatelessWidget {
   }
 }
 
+// Retained for the detailed chat flow's legacy conversation grouping.
+// ignore: unused_element
 class _AllConversationsSection extends StatelessWidget {
   final String userId;
 
@@ -307,6 +402,8 @@ class _AllConversationsSection extends StatelessWidget {
   }
 }
 
+// Retained for compatibility with the approved-adoption chat flow.
+// ignore: unused_element
 class _AdoptionApplicantChatsSection extends StatelessWidget {
   const _AdoptionApplicantChatsSection();
 
@@ -481,16 +578,24 @@ class _ChatPet {
   final String name;
   final String breed;
   final String species;
+  final String age;
+  final String gender;
+  final String location;
   final String purpose;
   final String photoUrl;
+  final bool verified;
 
   const _ChatPet({
     required this.id,
     required this.name,
     required this.breed,
     required this.species,
+    required this.age,
+    required this.gender,
+    required this.location,
     required this.purpose,
     required this.photoUrl,
+    required this.verified,
   });
 
   factory _ChatPet.fromDocument(
@@ -502,11 +607,77 @@ class _ChatPet {
       name: data['name'] as String? ?? 'Pet',
       breed: data['breed'] as String? ?? '',
       species: data['species'] as String? ?? '',
+      age: data['age'] as String? ?? '',
+      gender: data['gender'] as String? ?? '',
+      location: data['locationName'] as String? ?? '',
       purpose: (data['purpose'] as String? ?? '').toLowerCase(),
       photoUrl:
           (data['petProfilePhoto'] as String?) ??
           (data['profilePhoto'] as String?) ??
           '',
+      verified:
+          data['vetVerified'] as bool? ??
+          ((data['healthRecords'] as List?)?.isNotEmpty ?? false),
+    );
+  }
+
+  factory _ChatPet.fromAdoptionRequest(AdoptionRequest request) {
+    final data = request.petSnapshot;
+    return _ChatPet(
+      id: request.petId,
+      name: data['name'] as String? ?? 'Adoption Pet',
+      breed: data['breed'] as String? ?? '',
+      species: data['species'] as String? ?? '',
+      age: data['age'] as String? ?? '',
+      gender: data['gender'] as String? ?? '',
+      location: data['locationName'] as String? ?? '',
+      purpose: 'adoption',
+      photoUrl:
+          data['petProfilePhoto'] as String? ??
+          data['profilePhoto'] as String? ??
+          '',
+      verified:
+          data['vetVerified'] as bool? ??
+          ((data['healthRecords'] as List?)?.isNotEmpty ?? false),
+    );
+  }
+
+  bool matchesSearch(String query) =>
+      '$name $breed $species $purpose $location'.toLowerCase().contains(query);
+}
+
+class _AdoptionPetPurposeSection extends StatelessWidget {
+  final List<_ChatPet> ownedPets;
+  final String searchQuery;
+
+  const _AdoptionPetPurposeSection({
+    required this.ownedPets,
+    required this.searchQuery,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<AdoptionRequest>>(
+      stream: AdoptionService.instance.watchMyRequests(),
+      builder: (context, snapshot) {
+        final petsById = {for (final pet in ownedPets) pet.id: pet};
+        for (final request in snapshot.data ?? const <AdoptionRequest>[]) {
+          if (request.status != AdoptionRequestStatus.approved ||
+              request.petId.isEmpty) {
+            continue;
+          }
+          petsById.putIfAbsent(
+            request.petId,
+            () => _ChatPet.fromAdoptionRequest(request),
+          );
+        }
+        final pets = petsById.values
+            .where(
+              (pet) => searchQuery.isEmpty || pet.matchesSearch(searchQuery),
+            )
+            .toList();
+        return _PetPurposeSection(title: 'Adoption', pets: pets);
+      },
     );
   }
 }
@@ -524,19 +695,58 @@ class _PetPurposeSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          '$title (${pets.length})',
-          style: const TextStyle(
-            color: Color(0xFF888888),
-            fontSize: 11,
-            fontStyle: FontStyle.italic,
-          ),
+        Row(
+          children: [
+            Container(
+              width: 28,
+              height: 28,
+              decoration: const BoxDecoration(
+                color: Color(0xFFFFE3EA),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                title == 'Breeding' ? Icons.pets : Icons.home_rounded,
+                size: 16,
+                color: AppColors.primary,
+              ),
+            ),
+            const SizedBox(width: 9),
+            Text(
+              title,
+              style: const TextStyle(
+                color: Color(0xFF222222),
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(width: 7),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFDDE5),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '${pets.length}',
+                style: const TextStyle(
+                  color: AppColors.primary,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 12),
-        Wrap(
-          spacing: 14,
-          runSpacing: 16,
-          children: pets.map((pet) => _ChatPetCard(pet: pet)).toList(),
+        Column(
+          children: pets
+              .map(
+                (pet) => Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: _ChatPetCard(pet: pet),
+                ),
+              )
+              .toList(),
         ),
       ],
     );
@@ -554,7 +764,7 @@ class _ChatPetCard extends StatelessWidget {
       stream: BreedingMatchService.instance.watchConversationsForPet(pet.id),
       builder: (context, snapshot) {
         final userId = UserSessionService.instance.currentUser?.uid ?? '';
-        final conversationCount =
+        final unreadCount =
             snapshot.data?.docs
                 .where(
                   (document) =>
@@ -567,124 +777,281 @@ class _ChatPetCard extends StatelessWidget {
                       total + _unreadCount(document.data(), userId),
                 ) ??
             0;
-
-        return InkWell(
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => _PetConversationsScreen(pet: pet),
-            ),
+        if (pet.purpose != 'breeding') {
+          return _ChatPetCardBody(
+            pet: pet,
+            unreadCount: unreadCount,
+            incomingLikeCount: 0,
+          );
+        }
+        return StreamBuilder<List<BreedingIncomingLike>>(
+          stream: BreedingMatchService.instance.watchUnansweredIncomingLikes(
+            pet.id,
           ),
-          borderRadius: BorderRadius.circular(6),
-          child: Container(
-            width: 166,
-            height: 245,
-            padding: const EdgeInsets.fromLTRB(12, 22, 12, 16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: AppColors.primary, width: 2),
-              borderRadius: BorderRadius.circular(6),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.08),
-                  blurRadius: 8,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Positioned.fill(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      _PetSelectorAvatar(pet: pet),
-                      const SizedBox(height: 10),
-                      SizedBox(
-                        width: double.infinity,
-                        child: Text(
-                          pet.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: AppColors.primary,
-                            fontSize: 23,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                      SizedBox(
-                        width: double.infinity,
-                        child: Text(
-                          pet.breed.isEmpty ? pet.species : pet.breed,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Color(0xFF333333),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      const Spacer(),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFDDE5),
-                          border: Border.all(color: const Color(0xFF555555)),
-                          borderRadius: BorderRadius.circular(18),
-                        ),
-                        child: Text(
-                          pet.purpose == 'breeding' ? 'Breeding' : 'Adoption',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Color(0xFF222222),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (conversationCount > 0)
-                  Positioned(
-                    top: -14,
-                    right: -4,
-                    child: Container(
-                      constraints: const BoxConstraints(minWidth: 24),
-                      height: 24,
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF22A7E8),
-                        borderRadius: BorderRadius.all(Radius.circular(12)),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        conversationCount > 99
-                            ? '99+'
-                            : conversationCount.toString(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
+          builder: (context, likeSnapshot) {
+            final likedPetIds = (likeSnapshot.data ?? const [])
+                .map((like) => like.likingPetId)
+                .toSet();
+            return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: FirebaseFirestore.instance.collection('pets').snapshots(),
+              builder: (context, petSnapshot) {
+                final likeCount =
+                    petSnapshot.data?.docs
+                        .where(
+                          (document) =>
+                              likedPetIds.contains(document.id) &&
+                              _isAvailableBreedingLike(document.data()),
+                        )
+                        .length ??
+                    0;
+                return _ChatPetCardBody(
+                  pet: pet,
+                  unreadCount: unreadCount,
+                  incomingLikeCount: likeCount,
+                );
+              },
+            );
+          },
         );
       },
     );
   }
+}
+
+class _ChatPetCardBody extends StatelessWidget {
+  final _ChatPet pet;
+  final int unreadCount;
+  final int incomingLikeCount;
+
+  const _ChatPetCardBody({
+    required this.pet,
+    required this.unreadCount,
+    required this.incomingLikeCount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasFooter = unreadCount > 0 || incomingLikeCount > 0;
+    return InkWell(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => _PetConversationsScreen(pet: pet)),
+      ),
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.09),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 18, 14, 14),
+              child: Row(
+                children: [
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      _PetSelectorAvatar(pet: pet),
+                      if (pet.verified)
+                        const Positioned(
+                          right: -2,
+                          bottom: 1,
+                          child: Icon(
+                            Icons.verified,
+                            color: Color(0xFF19A8E8),
+                            size: 18,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                pet.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: AppColors.primary,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            if (unreadCount > 0)
+                              _CountBadge(
+                                count: unreadCount,
+                                color: const Color(0xFF20A7E8),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          [
+                            pet.breed.isEmpty ? pet.species : pet.breed,
+                            pet.age,
+                            pet.gender,
+                          ].where((value) => value.isNotEmpty).join('  •  '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                        if (pet.location.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.location_on_outlined,
+                                size: 13,
+                                color: Color(0xFF777777),
+                              ),
+                              const SizedBox(width: 3),
+                              Expanded(
+                                child: Text(
+                                  pet.location,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Color(0xFF666666),
+                                    fontSize: 10,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFE3EA),
+                            border: Border.all(color: AppColors.primary),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Text(
+                            pet.purpose == 'breeding' ? 'Breeding' : 'Adoption',
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFFFE3EA),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.chevron_right,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (hasFooter)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 10,
+                ),
+                color: const Color(0xFFFFECF1),
+                child: Wrap(
+                  spacing: 16,
+                  runSpacing: 5,
+                  children: [
+                    if (unreadCount > 0)
+                      _FooterCount(
+                        icon: Icons.chat_bubble_outline,
+                        text:
+                            '$unreadCount new ${unreadCount == 1 ? 'message' : 'messages'}',
+                      ),
+                    if (incomingLikeCount > 0)
+                      _FooterCount(
+                        icon: Icons.favorite_border,
+                        text:
+                            '$incomingLikeCount new ${incomingLikeCount == 1 ? 'like' : 'likes'}',
+                      ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CountBadge extends StatelessWidget {
+  final int count;
+  final Color color;
+  const _CountBadge({required this.count, required this.color});
+  @override
+  Widget build(BuildContext context) => Container(
+    constraints: const BoxConstraints(minWidth: 22),
+    height: 22,
+    padding: const EdgeInsets.symmetric(horizontal: 6),
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(11),
+    ),
+    child: Text(
+      count > 99 ? '99+' : '$count',
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 9,
+        fontWeight: FontWeight.w900,
+      ),
+    ),
+  );
+}
+
+class _FooterCount extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  const _FooterCount({required this.icon, required this.text});
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Icon(icon, color: AppColors.primary, size: 14),
+      const SizedBox(width: 6),
+      Text(
+        text,
+        style: const TextStyle(
+          color: AppColors.primary,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    ],
+  );
 }
 
 class _PetSelectorAvatar extends StatelessWidget {
@@ -695,8 +1062,8 @@ class _PetSelectorAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 82,
-      height: 82,
+      width: 68,
+      height: 68,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: const Color(0xFFFFDDE6),
@@ -705,8 +1072,8 @@ class _PetSelectorAvatar extends StatelessWidget {
       child: ClipOval(
         child: BreedrNetworkImage(
           imageUrl: pet.photoUrl,
-          width: 82,
-          height: 82,
+          width: 68,
+          height: 68,
           fallback: _PetSpeciesPlaceholder(species: pet.species),
         ),
       ),
@@ -863,6 +1230,12 @@ class _PetConversationsScreenState extends State<_PetConversationsScreen> {
             ),
           ),
           const SizedBox(height: 18),
+          if (widget.pet.purpose == 'breeding')
+            BreedingLikesPreview(
+              petId: widget.pet.id,
+              petName: widget.pet.name,
+              searchQuery: _searchQuery,
+            ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18),
             child: SizedBox(
@@ -1342,12 +1715,17 @@ class ChatConversationScreen extends StatefulWidget {
 }
 
 class _ChatConversationScreenState extends State<ChatConversationScreen> {
+  static const int _maxVideoBytes = 50 * 1024 * 1024;
   final _messageController = TextEditingController();
   final _messagesScrollController = ScrollController();
   bool _sending = false;
   bool _unmatching = false;
   bool _markingRead = false;
   bool _hasScrolledToLatest = false;
+  File? _pendingMedia;
+  String? _pendingMediaType;
+  String? _pendingMediaName;
+  int? _pendingMediaBytes;
   Timer? _readOnlyTimer;
   DateTime? _scheduledReadOnlyAt;
 
@@ -1403,18 +1781,34 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
 
   Future<void> _send() async {
     final text = _messageController.text.trim();
-    if (text.isEmpty || _sending) return;
+    final pendingMedia = _pendingMedia;
+    final pendingType = _pendingMediaType;
+    if ((text.isEmpty && pendingMedia == null) || _sending) return;
 
     setState(() => _sending = true);
     try {
+      String? mediaUrl;
+      if (pendingMedia != null && pendingType != null) {
+        final cloudinary = CloudinaryService();
+        mediaUrl = pendingType == 'video'
+            ? await cloudinary.uploadVideoOrThrow(pendingMedia)
+            : await cloudinary.uploadImageOrThrow(pendingMedia);
+      }
       await BreedingMatchService.instance.sendMessage(
         matchId: widget.matchId,
         text: text,
+        mediaType: pendingType,
+        mediaUrl: mediaUrl,
+        mediaFileName: _pendingMediaName,
+        mediaSizeBytes: _pendingMediaBytes,
       );
       _messageController.clear();
+      _clearPendingMedia();
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _scrollToLatest(animated: true),
       );
+    } on CloudinaryUploadException catch (error) {
+      if (mounted) _showSnack(error.message);
     } catch (error) {
       if (!mounted) return;
       final message =
@@ -1429,6 +1823,121 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     } finally {
       if (mounted) setState(() => _sending = false);
     }
+  }
+
+  void _clearPendingMedia() {
+    if (!mounted) return;
+    setState(() {
+      _pendingMedia = null;
+      _pendingMediaType = null;
+      _pendingMediaName = null;
+      _pendingMediaBytes = null;
+    });
+  }
+
+  Future<void> _showAttachmentMenu() async {
+    final action = await showModalBottomSheet<_ChatAttachmentAction>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Add an attachment',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 14),
+              _AttachmentOption(
+                icon: Icons.photo_camera_outlined,
+                title: 'Take Photo',
+                subtitle: 'Use your camera',
+                action: _ChatAttachmentAction.camera,
+              ),
+              _AttachmentOption(
+                icon: Icons.photo_library_outlined,
+                title: 'Choose Photo',
+                subtitle: 'Select an image from your library',
+                action: _ChatAttachmentAction.photo,
+              ),
+              _AttachmentOption(
+                icon: Icons.video_library_outlined,
+                title: 'Choose Video',
+                subtitle: 'Select an MP4 video up to 50 MB',
+                action: _ChatAttachmentAction.video,
+              ),
+              _AttachmentOption(
+                icon: Icons.folder_open_outlined,
+                title: 'Browse Device',
+                subtitle: 'Choose a JPG, PNG, or MP4 file',
+                action: _ChatAttachmentAction.browse,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (action == null || !mounted) return;
+    await _pickAttachment(action);
+  }
+
+  Future<void> _pickAttachment(_ChatAttachmentAction action) async {
+    String? path;
+    String? name;
+    String? mediaType;
+    if (action == _ChatAttachmentAction.camera ||
+        action == _ChatAttachmentAction.photo) {
+      final picked = await ImagePicker().pickImage(
+        source: action == _ChatAttachmentAction.camera
+            ? ImageSource.camera
+            : ImageSource.gallery,
+        imageQuality: 82,
+      );
+      path = picked?.path;
+      name = picked?.name;
+      mediaType = 'image';
+    } else if (action == _ChatAttachmentAction.video) {
+      final picked = await ImagePicker().pickVideo(source: ImageSource.gallery);
+      path = picked?.path;
+      name = picked?.name;
+      mediaType = 'video';
+    } else {
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['jpg', 'jpeg', 'png', 'mp4'],
+      );
+      path = picked?.files.single.path;
+      name = picked?.files.single.name;
+      mediaType = name?.toLowerCase().endsWith('.mp4') == true
+          ? 'video'
+          : 'image';
+    }
+    if (path == null || !mounted) return;
+    final file = File(path);
+    final bytes = await file.length();
+    if (!mounted) return;
+    if (mediaType == 'video') {
+      if (!path.toLowerCase().endsWith('.mp4')) {
+        _showSnack('Please choose an MP4 video.');
+        return;
+      }
+      if (bytes > _maxVideoBytes) {
+        _showSnack('This video is larger than 50 MB. Choose a smaller video.');
+        return;
+      }
+    }
+    setState(() {
+      _pendingMedia = file;
+      _pendingMediaType = mediaType;
+      _pendingMediaName = name ?? file.uri.pathSegments.last;
+      _pendingMediaBytes = bytes;
+    });
   }
 
   Future<void> _respondToAdoptionUpdate(String updateRequestId) async {
@@ -1922,33 +2431,73 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                       child: Container(
                         padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
                         color: Colors.white,
-                        child: Row(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Expanded(
-                              child: TextField(
-                                controller: _messageController,
-                                enabled: !_unmatching,
-                                textCapitalization:
-                                    TextCapitalization.sentences,
-                                minLines: 1,
-                                maxLines: 4,
-                                decoration: InputDecoration(
-                                  hintText: 'Message...',
-                                  filled: true,
-                                  fillColor: const Color(0xFFFFF0F5),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(22),
-                                    borderSide: BorderSide.none,
+                            if (_pendingMedia != null) ...[
+                              _PendingChatAttachment(
+                                file: _pendingMedia!,
+                                mediaType: _pendingMediaType ?? 'image',
+                                fileName: _pendingMediaName ?? 'Attachment',
+                                sizeBytes: _pendingMediaBytes ?? 0,
+                                onRemove: _sending ? null : _clearPendingMedia,
+                              ),
+                              const SizedBox(height: 8),
+                            ],
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: _messageController,
+                                    enabled: !_unmatching && !_sending,
+                                    textCapitalization:
+                                        TextCapitalization.sentences,
+                                    minLines: 1,
+                                    maxLines: 4,
+                                    decoration: InputDecoration(
+                                      hintText: _pendingMedia == null
+                                          ? 'Type a message...'
+                                          : 'Add a caption...',
+                                      prefixIcon: IconButton(
+                                        tooltip: 'Add attachment',
+                                        onPressed: _sending || _unmatching
+                                            ? null
+                                            : _showAttachmentMenu,
+                                        icon: const Icon(
+                                          Icons.attach_file,
+                                          color: AppColors.primary,
+                                        ),
+                                      ),
+                                      filled: true,
+                                      fillColor: const Color(0xFFFFF0F5),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(24),
+                                        borderSide: BorderSide.none,
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ),
-                            IconButton(
-                              onPressed: _sending || _unmatching ? null : _send,
-                              icon: const Icon(
-                                Icons.send,
-                                color: AppColors.primary,
-                              ),
+                                const SizedBox(width: 6),
+                                IconButton.filled(
+                                  onPressed: _sending || _unmatching
+                                      ? null
+                                      : _send,
+                                  style: IconButton.styleFrom(
+                                    backgroundColor: AppColors.primary,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                  icon: _sending
+                                      ? const SizedBox(
+                                          width: 19,
+                                          height: 19,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                      : const Icon(Icons.send_rounded),
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -1962,6 +2511,119 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       ),
     );
   }
+}
+
+enum _ChatAttachmentAction { camera, photo, video, browse }
+
+class _AttachmentOption extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final _ChatAttachmentAction action;
+
+  const _AttachmentOption({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.action,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: CircleAvatar(
+        backgroundColor: const Color(0xFFFFE8EE),
+        foregroundColor: AppColors.primary,
+        child: Icon(icon),
+      ),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+      subtitle: Text(subtitle),
+      onTap: () => Navigator.pop(context, action),
+    );
+  }
+}
+
+class _PendingChatAttachment extends StatelessWidget {
+  final File file;
+  final String mediaType;
+  final String fileName;
+  final int sizeBytes;
+  final VoidCallback? onRemove;
+
+  const _PendingChatAttachment({
+    required this.file,
+    required this.mediaType,
+    required this.fileName,
+    required this.sizeBytes,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF0F5),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFFCAD5)),
+      ),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: mediaType == 'image'
+                ? Image.file(file, width: 58, height: 58, fit: BoxFit.cover)
+                : Container(
+                    width: 58,
+                    height: 58,
+                    color: const Color(0xFF333333),
+                    child: const Icon(
+                      Icons.play_circle_fill,
+                      color: Colors.white,
+                      size: 34,
+                    ),
+                  ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  fileName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '${mediaType == 'video' ? 'MP4 video' : 'Photo'} • ${_formatFileSize(sizeBytes)}',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF777777),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Remove attachment',
+            onPressed: onRemove,
+            icon: const Icon(Icons.close, color: AppColors.primary),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _formatFileSize(int bytes) {
+  if (bytes >= 1024 * 1024) {
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+  if (bytes >= 1024) return '${(bytes / 1024).toStringAsFixed(0)} KB';
+  return '$bytes B';
 }
 
 class _UnmatchedConversationView extends StatelessWidget {
@@ -2591,7 +3253,7 @@ class _AdoptionProcessPanelState extends State<_AdoptionProcessPanel> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => _BreedingReviewScreen(
+        builder: (_) => BreedingReviewScreen(
           matchId: widget.conversationId,
           purpose: 'adoption',
         ),
@@ -2599,6 +3261,8 @@ class _AdoptionProcessPanelState extends State<_AdoptionProcessPanel> {
     );
   }
 
+  // Retained for the legacy adoption-process panel.
+  // ignore: unused_element
   void _showProcessGuide(BuildContext context) {
     showModalBottomSheet<void>(
       context: context,
@@ -2651,8 +3315,9 @@ class _AdoptionProcessPanelState extends State<_AdoptionProcessPanel> {
 int _adoptionProcessStep(String status, {required bool bothSigned}) {
   if (status == 'completed' ||
       status == 'ready_to_complete' ||
-      status == 'returned')
+      status == 'returned') {
     return 4;
+  }
   if (status == 'protection_active' || status == 'return_approved') return 3;
   if (status == 'handover_pending' || bothSigned) return 2;
   return 1;
@@ -3174,8 +3839,9 @@ class _AdoptionProcessScreenState extends State<_AdoptionProcessScreen> {
     if (status == 'handover_pending' && !handoverConfirmedByMe) {
       return _confirmHandover;
     }
-    if (status == 'ready_to_complete')
+    if (status == 'ready_to_complete') {
       return isOwner ? _completeAdoption : null;
+    }
     if (status == 'completed' && !ownReviewSubmitted) return _openReview;
     return null;
   }
@@ -3418,7 +4084,7 @@ class _AdoptionProcessScreenState extends State<_AdoptionProcessScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => _BreedingReviewScreen(
+        builder: (_) => BreedingReviewScreen(
           matchId: widget.conversationId,
           purpose: 'adoption',
         ),
@@ -3724,7 +4390,7 @@ class _AdoptionCompletedScreen extends StatelessWidget {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => _BreedingReviewScreen(
+                              builder: (_) => BreedingReviewScreen(
                                 matchId: conversationId,
                                 purpose: 'adoption',
                               ),
@@ -6672,7 +7338,7 @@ class _CompletionPanelState extends State<_CompletionPanel> {
                         context,
                         MaterialPageRoute(
                           builder: (_) =>
-                              _BreedingReviewScreen(matchId: widget.matchId),
+                              BreedingReviewScreen(matchId: widget.matchId),
                         ),
                       ),
                 style: ElevatedButton.styleFrom(
@@ -6927,20 +7593,21 @@ class _CompletionProgress extends StatelessWidget {
   }
 }
 
-class _BreedingReviewScreen extends StatefulWidget {
+class BreedingReviewScreen extends StatefulWidget {
   final String matchId;
   final String purpose;
 
-  const _BreedingReviewScreen({
+  const BreedingReviewScreen({
+    super.key,
     required this.matchId,
     this.purpose = 'breeding',
   });
 
   @override
-  State<_BreedingReviewScreen> createState() => _BreedingReviewScreenState();
+  State<BreedingReviewScreen> createState() => _BreedingReviewScreenState();
 }
 
-class _BreedingReviewScreenState extends State<_BreedingReviewScreen> {
+class _BreedingReviewScreenState extends State<BreedingReviewScreen> {
   final _reviewController = TextEditingController();
   final _picker = ImagePicker();
   final _cloudinary = CloudinaryService();
@@ -7081,7 +7748,7 @@ class _BreedingReviewScreenState extends State<_BreedingReviewScreen> {
     }
     if (error is StateError) {
       final message = error.message;
-      if (message is String && message.isNotEmpty) return message;
+      if (message.isNotEmpty) return message;
     }
     if (error is AdoptionServiceException) {
       return error.message;
@@ -7412,6 +8079,7 @@ class _MessageBubble extends StatelessWidget {
     final type = data['type'] as String? ?? 'text';
     final text = data['text'] as String? ?? '';
     final card = switch (type) {
+      'media' => _ChatMediaBubble(data: data, mine: mine),
       'adoption_update_request' => _AdoptionUpdateRequestBubble(
         conversationId: conversationId,
         data: data,
@@ -7514,6 +8182,261 @@ class _MessageBubble extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChatMediaBubble extends StatefulWidget {
+  final Map<String, dynamic> data;
+  final bool mine;
+
+  const _ChatMediaBubble({required this.data, required this.mine});
+
+  @override
+  State<_ChatMediaBubble> createState() => _ChatMediaBubbleState();
+}
+
+class _ChatMediaBubbleState extends State<_ChatMediaBubble> {
+  VideoPlayerController? _videoController;
+  Future<void>? _initializeVideo;
+
+  @override
+  void initState() {
+    super.initState();
+    final type = widget.data['mediaType'] as String?;
+    final url = widget.data['mediaUrl'] as String? ?? '';
+    if (type == 'video' && url.isNotEmpty) {
+      final playbackUrl = CloudinaryService.compatibleVideoUrl(url);
+      final controller = VideoPlayerController.networkUrl(
+        Uri.parse(playbackUrl),
+      );
+      _videoController = controller;
+      _initializeVideo = controller.initialize().then((_) {
+        controller.addListener(_handleVideoChanged);
+      });
+    }
+  }
+
+  void _handleVideoChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _videoController?.removeListener(_handleVideoChanged);
+    _videoController?.pause();
+    _videoController?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mediaType = widget.data['mediaType'] as String? ?? 'image';
+    final url = widget.data['mediaUrl'] as String? ?? '';
+    final caption = widget.data['text'] as String? ?? '';
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 280),
+      padding: const EdgeInsets.all(7),
+      decoration: BoxDecoration(
+        color: widget.mine ? AppColors.primary : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(11),
+            child: mediaType == 'video'
+                ? _buildVideo(url)
+                : _buildImage(context, url),
+          ),
+          if (caption.isNotEmpty) ...[
+            const SizedBox(height: 7),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              child: Text(
+                caption,
+                style: TextStyle(
+                  color: widget.mine ? Colors.white : const Color(0xFF222222),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildImage(BuildContext context, String url) {
+    return InkWell(
+      onTap: url.isEmpty
+          ? null
+          : () => showDialog<void>(
+              context: context,
+              barrierColor: Colors.black87,
+              builder: (context) => Dialog.fullscreen(
+                backgroundColor: Colors.black,
+                child: Stack(
+                  children: [
+                    Center(
+                      child: InteractiveViewer(
+                        child: BreedrNetworkImage(
+                          imageUrl: url,
+                          fit: BoxFit.contain,
+                          fallback: const Icon(
+                            Icons.broken_image_outlined,
+                            color: Colors.white,
+                            size: 56,
+                          ),
+                        ),
+                      ),
+                    ),
+                    SafeArea(
+                      child: IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close, color: Colors.white),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+      child: BreedrNetworkImage(
+        imageUrl: url,
+        width: 245,
+        height: 210,
+        fit: BoxFit.cover,
+        fallback: Container(
+          width: 245,
+          height: 160,
+          color: const Color(0xFFFFE9EF),
+          child: const Icon(Icons.broken_image_outlined),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVideo(String url) {
+    final controller = _videoController;
+    final initialization = _initializeVideo;
+    if (url.isEmpty || controller == null || initialization == null) {
+      return _mediaError('Video unavailable');
+    }
+    return FutureBuilder<void>(
+      future: initialization,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _videoError(
+            url,
+            controller.value.errorDescription ?? 'Unable to load video',
+          );
+        }
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const SizedBox(
+            width: 245,
+            height: 180,
+            child: Center(
+              child: CircularProgressIndicator(color: AppColors.primary),
+            ),
+          );
+        }
+        final ratio = controller.value.aspectRatio == 0
+            ? 16 / 9
+            : controller.value.aspectRatio;
+        return SizedBox(
+          width: 245,
+          child: AspectRatio(
+            aspectRatio: ratio,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                VideoPlayer(controller),
+                Center(
+                  child: IconButton.filled(
+                    onPressed: () {
+                      if (controller.value.position >=
+                          controller.value.duration) {
+                        controller.seekTo(Duration.zero);
+                      }
+                      controller.value.isPlaying
+                          ? controller.pause()
+                          : controller.play();
+                    },
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.black54,
+                      foregroundColor: Colors.white,
+                    ),
+                    icon: Icon(
+                      controller.value.isPlaying
+                          ? Icons.pause_rounded
+                          : controller.value.position >=
+                                controller.value.duration
+                          ? Icons.replay_rounded
+                          : Icons.play_arrow_rounded,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: VideoProgressIndicator(
+                    controller,
+                    allowScrubbing: true,
+                    colors: const VideoProgressColors(
+                      playedColor: AppColors.primary,
+                      bufferedColor: Colors.white54,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _mediaError(String message) {
+    return Container(
+      width: 245,
+      height: 150,
+      color: const Color(0xFF333333),
+      alignment: Alignment.center,
+      child: Text(message, style: const TextStyle(color: Colors.white)),
+    );
+  }
+
+  Widget _videoError(String originalUrl, String message) {
+    return Container(
+      width: 245,
+      height: 170,
+      color: const Color(0xFF333333),
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.error_outline, color: Colors.white, size: 30),
+          const SizedBox(height: 7),
+          Text(
+            message,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white, fontSize: 11),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () => launchUrl(
+              Uri.parse(CloudinaryService.compatibleVideoUrl(originalUrl)),
+              mode: LaunchMode.externalApplication,
+            ),
+            style: OutlinedButton.styleFrom(foregroundColor: Colors.white),
+            icon: const Icon(Icons.open_in_new, size: 16),
+            label: const Text('Open Video'),
+          ),
         ],
       ),
     );

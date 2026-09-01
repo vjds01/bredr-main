@@ -8,18 +8,14 @@ import '../../theme/app_colors.dart';
 class AdoptionApplicationScreen extends StatefulWidget {
   final AdoptionListing listing;
 
-  const AdoptionApplicationScreen({
-    super.key,
-    required this.listing,
-  });
+  const AdoptionApplicationScreen({super.key, required this.listing});
 
   @override
   State<AdoptionApplicationScreen> createState() =>
       _AdoptionApplicationScreenState();
 }
 
-class _AdoptionApplicationScreenState
-    extends State<AdoptionApplicationScreen> {
+class _AdoptionApplicationScreenState extends State<AdoptionApplicationScreen> {
   final Map<String, dynamic> _answers = {};
   final Map<String, TextEditingController> _textControllers = {};
   int _step = 0;
@@ -66,9 +62,9 @@ class _AdoptionApplicationScreenState
     }
     final message = _validationMessage();
     if (message != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
       return;
     }
     setState(() => _step = 1);
@@ -119,9 +115,9 @@ class _AdoptionApplicationScreenState
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -145,9 +141,7 @@ class _AdoptionApplicationScreenState
       body: Column(
         children: [
           _ProgressHeader(step: _step + 1),
-          Expanded(
-            child: _step == 0 ? _questionForm() : _review(),
-          ),
+          Expanded(child: _step == 0 ? _questionForm() : _review()),
           SafeArea(
             top: false,
             child: Padding(
@@ -159,8 +153,8 @@ class _AdoptionApplicationScreenState
                   onPressed: _submitting
                       ? null
                       : _step == 0
-                          ? _continueToReview
-                          : _submit,
+                      ? _continueToReview
+                      : _submit,
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.primary,
                   ),
@@ -343,10 +337,7 @@ class _ProgressHeader extends StatelessWidget {
             alignment: Alignment.centerRight,
             child: Text(
               'Step $step of 3',
-              style: const TextStyle(
-                color: AppColors.primary,
-                fontSize: 10,
-              ),
+              style: const TextStyle(color: AppColors.primary, fontSize: 10),
             ),
           ),
         ],
@@ -411,19 +402,13 @@ class _QuestionCard extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             question.text,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
-            ),
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 10),
           _answerControl(color),
           if (question.required) ...[
             const SizedBox(height: 8),
-            Text(
-              'required',
-              style: TextStyle(color: color, fontSize: 9),
-            ),
+            Text('required', style: TextStyle(color: color, fontSize: 9)),
           ],
         ],
       ),
@@ -433,24 +418,26 @@ class _QuestionCard extends StatelessWidget {
   Widget _answerControl(Color color) {
     switch (question.type) {
       case 'multipleChoice':
-        return Column(
-          children: question.options
-              .map(
-                (option) => RadioListTile<String>(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  value: option,
-                  groupValue: value as String?,
-                  activeColor: color,
-                  title: Text(
-                    option,
-                    softWrap: true,
-                    style: const TextStyle(fontSize: 11, height: 1.25),
+        return RadioGroup<String>(
+          groupValue: value as String?,
+          onChanged: onChanged,
+          child: Column(
+            children: question.options
+                .map(
+                  (option) => RadioListTile<String>(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    value: option,
+                    activeColor: color,
+                    title: Text(
+                      option,
+                      softWrap: true,
+                      style: const TextStyle(fontSize: 11, height: 1.25),
+                    ),
                   ),
-                  onChanged: onChanged,
-                ),
-              )
-              .toList(),
+                )
+                .toList(),
+          ),
         );
       case 'yesNo':
         return Wrap(
@@ -527,7 +514,9 @@ class _AnswerReviewCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            answer is bool ? (answer ? 'Yes' : 'No') : '${answer ?? 'No answer'}',
+            answer is bool
+                ? (answer ? 'Yes' : 'No')
+                : '${answer ?? 'No answer'}',
             style: const TextStyle(color: Color(0xFF555555), fontSize: 12),
           ),
         ],

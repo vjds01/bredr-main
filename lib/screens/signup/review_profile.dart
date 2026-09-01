@@ -5,15 +5,14 @@ import '../../models/onboarding_data.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/cloudinary_service.dart';
+import '../../services/cabuyao_barangay_service.dart';
+import '../auth/login_screen.dart';
 import 'dart:io';
 
 class Step3Welcome extends StatefulWidget {
   final OnboardingData onboardingData;
 
-  const Step3Welcome({
-    super.key,
-    required this.onboardingData,
-  });
+  const Step3Welcome({super.key, required this.onboardingData});
 
   @override
   State<Step3Welcome> createState() => _Step3WelcomeState();
@@ -21,10 +20,22 @@ class Step3Welcome extends StatefulWidget {
 
 class _Step3WelcomeState extends State<Step3Welcome> {
   int _currentPhotoIndex = 0;
-  int get _totalPhotos =>
-      widget.onboardingData.additionalPhotoFiles.length;
+  bool _isCreatingAccount = false;
+  int get _totalPhotos => widget.onboardingData.additionalPhotoFiles.length;
 
   Future<void> _createAccount() async {
+    if (_isCreatingAccount) return;
+
+    final validationMessage = _validationMessage();
+    if (validationMessage != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(validationMessage)));
+      return;
+    }
+
+    setState(() => _isCreatingAccount = true);
+
     try {
       debugPrint('Preparing Firebase Auth user...');
 
@@ -33,51 +44,46 @@ class _Step3WelcomeState extends State<Step3Welcome> {
       if (widget.onboardingData.authProvider.toLowerCase() == 'google') {
         user = FirebaseAuth.instance.currentUser;
       } else {
-        final credential =
-            await FirebaseAuth.instance.createUserWithEmailAndPassword(
-          email: widget.onboardingData.email,
-          password: widget.onboardingData.password,
-        );
+        final credential = await FirebaseAuth.instance
+            .createUserWithEmailAndPassword(
+              email: widget.onboardingData.email,
+              password: widget.onboardingData.password,
+            );
         user = credential.user;
       }
 
       if (user == null) {
         throw Exception('Failed to create user');
       }
-      
-      //cloudinary image uploading 
+
+      //cloudinary image uploading
       final cloudinary = CloudinaryService();
 
-        var profilePhotoUrl = widget.onboardingData.profilePhoto ?? '';
+      var profilePhotoUrl = widget.onboardingData.profilePhoto ?? '';
 
-        if (widget.onboardingData.profilePhotoFile != null) {
-          debugPrint('Uploading profile photo...');
+      if (widget.onboardingData.profilePhotoFile != null) {
+        debugPrint('Uploading profile photo...');
 
-          profilePhotoUrl = await cloudinary.uploadImageOrThrow(
-            widget.onboardingData.profilePhotoFile!,
-          );
-
-          debugPrint('Profile uploaded: $profilePhotoUrl');
-        }
-
-        List<String> additionalPhotoUrls = [];
-
-        for (final photo
-            in widget.onboardingData.additionalPhotoFiles) {
-          final url = await cloudinary.uploadImageOrThrow(photo);
-          additionalPhotoUrls.add(url);
-        }
-
-        debugPrint(
-          'Additional uploaded: ${additionalPhotoUrls.length}',
+        profilePhotoUrl = await cloudinary.uploadImageOrThrow(
+          widget.onboardingData.profilePhotoFile!,
         );
-        final coverPhotoUrl =
-            additionalPhotoUrls.isNotEmpty ? additionalPhotoUrls.first : '';
 
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .set({
+        debugPrint('Profile uploaded: $profilePhotoUrl');
+      }
+
+      List<String> additionalPhotoUrls = [];
+
+      for (final photo in widget.onboardingData.additionalPhotoFiles) {
+        final url = await cloudinary.uploadImageOrThrow(photo);
+        additionalPhotoUrls.add(url);
+      }
+
+      debugPrint('Additional uploaded: ${additionalPhotoUrls.length}');
+      final coverPhotoUrl = additionalPhotoUrls.isNotEmpty
+          ? additionalPhotoUrls.first
+          : '';
+
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
         'uid': user.uid,
         'authProvider': widget.onboardingData.authProvider,
 
@@ -98,7 +104,7 @@ class _Step3WelcomeState extends State<Step3Welcome> {
 
         'profilePhoto': profilePhotoUrl,
 
-        'additionalImages': additionalPhotoUrls, 
+        'additionalImages': additionalPhotoUrls,
         'additionalPhotos': additionalPhotoUrls,
         'additionalPhotoUrls': additionalPhotoUrls,
         'coverPhoto': coverPhotoUrl,
@@ -111,7 +117,7 @@ class _Step3WelcomeState extends State<Step3Welcome> {
             widget.onboardingData.bio!.isNotEmpty &&
             widget.onboardingData.homeType != null &&
             widget.onboardingData.locationName != null,
-        
+
         'isActive': widget.onboardingData.isActive,
 
         'createdAt': FieldValue.serverTimestamp(),
@@ -134,20 +140,31 @@ class _Step3WelcomeState extends State<Step3Welcome> {
       debugPrint('Account auth error: ${e.code} ${e.message}');
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_accountCreationMessage(e)),
-        ),
-      );
+
+      if (e.code == 'email-already-in-use') {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const LoginScreen(
+              initialMessage:
+                  'An account with this email already exists. Please log in instead.',
+            ),
+          ),
+          (route) => false,
+        );
+        return;
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_accountCreationMessage(e))));
     } on FirebaseException catch (e) {
       debugPrint('Account profile save error: ${e.code} ${e.message}');
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_profileSaveMessage(e)),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_profileSaveMessage(e))));
     } catch (e) {
       debugPrint('Account creation error: $e');
 
@@ -161,7 +178,38 @@ class _Step3WelcomeState extends State<Step3Welcome> {
           ),
         ),
       );
+    } finally {
+      if (mounted) {
+        setState(() => _isCreatingAccount = false);
+      }
     }
+  }
+
+  String? _validationMessage() {
+    final data = widget.onboardingData;
+    if (data.fullName.trim().isEmpty) return 'Your full name is required.';
+    if (data.userName.trim().isEmpty) return 'Your username is required.';
+    if (data.email.trim().isEmpty) return 'Your email address is required.';
+    if (data.authProvider.toLowerCase() == 'email' &&
+        data.password.length < 6) {
+      return 'Password must be at least 6 characters long.';
+    }
+    if (data.profilePhotoFile == null &&
+        (data.profilePhoto?.trim().isEmpty ?? true)) {
+      return 'Please upload a profile photo.';
+    }
+    if (!CabuyaoBarangayService.isCanonicalLocation(data.locationName) ||
+        data.latitude == null ||
+        data.longitude == null) {
+      return 'Your Cabuyao barangay could not be verified.';
+    }
+    if (data.homeType?.trim().isEmpty ?? true) {
+      return 'Please select your type of home.';
+    }
+    if (data.bio?.trim().isEmpty ?? true) {
+      return 'Please complete the About Me field.';
+    }
+    return null;
   }
 
   String _accountCreationMessage(FirebaseAuthException error) {
@@ -171,7 +219,11 @@ class _Step3WelcomeState extends State<Step3Welcome> {
       case 'invalid-email':
         return 'Please enter a valid email address.';
       case 'weak-password':
-        return 'Please use a stronger password.';
+        return 'Password must be at least 6 characters long.';
+      case 'operation-not-allowed':
+        return 'Email sign-up is currently unavailable. Please contact support.';
+      case 'too-many-requests':
+        return 'Too many sign-up attempts. Please wait and try again.';
       case 'network-request-failed':
         return 'Please check your internet connection and try again.';
       default:
@@ -206,8 +258,11 @@ class _Step3WelcomeState extends State<Step3Welcome> {
                     Padding(
                       padding: const EdgeInsets.only(left: 16, top: 8),
                       child: IconButton(
-                        icon: const Icon(Icons.arrow_back_ios,
-                            color: AppColors.primary, size: 20),
+                        icon: const Icon(
+                          Icons.arrow_back_ios,
+                          color: AppColors.primary,
+                          size: 20,
+                        ),
                         onPressed: () => Navigator.pop(context),
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
@@ -290,10 +345,12 @@ class _Step3WelcomeState extends State<Step3Welcome> {
                       height: 180,
                       child: _ProfileCoverPreview(
                         coverPhoto:
-                            widget.onboardingData.additionalPhotoFiles.isNotEmpty
-                                ? widget
-                                    .onboardingData.additionalPhotoFiles.first
-                                : null,
+                            widget
+                                .onboardingData
+                                .additionalPhotoFiles
+                                .isNotEmpty
+                            ? widget.onboardingData.additionalPhotoFiles.first
+                            : null,
                       ),
                     ),
 
@@ -328,20 +385,29 @@ class _Step3WelcomeState extends State<Step3Welcome> {
                                     shape: BoxShape.circle,
                                     color: Colors.white,
                                     border: Border.all(
-                                        color: Colors.white, width: 3),
+                                      color: Colors.white,
+                                      width: 3,
+                                    ),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: Colors.black
-                                            .withValues(alpha: 0.12),
+                                        color: Colors.black.withValues(
+                                          alpha: 0.12,
+                                        ),
                                         blurRadius: 8,
                                         spreadRadius: 1,
                                       ),
                                     ],
                                   ),
                                   child: ClipOval(
-                                    child: widget.onboardingData.profilePhotoFile != null
+                                    child:
+                                        widget
+                                                .onboardingData
+                                                .profilePhotoFile !=
+                                            null
                                         ? Image.file(
-                                            widget.onboardingData.profilePhotoFile!,
+                                            widget
+                                                .onboardingData
+                                                .profilePhotoFile!,
                                             width: 80,
                                             height: 80,
                                             fit: BoxFit.cover,
@@ -387,8 +453,9 @@ class _Step3WelcomeState extends State<Step3Welcome> {
                                           color: AppColors.primary,
                                         ),
                                         const SizedBox(width: 4),
-                                        Text( 
-                                          widget.onboardingData.locationName ?? 'No location',
+                                        Text(
+                                          widget.onboardingData.locationName ??
+                                              'No location',
                                           style: const TextStyle(
                                             fontSize: 12,
                                             color: Color(0xFF666666),
@@ -401,13 +468,18 @@ class _Step3WelcomeState extends State<Step3Welcome> {
                                       spacing: 8,
                                       runSpacing: 6,
                                       children: [
-                                        if (widget.onboardingData.homeType != null)
+                                        if (widget.onboardingData.homeType !=
+                                            null)
                                           _Tag(widget.onboardingData.homeType!),
 
-                                        if (widget.onboardingData.childrenAtHome)
+                                        if (widget
+                                            .onboardingData
+                                            .childrenAtHome)
                                           const _Tag('Has kids'),
 
-                                        if (widget.onboardingData.otherPetsAtHome)
+                                        if (widget
+                                            .onboardingData
+                                            .otherPetsAtHome)
                                           const _Tag('Has pets'),
                                       ],
                                     ),
@@ -437,7 +509,8 @@ class _Step3WelcomeState extends State<Step3Welcome> {
                               color: Colors.white,
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                  color: const Color(0xFFEEEEEE)),
+                                color: const Color(0xFFEEEEEE),
+                              ),
                             ),
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -478,7 +551,8 @@ class _Step3WelcomeState extends State<Step3Welcome> {
                               color: Colors.white,
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                  color: const Color(0xFFEEEEEE)),
+                                color: const Color(0xFFEEEEEE),
+                              ),
                             ),
                             child: Column(
                               children: [
@@ -494,7 +568,8 @@ class _Step3WelcomeState extends State<Step3Welcome> {
 
                                 _InfoRow(
                                   'Location',
-                                  widget.onboardingData.locationName ?? 'Not set',
+                                  widget.onboardingData.locationName ??
+                                      'Not set',
                                 ),
 
                                 const Divider(
@@ -541,8 +616,8 @@ class _Step3WelcomeState extends State<Step3Welcome> {
                               const Spacer(),
                               Text(
                                 _totalPhotos == 0
-                                  ? '0 / 0'
-                                  : '${_currentPhotoIndex + 1} / $_totalPhotos',
+                                    ? '0 / 0'
+                                    : '${_currentPhotoIndex + 1} / $_totalPhotos',
                                 style: const TextStyle(
                                   fontSize: 13,
                                   color: AppColors.primary,
@@ -583,10 +658,12 @@ class _Step3WelcomeState extends State<Step3Welcome> {
                                         angle: 0.07,
                                         child: Container(
                                           decoration: BoxDecoration(
-                                            color: AppColors.primary
-                                                .withValues(alpha: 0.55),
-                                            borderRadius:
-                                                BorderRadius.circular(20),
+                                            color: AppColors.primary.withValues(
+                                              alpha: 0.55,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              20,
+                                            ),
                                           ),
                                         ),
                                       ),
@@ -601,9 +678,9 @@ class _Step3WelcomeState extends State<Step3Welcome> {
                                         angle: -0.04,
                                         child: _DashedCard(
                                           imageFile: _totalPhotos > 0
-                                              ? widget.onboardingData.additionalPhotoFiles[
-                                                  _currentPhotoIndex
-                                                ]
+                                              ? widget
+                                                    .onboardingData
+                                                    .additionalPhotoFiles[_currentPhotoIndex]
                                               : null,
                                         ),
                                       ),
@@ -615,7 +692,12 @@ class _Step3WelcomeState extends State<Step3Welcome> {
                               _NavArrow(
                                 icon: Icons.chevron_right,
                                 onTap: () => setState(() {
-                                  if (_currentPhotoIndex < widget.onboardingData.additionalPhotoFiles.length - 1) {
+                                  if (_currentPhotoIndex <
+                                      widget
+                                              .onboardingData
+                                              .additionalPhotoFiles
+                                              .length -
+                                          1) {
                                     _currentPhotoIndex++;
                                   }
                                 }),
@@ -634,25 +716,43 @@ class _Step3WelcomeState extends State<Step3Welcome> {
 
             // Create My Account — pinned bottom
             Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
               child: SizedBox(
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
-                  onPressed: _createAccount,
+                  onPressed: _isCreatingAccount ? null : _createAccount,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
-                  child: const Text(
-                    'Create My Account',
-                    style: TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w600),
-                  ),
+                  child: _isCreatingAccount
+                      ? const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            ),
+                            SizedBox(width: 12),
+                            Text('Creating your account...'),
+                          ],
+                        )
+                      : const Text(
+                          'Create My Account',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                 ),
               ),
             ),
@@ -668,9 +768,7 @@ class _Step3WelcomeState extends State<Step3Welcome> {
 class _ProfileCoverPreview extends StatelessWidget {
   final File? coverPhoto;
 
-  const _ProfileCoverPreview({
-    required this.coverPhoto,
-  });
+  const _ProfileCoverPreview({required this.coverPhoto});
 
   @override
   Widget build(BuildContext context) {
@@ -689,11 +787,7 @@ class _ProfileCoverPreview extends StatelessWidget {
       errorBuilder: (_, _, _) => Container(
         color: const Color(0xFF888888),
         child: const Center(
-          child: Icon(
-            Icons.image_outlined,
-            color: Colors.white54,
-            size: 48,
-          ),
+          child: Icon(Icons.image_outlined, color: Colors.white54, size: 48),
         ),
       ),
     );
@@ -713,8 +807,10 @@ class _Tag extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: const Color(0xFFDDDDDD)),
       ),
-      child: Text(label,
-          style: const TextStyle(fontSize: 12, color: Color(0xFF555555))),
+      child: Text(
+        label,
+        style: const TextStyle(fontSize: 12, color: Color(0xFF555555)),
+      ),
     );
   }
 }
@@ -749,16 +845,19 @@ class _InfoRow extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: Text(label,
-                style: const TextStyle(
-                    fontSize: 13, color: Color(0xFF888888))),
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 13, color: Color(0xFF888888)),
+            ),
           ),
-          Text(value,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF333333),
-              )),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF333333),
+            ),
+          ),
         ],
       ),
     );
@@ -792,9 +891,7 @@ class _NavArrow extends StatelessWidget {
 class _DashedCard extends StatelessWidget {
   final File? imageFile;
 
-  const _DashedCard({
-    this.imageFile,
-  });
+  const _DashedCard({this.imageFile});
 
   @override
   Widget build(BuildContext context) {
@@ -816,28 +913,25 @@ class _DashedCard extends StatelessWidget {
               decoration: BoxDecoration(
                 color: const Color(0xFFE8E8E8),
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: const Color(0xFF4FC3F7),
-                  width: 3,
-                ),
+                border: Border.all(color: const Color(0xFF4FC3F7), width: 3),
               ),
               child: imageFile != null
-              ? ClipRRect(
-                  borderRadius: BorderRadius.circular(17),
-                  child: Image.file(
-                    imageFile!,
-                    fit: BoxFit.cover,
-                    width: double.infinity,
-                    height: double.infinity,
-                  ),
-                )
-              : const Center(
-                  child: Icon(
-                    Icons.pets,
-                    size: 72,
-                    color: Color(0xFFBBBBBB),
-                  ),
-                ),
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(17),
+                      child: Image.file(
+                        imageFile!,
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                        height: double.infinity,
+                      ),
+                    )
+                  : const Center(
+                      child: Icon(
+                        Icons.pets,
+                        size: 72,
+                        color: Color(0xFFBBBBBB),
+                      ),
+                    ),
             ),
           ),
         );
@@ -952,9 +1046,11 @@ class _StepDot extends StatelessWidget {
               ]
             : [],
       ),
-      child: Icon(Icons.pets,
-          size: 26,
-          color: isActive ? Colors.white : const Color(0xFFFFB3C1)),
+      child: Icon(
+        Icons.pets,
+        size: 26,
+        color: isActive ? Colors.white : const Color(0xFFFFB3C1),
+      ),
     );
   }
 }

@@ -26,6 +26,10 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Breedr uses the camera so you can send pet photos in chat.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Breedr uses your photo library so you can send pet photos and videos in chat.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

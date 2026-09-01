@@ -1,19 +1,17 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../theme/app_colors.dart';
 import 'review_profile.dart';
 import '../../models/onboarding_data.dart';
 import '../../services/location_service.dart';
+import '../../services/cabuyao_barangay_service.dart';
+import '../../widgets/cabuyao_barangay_picker.dart';
 
 class Step2ReviewProfile extends StatefulWidget {
   final OnboardingData onboardingData;
-  const Step2ReviewProfile({
-    super.key,
-    required this.onboardingData,
-  });
+  const Step2ReviewProfile({super.key, required this.onboardingData});
 
   @override
   State<Step2ReviewProfile> createState() => _Step2ReviewProfileState();
@@ -30,7 +28,7 @@ class _Step2ReviewProfileState extends State<Step2ReviewProfile> {
   double? _longitude;
 
   File? _profilePhoto;
-  List<File> _additionalPhotosFiles = [];
+  final List<File> _additionalPhotosFiles = [];
 
   final _homeTypes = [
     'House with Yard',
@@ -53,12 +51,11 @@ class _Step2ReviewProfileState extends State<Step2ReviewProfile> {
     _longitude =
         widget.onboardingData.longitude ?? LocationService.instance.longitude;
 
-    debugPrint(
-        'Step2 Location: ${LocationService.instance.locationName}');
-    debugPrint(
-        'Step2 Lat: ${LocationService.instance.latitude}');
-    debugPrint(
-        'Step2 Lng: ${LocationService.instance.longitude}');
+    WidgetsBinding.instance.addPostFrameCallback((_) => _resolveLocation());
+
+    debugPrint('Step2 Location: ${LocationService.instance.locationName}');
+    debugPrint('Step2 Lat: ${LocationService.instance.latitude}');
+    debugPrint('Step2 Lng: ${LocationService.instance.longitude}');
   }
 
   @override
@@ -67,76 +64,44 @@ class _Step2ReviewProfileState extends State<Step2ReviewProfile> {
     super.dispose();
   }
 
-  Future<void> _detectLocation() async {
+  Future<void> _resolveLocation() async {
+    if (_latitude == null || _longitude == null) {
+      _locationCtrl.clear();
+      return;
+    }
+
     setState(() => _isDetectingLocation = true);
 
     try {
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        await Geolocator.openLocationSettings();
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please enable GPS, then tap Detect again.'),
-          ),
-        );
-        return;
-      }
-
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-
-      if (permission == LocationPermission.denied) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Location permission is required to continue.'),
-          ),
-        );
-        return;
-      }
-
-      if (permission == LocationPermission.deniedForever) {
-        await Geolocator.openAppSettings();
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Please allow location permission in settings, then try again.',
-            ),
-          ),
-        );
-        return;
-      }
-
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
       final placemarks = await placemarkFromCoordinates(
-        position.latitude,
-        position.longitude,
+        _latitude!,
+        _longitude!,
       );
-      final locationName = _locationNameFromPlacemark(
+      var locationName = CabuyaoBarangayService.fromPlacemark(
         placemarks.isNotEmpty ? placemarks.first : null,
       );
+      locationName ??= await CabuyaoBarangayService.fromCoordinates(
+        _latitude!,
+        _longitude!,
+      );
+
+      if (locationName == null) {
+        await _chooseBarangay();
+        return;
+      }
+      final resolvedLocationName = locationName;
 
       setState(() {
-        _latitude = position.latitude;
-        _longitude = position.longitude;
-        _locationCtrl.text = locationName;
+        _locationCtrl.text = resolvedLocationName;
       });
 
-      LocationService.instance.latitude = position.latitude;
-      LocationService.instance.longitude = position.longitude;
-      LocationService.instance.locationName = locationName;
+      LocationService.instance.locationName = resolvedLocationName;
     } catch (e) {
       debugPrint('Onboarding location detection error: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_locationErrorMessage(e))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_locationErrorMessage(e))));
     } finally {
       if (mounted) {
         setState(() => _isDetectingLocation = false);
@@ -144,19 +109,13 @@ class _Step2ReviewProfileState extends State<Step2ReviewProfile> {
     }
   }
 
-  String _locationNameFromPlacemark(Placemark? place) {
-    if (place == null) return 'Detected location';
+  Future<void> _chooseBarangay() async {
+    if (_latitude == null || _longitude == null || !mounted) return;
+    final locationName = await showCabuyaoBarangayPicker(context);
+    if (locationName == null || !mounted) return;
 
-    final parts = [
-      place.subLocality,
-      place.locality,
-      place.administrativeArea,
-    ]
-        .where((part) => part != null && part.trim().isNotEmpty)
-        .map((part) => part!.trim())
-        .toList();
-
-    return parts.isEmpty ? 'Detected location' : parts.toSet().join(', ');
+    setState(() => _locationCtrl.text = locationName);
+    LocationService.instance.locationName = locationName;
   }
 
   String _locationErrorMessage(Object error) {
@@ -171,52 +130,74 @@ class _Step2ReviewProfileState extends State<Step2ReviewProfile> {
     if (message.contains('network') || message.contains('timed out')) {
       return 'Unable to detect your location. Please check your connection and try again.';
     }
+    if (message.contains('barangay-unavailable')) {
+      return 'We could not identify your Cabuyao barangay. Please return to Enable Location and try again.';
+    }
 
     return 'Unable to detect your location right now. Please try again.';
   }
 
   void _goNext() {
+    debugPrint('Profile photo: ${_profilePhoto?.path}');
 
-  debugPrint(
-    'Profile photo: ${_profilePhoto?.path}',
-  );
+    debugPrint('Additional photos: ${_additionalPhotosFiles.length}');
 
-  debugPrint(
-    'Additional photos: ${_additionalPhotosFiles.length}',
-  );
-  
-  final locationName = _locationCtrl.text.trim();
-  if (locationName.isEmpty || _latitude == null || _longitude == null) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Please detect your location before continuing.'),
+    if (_profilePhoto == null &&
+        (widget.onboardingData.profilePhoto?.trim().isEmpty ?? true)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please upload a profile photo.')),
+      );
+      return;
+    }
+
+    final locationName = _locationCtrl.text.trim();
+    if (!CabuyaoBarangayService.isCanonicalLocation(locationName) ||
+        _latitude == null ||
+        _longitude == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Your Cabuyao barangay could not be verified. Please enable location again.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (_selectedHomeType == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select your type of home.')),
+      );
+      return;
+    }
+
+    if (_aboutCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please complete the About Me field.')),
+      );
+      return;
+    }
+
+    final updatedData = widget.onboardingData.copyWith(
+      bio: _aboutCtrl.text.trim(),
+      homeType: _selectedHomeType,
+      childrenAtHome: _childrenAtHome,
+      otherPetsAtHome: _otherPetsAtHome,
+      locationName: locationName,
+      latitude: _latitude,
+      longitude: _longitude,
+
+      profilePhotoFile: _profilePhoto,
+      additionalPhotoFiles: _additionalPhotosFiles,
+    );
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Step3Welcome(onboardingData: updatedData),
       ),
     );
-    return;
   }
-
-  final updatedData = widget.onboardingData.copyWith(
-    bio: _aboutCtrl.text.trim(),
-    homeType: _selectedHomeType,
-    childrenAtHome: _childrenAtHome,
-    otherPetsAtHome: _otherPetsAtHome,
-    locationName: locationName,
-    latitude: _latitude,
-    longitude: _longitude,
-
-    profilePhotoFile: _profilePhoto,
-    additionalPhotoFiles: _additionalPhotosFiles,
-  );
-
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => Step3Welcome(
-        onboardingData: updatedData,
-      ),
-    ),
-  );
-}
 
   void _addAdditionalPhotos(List<File> files) {
     if (files.isEmpty) return;
@@ -224,7 +205,9 @@ class _Step2ReviewProfileState extends State<Step2ReviewProfile> {
     final remaining = 10 - _additionalPhotosFiles.length;
     if (remaining <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You can upload up to 10 additional photos.')),
+        const SnackBar(
+          content: Text('You can upload up to 10 additional photos.'),
+        ),
       );
       return;
     }
@@ -260,8 +243,11 @@ class _Step2ReviewProfileState extends State<Step2ReviewProfile> {
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
                       child: IconButton(
-                        icon: const Icon(Icons.arrow_back_ios,
-                            color: AppColors.primary, size: 20),
+                        icon: const Icon(
+                          Icons.arrow_back_ios,
+                          color: AppColors.primary,
+                          size: 20,
+                        ),
                         onPressed: () => Navigator.pop(context),
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
@@ -356,11 +342,12 @@ class _Step2ReviewProfileState extends State<Step2ReviewProfile> {
                     _LocationField(
                       controller: _locationCtrl,
                       isDetecting: _isDetectingLocation,
-                      onDetectLocation: _detectLocation,
+                      onSelectBarangay: _chooseBarangay,
                     ),
                     const SizedBox(height: 6),
                     _InfoNote(
-                        'Only your barangay is shown to others. Your exact address is never shared.'),
+                      'Only your barangay is shown to others. Your exact address is never shared.',
+                    ),
 
                     const SizedBox(height: 20),
 
@@ -376,11 +363,12 @@ class _Step2ReviewProfileState extends State<Step2ReviewProfile> {
                       children: _homeTypes.map((type) {
                         final selected = _selectedHomeType == type;
                         return GestureDetector(
-                          onTap: () =>
-                              setState(() => _selectedHomeType = type),
+                          onTap: () => setState(() => _selectedHomeType = type),
                           child: Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 8),
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
                             decoration: BoxDecoration(
                               color: selected
                                   ? AppColors.primary
@@ -408,7 +396,8 @@ class _Step2ReviewProfileState extends State<Step2ReviewProfile> {
                     ),
                     const SizedBox(height: 6),
                     _InfoNote(
-                        'Helps match you with pets suited to your living space.'),
+                      'Helps match you with pets suited to your living space.',
+                    ),
 
                     const SizedBox(height: 20),
 
@@ -422,15 +411,13 @@ class _Step2ReviewProfileState extends State<Step2ReviewProfile> {
                       title: 'Children at home',
                       subtitle: 'Help match kid-friendly pets',
                       value: _childrenAtHome,
-                      onChanged: (v) =>
-                          setState(() => _childrenAtHome = v),
+                      onChanged: (v) => setState(() => _childrenAtHome = v),
                     ),
                     _ToggleRow(
                       title: 'Other pets at home',
                       subtitle: 'Help match pet-friendly pets',
                       value: _otherPetsAtHome,
-                      onChanged: (v) =>
-                          setState(() => _otherPetsAtHome = v),
+                      onChanged: (v) => setState(() => _otherPetsAtHome = v),
                     ),
 
                     const SizedBox(height: 20),
@@ -445,28 +432,36 @@ class _Step2ReviewProfileState extends State<Step2ReviewProfile> {
                       controller: _aboutCtrl,
                       maxLines: 4,
                       style: const TextStyle(
-                          fontSize: 14, color: Color(0xFF333333)),
+                        fontSize: 14,
+                        color: Color(0xFF333333),
+                      ),
                       decoration: InputDecoration(
                         hintText: 'Tell something about yourself...',
                         hintStyle: const TextStyle(
-                            color: Color(0xFFBBBBBB), fontSize: 14),
+                          color: Color(0xFFBBBBBB),
+                          fontSize: 14,
+                        ),
                         filled: true,
                         fillColor: Colors.white,
                         contentPadding: const EdgeInsets.all(14),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
                           borderSide: const BorderSide(
-                              color: Color(0xFFEEEEEE)),
+                            color: Color(0xFFEEEEEE),
+                          ),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
                           borderSide: const BorderSide(
-                              color: Color(0xFFEEEEEE)),
+                            color: Color(0xFFEEEEEE),
+                          ),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
                           borderSide: const BorderSide(
-                              color: AppColors.primary, width: 1.2),
+                            color: AppColors.primary,
+                            width: 1.2,
+                          ),
                         ),
                       ),
                     ),
@@ -476,8 +471,11 @@ class _Step2ReviewProfileState extends State<Step2ReviewProfile> {
                     // UPLOAD ADDITIONAL PHOTOS
                     Row(
                       children: [
-                        const Icon(Icons.add_photo_alternate_outlined,
-                            color: Color(0xFF444444), size: 18),
+                        const Icon(
+                          Icons.add_photo_alternate_outlined,
+                          color: Color(0xFF444444),
+                          size: 18,
+                        ),
                         const SizedBox(width: 6),
                         const Text(
                           'UPLOAD ADDITIONAL PHOTOS',
@@ -509,7 +507,8 @@ class _Step2ReviewProfileState extends State<Step2ReviewProfile> {
 
                     const SizedBox(height: 8),
                     _InfoNote(
-                        'You may also add up to 10 additional photos of yourself, your home, or your pets. The first upload will be set as the background of your profile.'),
+                      'You may also add up to 10 additional photos of yourself, your home, or your pets. The first upload will be set as the background of your profile.',
+                    ),
 
                     const SizedBox(height: 20),
                   ],
@@ -519,8 +518,7 @@ class _Step2ReviewProfileState extends State<Step2ReviewProfile> {
 
             // Continue to next step - pinned bottom
             Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
               child: SizedBox(
                 width: double.infinity,
                 height: 52,
@@ -536,10 +534,7 @@ class _Step2ReviewProfileState extends State<Step2ReviewProfile> {
                   ),
                   child: const Text(
                     'CONTINUE',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                 ),
               ),
@@ -555,10 +550,7 @@ class _SectionHeader extends StatelessWidget {
   final IconData icon;
   final String label;
 
-  const _SectionHeader({
-    required this.icon,
-    required this.label,
-  });
+  const _SectionHeader({required this.icon, required this.label});
 
   @override
   Widget build(BuildContext context) {
@@ -601,12 +593,12 @@ class _InfoNote extends StatelessWidget {
 class _LocationField extends StatelessWidget {
   final TextEditingController controller;
   final bool isDetecting;
-  final VoidCallback onDetectLocation;
+  final VoidCallback onSelectBarangay;
 
   const _LocationField({
     required this.controller,
     required this.isDetecting,
-    required this.onDetectLocation,
+    required this.onSelectBarangay,
   });
 
   @override
@@ -614,33 +606,26 @@ class _LocationField extends StatelessWidget {
     return TextField(
       controller: controller,
       readOnly: true,
+      onTap: isDetecting ? null : onSelectBarangay,
       decoration: InputDecoration(
         filled: true,
         fillColor: Colors.white,
         prefixIcon: const Icon(Icons.location_on, color: AppColors.primary),
-        hintText: 'Tap Detect to set your location',
+        hintText: isDetecting
+            ? 'Identifying your Cabuyao barangay...'
+            : 'Location unavailable',
         hintStyle: const TextStyle(color: Color(0xFFBBBBBB), fontSize: 13),
-        suffixIcon: Padding(
-          padding: const EdgeInsets.only(right: 8),
-          child: TextButton.icon(
-            onPressed: isDetecting ? null : onDetectLocation,
-            icon: isDetecting
-                ? const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.my_location, size: 16),
-            label: Text(isDetecting ? 'Detecting' : 'Detect'),
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.primary,
-              textStyle: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
+        suffixIcon: isDetecting
+            ? const Padding(
+                padding: EdgeInsets.all(14),
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Icon(
+                CabuyaoBarangayService.isCanonicalLocation(controller.text)
+                    ? Icons.verified_outlined
+                    : Icons.arrow_drop_down,
+                color: AppColors.primary,
               ),
-            ),
-          ),
-        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: Color(0xFFEEEEEE)),
@@ -777,11 +762,7 @@ class _ProfilePhotoUploadState extends State<_ProfilePhotoUpload> {
                   ),
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: const Icon(
-                  Icons.person,
-                  color: Colors.white,
-                  size: 42,
-                ),
+                child: const Icon(Icons.person, color: Colors.white, size: 42),
               ),
             const SizedBox(height: 20),
             SizedBox(
@@ -810,8 +791,7 @@ class _ProfilePhotoUploadState extends State<_ProfilePhotoUpload> {
               child: OutlinedButton(
                 onPressed: () => _pick(ImageSource.camera),
                 style: OutlinedButton.styleFrom(
-                  side:
-                      const BorderSide(color: AppColors.primary, width: 1.5),
+                  side: const BorderSide(color: AppColors.primary, width: 1.5),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -872,18 +852,13 @@ class _AdditionalPhotosCard extends StatelessWidget {
 class _AdditionalPhotoPreview extends StatelessWidget {
   final File photo;
 
-  const _AdditionalPhotoPreview({
-    required this.photo,
-  });
+  const _AdditionalPhotoPreview({required this.photo});
 
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(18),
-      child: Image.file(
-        photo,
-        fit: BoxFit.cover,
-      ),
+      child: Image.file(photo, fit: BoxFit.cover),
     );
   }
 }
@@ -891,23 +866,20 @@ class _AdditionalPhotoPreview extends StatelessWidget {
 class _AdditionalPhotoUploadTile extends StatefulWidget {
   final ValueChanged<List<File>> onImagesSelected;
 
-  const _AdditionalPhotoUploadTile({
-    required this.onImagesSelected,
-  });
+  const _AdditionalPhotoUploadTile({required this.onImagesSelected});
 
   @override
   State<_AdditionalPhotoUploadTile> createState() =>
       _AdditionalPhotoUploadTileState();
 }
 
-class _AdditionalPhotoUploadTileState extends State<_AdditionalPhotoUploadTile> {
+class _AdditionalPhotoUploadTileState
+    extends State<_AdditionalPhotoUploadTile> {
   Future<void> _pickGallery() async {
     final picked = await ImagePicker().pickMultiImage(imageQuality: 75);
     if (picked.isEmpty) return;
 
-    widget.onImagesSelected(
-      picked.map((image) => File(image.path)).toList(),
-    );
+    widget.onImagesSelected(picked.map((image) => File(image.path)).toList());
   }
 
   Future<void> _pickCamera() async {
@@ -959,8 +931,11 @@ class _AdditionalPhotoUploadTileState extends State<_AdditionalPhotoUploadTile> 
                   Positioned(
                     bottom: 8,
                     right: 8,
-                    child:
-                        Icon(Icons.camera_alt, color: Colors.white, size: 20),
+                    child: Icon(
+                      Icons.camera_alt,
+                      color: Colors.white,
+                      size: 20,
+                    ),
                   ),
                 ],
               ),
@@ -992,8 +967,7 @@ class _AdditionalPhotoUploadTileState extends State<_AdditionalPhotoUploadTile> 
               child: OutlinedButton(
                 onPressed: _pickCamera,
                 style: OutlinedButton.styleFrom(
-                  side:
-                      const BorderSide(color: AppColors.primary, width: 1.5),
+                  side: const BorderSide(color: AppColors.primary, width: 1.5),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -1014,6 +988,7 @@ class _AdditionalPhotoUploadTileState extends State<_AdditionalPhotoUploadTile> 
     );
   }
 }
+
 // Dashed border painter
 class _DashedRectPainter extends CustomPainter {
   final Color color;
@@ -1124,9 +1099,11 @@ class _StepDot extends StatelessWidget {
               ]
             : [],
       ),
-      child: Icon(Icons.pets,
-          size: 26,
-          color: isActive ? Colors.white : const Color(0xFFFFB3C1)),
+      child: Icon(
+        Icons.pets,
+        size: 26,
+        color: isActive ? Colors.white : const Color(0xFFFFB3C1),
+      ),
     );
   }
 }

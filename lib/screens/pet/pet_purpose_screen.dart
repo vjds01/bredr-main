@@ -8,10 +8,7 @@ import 'pet_health_record_screen.dart';
 class PetPurposeScreen extends StatefulWidget {
   final PetListingData petData;
 
-  const PetPurposeScreen({
-    super.key,
-    required this.petData,
-  });
+  const PetPurposeScreen({super.key, required this.petData});
 
   @override
   State<PetPurposeScreen> createState() => _PetPurposeScreenState();
@@ -35,7 +32,7 @@ class _PetPurposeScreenState extends State<PetPurposeScreen> {
   void initState() {
     super.initState();
     _selected = _displayPurpose(widget.petData.purpose);
-    _breedingGender = widget.petData.breedingPreferredGender;
+    _breedingGender = _requiredPartnerGender;
     _sameBreedOnly = widget.petData.sameBreedOnly;
     _vetVerifiedOnly = widget.petData.vetVerifiedOnly;
     _adoptionType = widget.petData.adoptionType;
@@ -51,6 +48,9 @@ class _PetPurposeScreenState extends State<PetPurposeScreen> {
     if (normalized == 'adoption') return 'Adoption';
     return null;
   }
+
+  String get _requiredPartnerGender =>
+      widget.petData.gender.toLowerCase() == 'male' ? 'Female' : 'Male';
 
   @override
   void dispose() {
@@ -80,7 +80,22 @@ class _PetPurposeScreenState extends State<PetPurposeScreen> {
   }
 
   void _goNext() {
-    if (_selected == null) return;
+    if (_selected == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a purpose for your pet.')),
+      );
+      return;
+    }
+
+    if (_selected == 'Adoption' && _adoptionType == 'FOR SALE') {
+      final price = double.tryParse(_priceCtrl.text.trim().replaceAll(',', ''));
+      if (price == null || price <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please enter a valid selling price.')),
+        );
+        return;
+      }
+    }
 
     final eligibility = _checkEligibility();
 
@@ -95,10 +110,7 @@ class _PetPurposeScreenState extends State<PetPurposeScreen> {
         ? PetHealthRecordScreen(petData: updatedData)
         : AdoptionInterviewScreen(petData: updatedData);
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => nextScreen),
-    );
+    Navigator.push(context, MaterialPageRoute(builder: (_) => nextScreen));
   }
 
   _PurposeEligibilityResult? _checkEligibility() {
@@ -188,9 +200,7 @@ class _PetPurposeScreenState extends State<PetPurposeScreen> {
     return '${months[date.month - 1]} ${date.year}';
   }
 
-  Future<void> _showEligibilityDialog(
-    _PurposeEligibilityResult result,
-  ) {
+  Future<void> _showEligibilityDialog(_PurposeEligibilityResult result) {
     return showDialog<void>(
       context: context,
       builder: (context) => _PurposeEligibilityDialog(result: result),
@@ -213,8 +223,11 @@ class _PetPurposeScreenState extends State<PetPurposeScreen> {
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
                       child: IconButton(
-                        icon: const Icon(Icons.arrow_back_ios,
-                            color: AppColors.primary, size: 20),
+                        icon: const Icon(
+                          Icons.arrow_back_ios,
+                          color: AppColors.primary,
+                          size: 20,
+                        ),
                         onPressed: () => Navigator.pop(context),
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
@@ -224,11 +237,14 @@ class _PetPurposeScreenState extends State<PetPurposeScreen> {
                     _PetStepBar(currentStep: 2),
                     const Align(
                       alignment: Alignment.centerRight,
-                      child: Text('Step 2 of 5',
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.w500)),
+                      child: Text(
+                        'Step 2 of 5',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 20),
                     // Title
@@ -248,18 +264,22 @@ class _PetPurposeScreenState extends State<PetPurposeScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('What is ${widget.petData.name} for?',
-                                    style: const TextStyle(
-                                        fontSize: 26,
-                                        fontWeight: FontWeight.bold,
-                                        color: AppColors.primary)),
+                                Text(
+                                  'What is ${widget.petData.name} for?',
+                                  style: const TextStyle(
+                                    fontSize: 26,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
                                 const SizedBox(height: 6),
                                 Text(
                                   'Select what ${widget.petData.name} is available for. You can only pick one.',
                                   style: const TextStyle(
-                                      fontSize: 13,
-                                      color: Color(0xFF666666),
-                                      height: 1.5),
+                                    fontSize: 13,
+                                    color: Color(0xFF666666),
+                                    height: 1.5,
+                                  ),
                                 ),
                               ],
                             ),
@@ -272,19 +292,30 @@ class _PetPurposeScreenState extends State<PetPurposeScreen> {
                     if (_selected == null)
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 10),
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFFFEE8EA),
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: const Row(children: [
-                          Icon(Icons.info_outline,
-                              size: 14, color: AppColors.primary),
-                          SizedBox(width: 8),
-                          Text('Select atleast one option above to continue.',
+                        child: const Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline,
+                              size: 14,
+                              color: AppColors.primary,
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              'Select atleast one option above to continue.',
                               style: TextStyle(
-                                  fontSize: 11, color: Color(0xFF888888))),
-                        ]),
+                                fontSize: 11,
+                                color: Color(0xFF888888),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     const SizedBox(height: 16),
                     // Breeding card
@@ -294,7 +325,10 @@ class _PetPurposeScreenState extends State<PetPurposeScreen> {
                           '${widget.petData.name} will appear in Breeding Discover for others to swipe.',
                       isSelected: _selected == 'Breeding',
                       onTap: () {
-                        setState(() => _selected = 'Breeding');
+                        setState(() {
+                          _selected = 'Breeding';
+                          _breedingGender = _requiredPartnerGender;
+                        });
                         _saveDraft();
                       },
                       expandedContent: _selected == 'Breeding'
@@ -303,10 +337,6 @@ class _PetPurposeScreenState extends State<PetPurposeScreen> {
                               petName: widget.petData.name,
                               sameBreedOnly: _sameBreedOnly,
                               vetVerifiedOnly: _vetVerifiedOnly,
-                              onGenderChanged: (v) {
-                                setState(() => _breedingGender = v);
-                                _saveDraft();
-                              },
                               onSameBreedChanged: (v) {
                                 setState(() => _sameBreedOnly = v);
                                 _saveDraft();
@@ -357,25 +387,27 @@ class _PetPurposeScreenState extends State<PetPurposeScreen> {
               ),
             ),
             Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
               child: SizedBox(
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
-                  onPressed: _selected != null ? _goNext : null,
+                  onPressed: _goNext,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,
-                    disabledBackgroundColor:
-                        AppColors.primary.withValues(alpha: 0.4),
+                    disabledBackgroundColor: AppColors.primary.withValues(
+                      alpha: 0.4,
+                    ),
                     elevation: 0,
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
-                  child: const Text('Continue to next step →',
-                      style: TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.w600)),
+                  child: const Text(
+                    'Continue to next step →',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
                 ),
               ),
             ),
@@ -411,14 +443,10 @@ class _PurposeCard extends StatelessWidget {
         duration: const Duration(milliseconds: 250),
         width: double.infinity,
         decoration: BoxDecoration(
-          color: isSelected
-              ? const Color(0xFFFFF0F5)
-              : Colors.white,
+          color: isSelected ? const Color(0xFFFFF0F5) : Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isSelected
-                ? AppColors.primary
-                : const Color(0xFFDDDDDD),
+            color: isSelected ? AppColors.primary : const Color(0xFFDDDDDD),
             width: isSelected ? 1.5 : 1,
           ),
         ),
@@ -435,9 +463,7 @@ class _PurposeCard extends StatelessWidget {
                     width: 24,
                     height: 24,
                     decoration: BoxDecoration(
-                      color: isSelected
-                          ? AppColors.primary
-                          : Colors.white,
+                      color: isSelected ? AppColors.primary : Colors.white,
                       borderRadius: BorderRadius.circular(6),
                       border: Border.all(
                         color: isSelected
@@ -447,8 +473,7 @@ class _PurposeCard extends StatelessWidget {
                       ),
                     ),
                     child: isSelected
-                        ? const Icon(Icons.check,
-                            color: Colors.white, size: 16)
+                        ? const Icon(Icons.check, color: Colors.white, size: 16)
                         : null,
                   ),
                   const SizedBox(width: 14),
@@ -456,21 +481,27 @@ class _PurposeCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(title,
-                            style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: isSelected
-                                    ? AppColors.primary
-                                    : const Color(0xFF222222))),
+                        Text(
+                          title,
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: isSelected
+                                ? AppColors.primary
+                                : const Color(0xFF222222),
+                          ),
+                        ),
                         const SizedBox(height: 4),
-                        Text(description,
-                            style: TextStyle(
-                                fontSize: 13,
-                                color: isSelected
-                                    ? AppColors.primary
-                                    : const Color(0xFF666666),
-                                height: 1.4)),
+                        Text(
+                          description,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: isSelected
+                                ? AppColors.primary
+                                : const Color(0xFF666666),
+                            height: 1.4,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -498,7 +529,6 @@ class _BreedingPrefs extends StatelessWidget {
   final String petName;
   final bool sameBreedOnly;
   final bool vetVerifiedOnly;
-  final ValueChanged<String> onGenderChanged;
   final ValueChanged<bool> onSameBreedChanged;
   final ValueChanged<bool> onVetVerifiedChanged;
 
@@ -507,7 +537,6 @@ class _BreedingPrefs extends StatelessWidget {
     required this.petName,
     required this.sameBreedOnly,
     required this.vetVerifiedOnly,
-    required this.onGenderChanged,
     required this.onSameBreedChanged,
     required this.onVetVerifiedChanged,
   });
@@ -517,33 +546,31 @@ class _BreedingPrefs extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Breeding Preferences',
-            style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF222222))),
+        const Text(
+          'Breeding Preferences',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF222222),
+          ),
+        ),
         const SizedBox(height: 4),
-        const Text('Looking for a partner that is',
-            style: TextStyle(fontSize: 12, color: Color(0xFF888888))),
+        const Text(
+          'Looking for a partner that is',
+          style: TextStyle(fontSize: 12, color: Color(0xFF888888)),
+        ),
         const SizedBox(height: 12),
-        // Gender chips
-        Wrap(spacing: 8, children: [
-          _GenderChip(
-              label: 'Male',
-              icon: Icons.male,
-              selected: gender == 'Male',
-              onTap: () => onGenderChanged('Male')),
-          _GenderChip(
-              label: 'Female',
-              icon: Icons.female,
-              selected: gender == 'Female',
-              onTap: () => onGenderChanged('Female')),
-          _GenderChip(
-              label: 'Any Gender',
-              icon: Icons.transgender,
-              selected: gender == 'Any Gender',
-              onTap: () => onGenderChanged('Any Gender')),
-        ]),
+        _GenderChip(
+          label: gender,
+          icon: gender == 'Female' ? Icons.female : Icons.male,
+          selected: true,
+          onTap: () {},
+        ),
+        const SizedBox(height: 6),
+        Text(
+          '$petName is ${gender == 'Female' ? 'male' : 'female'}, so Breedr automatically looks for a ${gender.toLowerCase()} partner.',
+          style: const TextStyle(fontSize: 11, color: Color(0xFF888888)),
+        ),
         const SizedBox(height: 16),
         _ToggleRow(
           title: 'Same breed only',
@@ -559,7 +586,8 @@ class _BreedingPrefs extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         _InfoNote(
-            'These preferences set your default filter when you open the Breeding tab. You can always change them in the filter settings.'),
+          'These preferences set your default filter when you open the Breeding tab. You can always change them in the filter settings.',
+        ),
       ],
     );
   }
@@ -593,38 +621,51 @@ class _AdoptionPrefs extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Adoption Details',
-            style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF222222))),
+        const Text(
+          'Adoption Details',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF222222),
+          ),
+        ),
         const SizedBox(height: 4),
-        Text('Is $petName free or for sale?',
-            style: const TextStyle(fontSize: 12, color: Color(0xFF888888))),
+        Text(
+          'Is $petName free or for sale?',
+          style: const TextStyle(fontSize: 12, color: Color(0xFF888888)),
+        ),
         const SizedBox(height: 12),
         // FREE / FOR SALE chips
-        Row(children: [
-          _TypeChip(
+        Row(
+          children: [
+            _TypeChip(
               label: 'FREE',
               selected: adoptionType == 'FREE',
-              onTap: () => onTypeChanged('FREE')),
-          const SizedBox(width: 8),
-          _TypeChip(
+              onTap: () => onTypeChanged('FREE'),
+            ),
+            const SizedBox(width: 8),
+            _TypeChip(
               label: 'FOR SALE',
               selected: adoptionType == 'FOR SALE',
-              onTap: () => onTypeChanged('FOR SALE')),
-        ]),
+              onTap: () => onTypeChanged('FOR SALE'),
+            ),
+          ],
+        ),
         const SizedBox(height: 12),
         if (adoptionType == 'FREE')
           _InfoNote(
-              'Free Adoption\n$petName will be listed as FREE. Adopters can request without any payment')
+            'Free Adoption\n$petName will be listed as FREE. Adopters can request without any payment',
+          )
         else ...[
-          const Text('SET YOUR ASKING PRICE',
-              style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.primary,
-                  letterSpacing: 0.8)),
+          const Text(
+            'SET YOUR ASKING PRICE',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: AppColors.primary,
+              letterSpacing: 0.8,
+            ),
+          ),
           const SizedBox(height: 8),
           Container(
             decoration: BoxDecoration(
@@ -632,53 +673,63 @@ class _AdoptionPrefs extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: const Color(0xFFDDDDDD)),
             ),
-            child: Row(children: [
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 12),
-                child: Text('₱',
+            child: Row(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(
+                    '₱',
                     style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF333333))),
-              ),
-              Expanded(
-                child: TextField(
-                  controller: priceCtrl,
-                  keyboardType: TextInputType.number,
-                  style: const TextStyle(fontSize: 14),
-                  decoration: const InputDecoration(
-                    border: InputBorder.none,
-                    contentPadding:
-                        EdgeInsets.symmetric(vertical: 12),
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF333333),
+                    ),
                   ),
                 ),
-              ),
-              GestureDetector(
-                onTap: () => onNegotiableChanged(!priceNegotiable),
-                child: Container(
-                  margin: const EdgeInsets.all(6),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: priceNegotiable
-                        ? const Color(0xFFE3F2FD)
-                        : const Color(0xFFF0F0F0),
-                    borderRadius: BorderRadius.circular(8),
+                Expanded(
+                  child: TextField(
+                    controller: priceCtrl,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(fontSize: 14),
+                    decoration: const InputDecoration(
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(vertical: 12),
+                    ),
                   ),
-                  child: Text('Negotiate',
+                ),
+                GestureDetector(
+                  onTap: () => onNegotiableChanged(!priceNegotiable),
+                  child: Container(
+                    margin: const EdgeInsets.all(6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: priceNegotiable
+                          ? const Color(0xFFE3F2FD)
+                          : const Color(0xFFF0F0F0),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'Negotiate',
                       style: TextStyle(
-                          fontSize: 11,
-                          color: priceNegotiable
-                              ? const Color(0xFF1DA1F2)
-                              : const Color(0xFF888888),
-                          fontWeight: FontWeight.w600)),
+                        fontSize: 11,
+                        color: priceNegotiable
+                            ? const Color(0xFF1DA1F2)
+                            : const Color(0xFF888888),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ]),
+              ],
+            ),
           ),
           const SizedBox(height: 8),
           _InfoNote(
-              'Payment is handled outside the app during the meetup. Breedr does not process payments'),
+            'Payment is handled outside the app during the meetup. Breedr does not process payments',
+          ),
           const SizedBox(height: 12),
           _ToggleRow(
             title: 'Price is negotiable',
@@ -688,11 +739,14 @@ class _AdoptionPrefs extends StatelessWidget {
           ),
         ],
         const SizedBox(height: 16),
-        const Text('Adoption Requirements',
-            style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF222222))),
+        const Text(
+          'Adoption Requirements',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF222222),
+          ),
+        ),
         const SizedBox(height: 12),
         _ToggleRow(
           title: 'No other pets at home',
@@ -702,7 +756,8 @@ class _AdoptionPrefs extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         _InfoNote(
-            'Free pets get more requests. You still need to review and approve each adopter yourself'),
+          'Free pets get more requests. You still need to review and approve each adopter yourself',
+        ),
       ],
     );
   }
@@ -715,40 +770,45 @@ class _GenderChip extends StatelessWidget {
   final IconData icon;
   final bool selected;
   final VoidCallback onTap;
-  const _GenderChip(
-      {required this.label,
-      required this.icon,
-      required this.selected,
-      required this.onTap});
+  const _GenderChip({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
           color: selected ? AppColors.primary : Colors.white,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-              color: selected
-                  ? AppColors.primary
-                  : const Color(0xFFDDDDDD)),
+            color: selected ? AppColors.primary : const Color(0xFFDDDDDD),
+          ),
         ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
               size: 14,
-              color: selected ? Colors.white : AppColors.primary),
-          const SizedBox(width: 4),
-          Text(label,
+              color: selected ? Colors.white : AppColors.primary,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
               style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: selected
-                      ? Colors.white
-                      : const Color(0xFF444444))),
-        ]),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: selected ? Colors.white : const Color(0xFF444444),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -758,35 +818,33 @@ class _TypeChip extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
-  const _TypeChip(
-      {required this.label,
-      required this.selected,
-      required this.onTap});
+  const _TypeChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
         decoration: BoxDecoration(
-          color: selected
-              ? const Color(0xFFFFE8EA)
-              : const Color(0xFFF0F0F0),
+          color: selected ? const Color(0xFFFFE8EA) : const Color(0xFFF0F0F0),
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-              color: selected
-                  ? AppColors.primary
-                  : const Color(0xFFDDDDDD)),
+            color: selected ? AppColors.primary : const Color(0xFFDDDDDD),
+          ),
         ),
-        child: Text(label,
-            style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-                color: selected
-                    ? AppColors.primary
-                    : const Color(0xFF888888))),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+            color: selected ? AppColors.primary : const Color(0xFF888888),
+          ),
+        ),
       ),
     );
   }
@@ -797,39 +855,49 @@ class _ToggleRow extends StatelessWidget {
   final String subtitle;
   final bool value;
   final ValueChanged<bool> onChanged;
-  const _ToggleRow(
-      {required this.title,
-      required this.subtitle,
-      required this.value,
-      required this.onChanged});
+  const _ToggleRow({
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Row(children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title,
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
                   style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: Color(0xFF333333))),
-              Text(subtitle,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF333333),
+                  ),
+                ),
+                Text(
+                  subtitle,
                   style: const TextStyle(
-                      fontSize: 11, color: Color(0xFF999999))),
-            ],
+                    fontSize: 11,
+                    color: Color(0xFF999999),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-        Switch(
-          value: value,
-          onChanged: onChanged,
-          activeThumbColor: AppColors.primary,
-          activeTrackColor: const Color(0xFFFFB3BB),
-        ),
-      ]),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeThumbColor: AppColors.primary,
+            activeTrackColor: const Color(0xFFFFB3BB),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -842,19 +910,26 @@ class _InfoNote extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-          color: const Color(0xFFFEE8EA),
-          borderRadius: BorderRadius.circular(8)),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Icon(Icons.location_on,
-            size: 13, color: AppColors.primary),
-        const SizedBox(width: 6),
-        Expanded(
-            child: Text(text,
-                style: const TextStyle(
-                    fontSize: 11,
-                    color: Color(0xFF888888),
-                    height: 1.4))),
-      ]),
+        color: const Color(0xFFFEE8EA),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.location_on, size: 13, color: AppColors.primary),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontSize: 11,
+                color: Color(0xFF888888),
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -882,9 +957,7 @@ class _PurposeEligibilityResult {
 class _PurposeEligibilityDialog extends StatelessWidget {
   final _PurposeEligibilityResult result;
 
-  const _PurposeEligibilityDialog({
-    required this.result,
-  });
+  const _PurposeEligibilityDialog({required this.result});
 
   @override
   Widget build(BuildContext context) {
@@ -903,11 +976,7 @@ class _PurposeEligibilityDialog extends StatelessWidget {
                 color: Color(0xFFFFCDD5),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
-                Icons.pets,
-                color: AppColors.primary,
-                size: 34,
-              ),
+              child: const Icon(Icons.pets, color: AppColors.primary, size: 34),
             ),
             const SizedBox(height: 18),
             Text(
@@ -949,9 +1018,7 @@ class _PurposeEligibilityDialog extends StatelessWidget {
                 color: const Color(0xFFEFFFF0),
                 borderColor: const Color(0xFFC8F1C7),
                 icon: Icons.event_available,
-                rows: [
-                  _EligibilityRow('Eligible on', result.eligibleOn!),
-                ],
+                rows: [_EligibilityRow('Eligible on', result.eligibleOn!)],
               ),
             ],
             const SizedBox(height: 24),
@@ -1070,10 +1137,7 @@ class _PetAge {
   final int amount;
   final String unit;
 
-  const _PetAge({
-    required this.amount,
-    required this.unit,
-  });
+  const _PetAge({required this.amount, required this.unit});
 
   int get totalWeeks {
     if (unit.startsWith('week')) return amount;
@@ -1107,28 +1171,33 @@ class _PetStepBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       height: 72,
-      child: Stack(alignment: Alignment.center, children: [
-        Positioned.fill(
-          child: Row(children: [
-            const SizedBox(width: 28),
-            Expanded(child: _StepLine(active: currentStep > 1)),
-            const SizedBox(width: 56),
-            Expanded(child: _StepLine(active: currentStep > 2)),
-            const SizedBox(width: 56),
-            Expanded(child: _StepLine(active: currentStep > 3)),
-            const SizedBox(width: 56),
-            Expanded(child: _StepLine(active: currentStep > 4)),
-            const SizedBox(width: 28),
-          ]),
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            for (int i = 1; i <= 5; i++)
-              _StepDot(step: i, current: currentStep),
-          ],
-        ),
-      ]),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Positioned.fill(
+            child: Row(
+              children: [
+                const SizedBox(width: 28),
+                Expanded(child: _StepLine(active: currentStep > 1)),
+                const SizedBox(width: 56),
+                Expanded(child: _StepLine(active: currentStep > 2)),
+                const SizedBox(width: 56),
+                Expanded(child: _StepLine(active: currentStep > 3)),
+                const SizedBox(width: 56),
+                Expanded(child: _StepLine(active: currentStep > 4)),
+                const SizedBox(width: 28),
+              ],
+            ),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              for (int i = 1; i <= 5; i++)
+                _StepDot(step: i, current: currentStep),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1147,23 +1216,24 @@ class _StepDot extends StatelessWidget {
         shape: BoxShape.circle,
         color: isActive ? AppColors.primary : const Color(0xFFFFF0F5),
         border: Border.all(
-          color: isActive
-              ? AppColors.primary
-              : const Color(0xFFFFB3C1),
+          color: isActive ? AppColors.primary : const Color(0xFFFFB3C1),
           width: isActive ? 0 : 2,
         ),
         boxShadow: isActive
             ? [
                 BoxShadow(
-                    color: AppColors.primary.withValues(alpha: 0.45),
-                    blurRadius: 18,
-                    spreadRadius: 2)
+                  color: AppColors.primary.withValues(alpha: 0.45),
+                  blurRadius: 18,
+                  spreadRadius: 2,
+                ),
               ]
             : [],
       ),
-      child: Icon(Icons.pets,
-          size: 22,
-          color: isActive ? Colors.white : const Color(0xFFFFB3C1)),
+      child: Icon(
+        Icons.pets,
+        size: 22,
+        color: isActive ? Colors.white : const Color(0xFFFFB3C1),
+      ),
     );
   }
 }

@@ -25,6 +25,7 @@ class PetListingData {
   final double? longitude;
   final File? profilePhotoFile;
   final List<File> additionalPhotoFiles;
+  final List<File> additionalVideoFiles;
 
   final String? purpose;
   final String breedingPreferredGender;
@@ -58,6 +59,7 @@ class PetListingData {
     this.longitude,
     this.profilePhotoFile,
     this.additionalPhotoFiles = const [],
+    this.additionalVideoFiles = const [],
     this.purpose,
     this.breedingPreferredGender = 'Male',
     this.sameBreedOnly = true,
@@ -95,8 +97,12 @@ class PetListingData {
       'latitude': latitude,
       'longitude': longitude,
       'profilePhotoPath': profilePhotoFile?.path,
-      'additionalPhotoPaths':
-          additionalPhotoFiles.map((file) => file.path).toList(),
+      'additionalPhotoPaths': additionalPhotoFiles
+          .map((file) => file.path)
+          .toList(),
+      'additionalVideoPaths': additionalVideoFiles
+          .map((file) => file.path)
+          .toList(),
       'purpose': purpose,
       'breedingPreferredGender': breedingPreferredGender,
       'sameBreedOnly': sameBreedOnly,
@@ -105,10 +111,12 @@ class PetListingData {
       'price': price,
       'noOtherPets': noOtherPets,
       'priceNegotiable': priceNegotiable,
-      'interviewQuestions':
-          interviewQuestions.map((question) => question.toDraftJson()).toList(),
-      'healthRecords':
-          healthRecords.map((record) => record.toDraftJson()).toList(),
+      'interviewQuestions': interviewQuestions
+          .map((question) => question.toDraftJson())
+          .toList(),
+      'healthRecords': healthRecords
+          .map((record) => record.toDraftJson())
+          .toList(),
     };
   }
 
@@ -116,6 +124,9 @@ class PetListingData {
     final profilePhotoPath = json['profilePhotoPath'] as String?;
     final additionalPhotoPaths =
         (json['additionalPhotoPaths'] as List<dynamic>? ?? [])
+            .whereType<String>();
+    final additionalVideoPaths =
+        (json['additionalVideoPaths'] as List<dynamic>? ?? [])
             .whereType<String>();
 
     return PetListingData(
@@ -138,6 +149,10 @@ class PetListingData {
       longitude: (json['longitude'] as num?)?.toDouble(),
       profilePhotoFile: _fileFromPath(profilePhotoPath),
       additionalPhotoFiles: additionalPhotoPaths
+          .map(_fileFromPath)
+          .whereType<File>()
+          .toList(),
+      additionalVideoFiles: additionalVideoPaths
           .map(_fileFromPath)
           .whereType<File>()
           .toList(),
@@ -188,6 +203,7 @@ class PetListingData {
     double? longitude,
     File? profilePhotoFile,
     List<File>? additionalPhotoFiles,
+    List<File>? additionalVideoFiles,
     String? purpose,
     String? breedingPreferredGender,
     bool? sameBreedOnly,
@@ -219,6 +235,7 @@ class PetListingData {
       longitude: longitude ?? this.longitude,
       profilePhotoFile: profilePhotoFile ?? this.profilePhotoFile,
       additionalPhotoFiles: additionalPhotoFiles ?? this.additionalPhotoFiles,
+      additionalVideoFiles: additionalVideoFiles ?? this.additionalVideoFiles,
       purpose: purpose ?? this.purpose,
       breedingPreferredGender:
           breedingPreferredGender ?? this.breedingPreferredGender,
@@ -236,6 +253,7 @@ class PetListingData {
   Map<String, dynamic> toFirestore({
     String profilePhotoUrl = '',
     List<String> additionalImageUrls = const [],
+    List<String> additionalVideoUrls = const [],
   }) {
     final displayBreed = mixedBreedDisplayName(
       isMixedBreed: isMixedBreed,
@@ -269,6 +287,7 @@ class PetListingData {
       'longitude': longitude,
       'petProfilePhoto': profilePhotoUrl,
       'additionalImages': additionalImageUrls,
+      'additionalVideos': additionalVideoUrls,
       'purpose': purpose?.toLowerCase(),
       'breedingPreferences': isBreeding
           ? {
@@ -288,8 +307,9 @@ class PetListingData {
       'adoptionStatus': isAdoption ? 'active' : null,
       'reservedFor': null,
       'approvedRequestId': null,
-      'interviewQuestions':
-          interviewQuestions.map((question) => question.toMap()).toList(),
+      'interviewQuestions': interviewQuestions
+          .map((question) => question.toMap())
+          .toList(),
       'healthRecords': healthRecords.map((record) => record.toMap()).toList(),
       'hasProfilePhoto': profilePhotoUrl.isNotEmpty,
       'hasHealthRecords': hasHealthRecords,
@@ -337,8 +357,9 @@ class PetInterviewQuestion {
       questionId: json['questionId'] as String? ?? '',
       type: json['type'] as String? ?? 'textAnswer',
       text: json['text'] as String? ?? '',
-      choices:
-          (json['choices'] as List<dynamic>? ?? []).whereType<String>().toList(),
+      choices: (json['choices'] as List<dynamic>? ?? [])
+          .whereType<String>()
+          .toList(),
       required: json['required'] as bool? ?? true,
       order: json['order'] as int? ?? 0,
     );
@@ -351,6 +372,7 @@ class PetHealthRecordData {
   final File? file;
   final String fileUrl;
   final String dateIssued;
+  final String nextUpdate;
   final String veterinarian;
   final String clinic;
 
@@ -360,6 +382,7 @@ class PetHealthRecordData {
     this.file,
     this.fileUrl = '',
     this.dateIssued = '',
+    this.nextUpdate = '',
     this.veterinarian = '',
     this.clinic = '',
   });
@@ -370,16 +393,14 @@ class PetHealthRecordData {
       'fileName': fileName,
       'fileUrl': fileUrl,
       'dateIssued': dateIssued,
+      'nextUpdate': nextUpdate,
       'veterinarian': veterinarian,
       'clinic': clinic,
     };
   }
 
   Map<String, dynamic> toDraftJson() {
-    return {
-      ...toMap(),
-      'filePath': file?.path,
-    };
+    return {...toMap(), 'filePath': file?.path};
   }
 
   factory PetHealthRecordData.fromDraftJson(Map<String, dynamic> json) {
@@ -392,6 +413,8 @@ class PetHealthRecordData {
       file: file,
       fileUrl: json['fileUrl'] as String? ?? '',
       dateIssued: json['dateIssued'] as String? ?? '',
+      nextUpdate:
+          json['nextUpdate'] as String? ?? json['nextDue'] as String? ?? '',
       veterinarian: json['veterinarian'] as String? ?? '',
       clinic: json['clinic'] as String? ?? '',
     );
@@ -403,6 +426,7 @@ class PetHealthRecordData {
     File? file,
     String? fileUrl,
     String? dateIssued,
+    String? nextUpdate,
     String? veterinarian,
     String? clinic,
   }) {
@@ -412,6 +436,7 @@ class PetHealthRecordData {
       file: file ?? this.file,
       fileUrl: fileUrl ?? this.fileUrl,
       dateIssued: dateIssued ?? this.dateIssued,
+      nextUpdate: nextUpdate ?? this.nextUpdate,
       veterinarian: veterinarian ?? this.veterinarian,
       clinic: clinic ?? this.clinic,
     );

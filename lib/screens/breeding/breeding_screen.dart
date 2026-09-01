@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/breed_options.dart';
 import '../../services/breeding_match_service.dart';
@@ -10,7 +11,8 @@ import '../../services/user_session_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/breedr_network_image.dart';
 import '../chat/chats_screen.dart';
-import '../owner/owner_ratings_screen.dart';
+import '../adoption/owner_profile_screen.dart';
+import '../adoption/pet_adoption_profile_screen.dart';
 import '../pet/pet_registration_screen.dart';
 import 'match_screen.dart';
 
@@ -31,6 +33,7 @@ class _BreedingScreenState extends State<BreedingScreen> {
   bool _pendingInitialLocationSearch = true;
   int _locationSearchRun = 0;
   String? _selectedSpecies;
+  String? _filterPetId;
   _BreedingFilter _filter = const _BreedingFilter();
 
   @override
@@ -73,6 +76,17 @@ class _BreedingScreenState extends State<BreedingScreen> {
       if (!mounted || run != _locationSearchRun) return;
       setState(() => _showLocationSearch = false);
     });
+  }
+
+  void _selectBreedingPet(_BreedingPet pet, int index) {
+    _locationSearchRun++;
+    _selectedMyPetIndex = index;
+    _candidateIndex = 0;
+    _filterPetId = pet.id;
+    _filter = _BreedingFilter.fromPetPreferences(pet);
+    _showDetails = false;
+    _showLocationSearch = false;
+    _pendingInitialLocationSearch = true;
   }
 
   bool _isEligibleBreedingCandidate(
@@ -141,6 +155,9 @@ class _BreedingScreenState extends State<BreedingScreen> {
             final selectedPet = myPets.isEmpty
                 ? null
                 : myPets[_selectedMyPetIndex];
+            if (selectedPet != null && _filterPetId != selectedPet.id) {
+              _selectBreedingPet(selectedPet, _selectedMyPetIndex);
+            }
             if (_pendingInitialLocationSearch && selectedPet != null) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (!mounted || !_pendingInitialLocationSearch) return;
@@ -166,13 +183,19 @@ class _BreedingScreenState extends State<BreedingScreen> {
             }
 
             return StreamBuilder<Set<String>>(
+              key: ValueKey<String>(
+                'breeding-swipes-${selectedPet?.id ?? 'none'}',
+              ),
               stream: selectedPet == null
                   ? null
                   : BreedingMatchService.instance.watchSwipedPetIds(
                       selectedPet.id,
                     ),
-              initialData: const <String>{},
               builder: (context, swipeSnapshot) {
+                final swipeHistoryLoading =
+                    selectedPet != null &&
+                    swipeSnapshot.connectionState == ConnectionState.waiting &&
+                    !swipeSnapshot.hasData;
                 final swipedIds = swipeSnapshot.data ?? const <String>{};
                 final candidates = compatibleCandidates
                     .where(
@@ -197,16 +220,7 @@ class _BreedingScreenState extends State<BreedingScreen> {
                       pets: myPets,
                       selectedIndex: _selectedMyPetIndex,
                       onPetSelected: (index) => setState(() {
-                        final currentSpecies = myPets.isEmpty
-                            ? ''
-                            : myPets[_selectedMyPetIndex].species;
-                        final nextSpecies = myPets[index].species;
-                        _selectedMyPetIndex = index;
-                        _candidateIndex = 0;
-                        if (currentSpecies != nextSpecies) {
-                          _filter = const _BreedingFilter();
-                        }
-                        _showDetails = false;
+                        _selectBreedingPet(myPets[index], index);
                       }),
                     ),
                     Padding(
@@ -222,7 +236,8 @@ class _BreedingScreenState extends State<BreedingScreen> {
                     ),
                     Expanded(
                       child:
-                          (_showLocationSearch ||
+                          (swipeHistoryLoading ||
+                                  _showLocationSearch ||
                                   _pendingInitialLocationSearch) &&
                               selectedPet != null
                           ? _LocationSearchView(
@@ -447,6 +462,9 @@ class _BreedingPet {
   final List<String> breedTags;
   final String age;
   final String gender;
+  final String preferredGender;
+  final bool sameBreedOnly;
+  final bool preferenceVetVerifiedOnly;
   final String color;
   final String size;
   final String about;
@@ -455,6 +473,7 @@ class _BreedingPet {
   final double? longitude;
   final String photoUrl;
   final List<String> additionalImages;
+  final List<String> additionalVideos;
   final List<Map<String, dynamic>> healthRecords;
   final bool vetVerified;
   final String status;
@@ -466,6 +485,7 @@ class _BreedingPet {
   final DateTime? adminHiddenUntil;
   final String moderationListingStatus;
   final DateTime? moderationHiddenUntil;
+  final String moderationSourceAction;
 
   const _BreedingPet({
     required this.id,
@@ -478,6 +498,9 @@ class _BreedingPet {
     required this.breedTags,
     required this.age,
     required this.gender,
+    required this.preferredGender,
+    required this.sameBreedOnly,
+    required this.preferenceVetVerifiedOnly,
     required this.color,
     required this.size,
     required this.about,
@@ -486,6 +509,7 @@ class _BreedingPet {
     required this.longitude,
     required this.photoUrl,
     required this.additionalImages,
+    required this.additionalVideos,
     required this.healthRecords,
     required this.vetVerified,
     required this.status,
@@ -497,6 +521,7 @@ class _BreedingPet {
     required this.adminHiddenUntil,
     required this.moderationListingStatus,
     required this.moderationHiddenUntil,
+    required this.moderationSourceAction,
   });
 
   factory _BreedingPet.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -508,10 +533,14 @@ class _BreedingPet {
           data['additionalPhotoUrls'] ??
           data['morePhotos'],
     );
+    final additionalVideos = _stringListFromAny(data['additionalVideos']);
     final breed = data['breed'] as String? ?? '';
     final primaryBreed = data['primaryBreed'] as String? ?? '';
     final secondaryBreed = data['secondaryBreed'] as String? ?? '';
     final isMixedBreed = data['isMixedBreed'] as bool? ?? false;
+    final breedingPreferences = Map<String, dynamic>.from(
+      data['breedingPreferences'] as Map? ?? const <String, dynamic>{},
+    );
     final storedBreedTags =
         (data['breedTags'] as List?)?.whereType<String>().toList() ??
         const <String>[];
@@ -535,6 +564,10 @@ class _BreedingPet {
       breedTags: derivedBreedTags,
       age: data['age'] as String? ?? '',
       gender: data['gender'] as String? ?? '',
+      preferredGender: breedingPreferences['preferredGender'] as String? ?? '',
+      sameBreedOnly: breedingPreferences['sameBreedOnly'] as bool? ?? false,
+      preferenceVetVerifiedOnly:
+          breedingPreferences['vetVerifiedOnly'] as bool? ?? false,
       color: data['color'] as String? ?? '',
       size: data['breedSize'] as String? ?? '',
       about: data['about'] as String? ?? '',
@@ -546,6 +579,7 @@ class _BreedingPet {
           (data['profilePhoto'] as String?) ??
           '',
       additionalImages: additionalImages,
+      additionalVideos: additionalVideos,
       healthRecords: rawRecords
           .whereType<Map>()
           .map((record) => Map<String, dynamic>.from(record))
@@ -558,15 +592,22 @@ class _BreedingPet {
                   data['purpose'] as String? ??
                   '')
               .toString(),
-      adminListingStatus:
-          (data['adminListingStatus'] ?? '').toString().trim().toLowerCase(),
+      adminListingStatus: (data['adminListingStatus'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase(),
       adminHidden: data['adminHidden'] as bool? ?? false,
       adminRemoved: data['adminRemoved'] as bool? ?? false,
       adminHiddenUntil: _dateTimeFromAny(data['adminHiddenUntil']),
-      moderationListingStatus:
-          (data['moderationListingStatus'] ?? '').toString().trim().toLowerCase(),
-      moderationHiddenUntil:
-          _dateTimeFromAny(data['moderationHiddenUntil']),
+      moderationListingStatus: (data['moderationListingStatus'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase(),
+      moderationHiddenUntil: _dateTimeFromAny(data['moderationHiddenUntil']),
+      moderationSourceAction: (data['moderationSourceAction'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase(),
     );
   }
 
@@ -614,6 +655,8 @@ class _BreedingPet {
   bool get isHiddenByAdmin {
     if (moderationListingStatus == 'removed') return true;
     if (moderationListingStatus == 'hidden') {
+      // Compatibility repair for listings hidden by the old warning flow.
+      if (moderationSourceAction == 'warned') return false;
       final until = moderationHiddenUntil;
       return until == null || until.isAfter(DateTime.now());
     }
@@ -720,6 +763,7 @@ DateTime? _dateTimeFromAny(Object? value) {
 
 class _BreedingFilter {
   final String breed;
+  final String requiredGender;
   final int? minAgeMonths;
   final int? maxAgeMonths;
   final bool vaccinatedOnly;
@@ -727,19 +771,32 @@ class _BreedingFilter {
 
   const _BreedingFilter({
     this.breed = 'Any Breed',
+    this.requiredGender = '',
     this.minAgeMonths,
     this.maxAgeMonths,
     this.vaccinatedOnly = false,
     this.vetVerifiedOnly = false,
   });
 
+  factory _BreedingFilter.fromPetPreferences(_BreedingPet pet) {
+    return _BreedingFilter(
+      breed: pet.sameBreedOnly && pet.breed.trim().isNotEmpty
+          ? pet.breed
+          : 'Any Breed',
+      requiredGender: pet.preferredGender,
+      vetVerifiedOnly: pet.preferenceVetVerifiedOnly,
+    );
+  }
+
   bool matches(_BreedingPet pet) {
+    if (requiredGender.trim().isNotEmpty &&
+        pet.gender.trim().toLowerCase() !=
+            requiredGender.trim().toLowerCase()) {
+      return false;
+    }
     if (breed != 'Any Breed') {
       final target = breed.trim().toLowerCase();
-      final petBreeds = [
-        pet.breed,
-        ...pet.breedTags,
-      ]
+      final petBreeds = [pet.breed, ...pet.breedTags]
           .map((value) => value.trim().toLowerCase())
           .where((value) => value.isNotEmpty)
           .toSet();
@@ -766,6 +823,7 @@ class _BreedingFilter {
 
   _BreedingFilter copyWith({
     String? breed,
+    String? requiredGender,
     int? minAgeMonths,
     int? maxAgeMonths,
     bool clearMinAge = false,
@@ -775,6 +833,7 @@ class _BreedingFilter {
   }) {
     return _BreedingFilter(
       breed: breed ?? this.breed,
+      requiredGender: requiredGender ?? this.requiredGender,
       minAgeMonths: clearMinAge ? null : minAgeMonths ?? this.minAgeMonths,
       maxAgeMonths: clearMaxAge ? null : maxAgeMonths ?? this.maxAgeMonths,
       vaccinatedOnly: vaccinatedOnly ?? this.vaccinatedOnly,
@@ -1242,7 +1301,7 @@ class _BreedingPetCardState extends State<_BreedingPetCard>
                         child: Transform(
                           alignment: Alignment.bottomCenter,
                           transform: Matrix4.identity()
-                            ..translate(_dragX)
+                            ..translateByDouble(_dragX, 0, 0, 1)
                             ..rotateZ(angle),
                           child: _PhotoHero(
                             pet: widget.pet,
@@ -1356,6 +1415,26 @@ class _ExpandedPetProfile extends StatelessWidget {
                     species: pet.species,
                   ),
                 ],
+                if (pet.additionalVideos.isNotEmpty) ...[
+                  const SizedBox(height: 18),
+                  const _ThinDivider(),
+                  const SizedBox(height: 14),
+                  _SectionTitle('VIDEOS OF ${pet.name.toUpperCase()}'),
+                  const SizedBox(height: 10),
+                  ...pet.additionalVideos.indexed.map(
+                    (entry) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: OutlinedButton.icon(
+                        onPressed: () => launchUrl(
+                          Uri.parse(entry.$2),
+                          mode: LaunchMode.externalApplication,
+                        ),
+                        icon: const Icon(Icons.play_circle_outline),
+                        label: Text('Play video ${entry.$1 + 1}'),
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 _ActionButtons(onPass: onPass, onLike: onLike),
                 const SizedBox(height: 18),
@@ -1414,6 +1493,48 @@ class _PhotoHeroState extends State<_PhotoHero> {
     setState(() => _index++);
   }
 
+  Future<void> _showReportListingSheet() async {
+    final pet = widget.pet;
+    final submitted = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => PetListingReportSheet(
+        target: PetListingReportTarget(
+          petId: pet.id,
+          petName: pet.name,
+          species: pet.species,
+          breed: pet.breed,
+          purpose: 'breeding',
+          profilePhoto: pet.photoUrl,
+          ownerId: pet.ownerId,
+          ownerName: pet.ownerName,
+        ),
+      ),
+    );
+    if (submitted != true || !mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text('Report Submitted', textAlign: TextAlign.center),
+        content: const Text(
+          'Thanks for helping keep the community safe. We will review this listing as soon as possible.',
+          textAlign: TextAlign.center,
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final pet = widget.pet;
@@ -1455,6 +1576,37 @@ class _PhotoHeroState extends State<_PhotoHero> {
             activeIndex: _index,
           ),
         ),
+        if (widget.expanded &&
+            UserSessionService.instance.currentUser?.uid != pet.ownerId)
+          Positioned(
+            top: 26,
+            right: 10,
+            child: Material(
+              color: Colors.black45,
+              shape: const CircleBorder(),
+              child: PopupMenuButton<String>(
+                tooltip: 'More options',
+                color: Colors.white,
+                icon: const Icon(Icons.more_vert, color: Colors.white),
+                onSelected: (value) {
+                  if (value == 'report') _showReportListingSheet();
+                },
+                itemBuilder: (context) => const [
+                  PopupMenuItem(
+                    value: 'report',
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.flag, color: Color(0xFFE93535), size: 18),
+                        SizedBox(width: 8),
+                        Text('Report this Listing'),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         Positioned(
           left: 0,
           right: 0,
@@ -1883,20 +2035,21 @@ class _OwnerCard extends StatelessWidget {
         final handle = data?['userName'] as String? ?? '';
         final location = data?['locationName'] as String? ?? pet.locationName;
         final photoUrl = data?['profilePhoto'] as String? ?? pet.ownerPhoto;
-        void openRatings() => Navigator.push(
+        void openProfile() => Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => OwnerRatingsScreen(
+            builder: (_) => OwnerProfileScreen(
               ownerId: pet.ownerId,
               fallbackName: ownerName,
               fallbackPhoto: photoUrl,
-              initialFilter: OwnerReviewFilter.petOwner,
+              ratingPurpose: 'breeding',
+              showReportAction: true,
             ),
           ),
         );
 
         return InkWell(
-          onTap: openRatings,
+          onTap: openProfile,
           borderRadius: BorderRadius.circular(12),
           child: Container(
             padding: const EdgeInsets.all(14),
@@ -1954,8 +2107,8 @@ class _OwnerCard extends StatelessWidget {
                       ),
                     ),
                     IconButton(
-                      tooltip: 'View owner ratings',
-                      onPressed: openRatings,
+                      tooltip: 'View owner profile',
+                      onPressed: openProfile,
                       icon: const Icon(
                         Icons.chevron_right,
                         color: AppColors.primary,
@@ -1993,8 +2146,11 @@ class _OwnerStats extends StatelessWidget {
               .snapshots(),
           builder: (context, petsSnapshot) {
             final reviews = reviewsSnapshot.data?.docs ?? [];
+            final breedingReviews = reviews
+                .where((review) => review.data()['purpose'] == 'breeding')
+                .toList();
             final petsListed = petsSnapshot.data?.docs.length ?? 0;
-            final average = _averageBreedingRating(reviews);
+            final average = _averageBreedingRating(breedingReviews);
 
             return Column(
               children: [
@@ -2011,10 +2167,12 @@ class _OwnerStats extends StatelessWidget {
                     const SizedBox(width: 8),
                     Expanded(
                       child: _StatBox(
-                        value: reviews.isEmpty
+                        value: breedingReviews.isEmpty
                             ? '0'
-                            : reviews.length.toString(),
-                        label: reviews.length == 1 ? 'Review' : 'Reviews',
+                            : breedingReviews.length.toString(),
+                        label: breedingReviews.length == 1
+                            ? 'Review'
+                            : 'Reviews',
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -2026,7 +2184,7 @@ class _OwnerStats extends StatelessWidget {
                     ),
                   ],
                 ),
-                if (reviews.isEmpty) ...[
+                if (breedingReviews.isEmpty) ...[
                   const SizedBox(height: 10),
                   Container(
                     width: double.infinity,
@@ -2068,7 +2226,7 @@ class _OwnerStats extends StatelessWidget {
         .toList();
     if (ratings.isEmpty) return null;
 
-    return ratings.reduce((sum, rating) => sum + rating) / ratings.length;
+    return ratings.reduce((total, rating) => total + rating) / ratings.length;
   }
 }
 
@@ -2968,6 +3126,7 @@ class _FilterSheetState extends State<_FilterSheet> {
       context,
       _BreedingFilter(
         breed: _selectedBreed,
+        requiredGender: widget.initialFilter.requiredGender,
         minAgeMonths: minAge,
         maxAgeMonths: maxAge,
         vaccinatedOnly: _vaccinatedOnly,
@@ -3466,7 +3625,7 @@ class _RequirementToggle extends StatelessWidget {
           ),
           Switch(
             value: value,
-            activeColor: Colors.white,
+            activeThumbColor: Colors.white,
             activeTrackColor: AppColors.primary,
             inactiveThumbColor: Colors.white,
             inactiveTrackColor: const Color(0xFFF28A93),

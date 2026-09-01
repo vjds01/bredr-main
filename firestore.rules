@@ -140,6 +140,15 @@ service cloud.firestore {
         resource.data.ownerId == request.auth.uid;
     }
 
+    match /petPublicationKeys/{publicationKeyId} {
+      allow read: if signedIn();
+      allow create: if signedIn() &&
+        request.resource.data.ownerId == request.auth.uid;
+      allow update: if signedIn() &&
+        resource.data.ownerId == request.auth.uid &&
+        request.resource.data.ownerId == request.auth.uid;
+    }
+
     match /swipes/{swipeId} {
       allow read: if signedIn();
       allow create, update: if signedIn();
@@ -190,6 +199,21 @@ service cloud.firestore {
         allow create: if isAdmin() ||
           (signedIn() &&
           request.resource.data.senderId == request.auth.uid &&
+          (
+            !request.resource.data.keys().hasAny(['mediaType']) ||
+            (
+              request.resource.data.type == 'media' &&
+              request.resource.data.mediaType in ['image', 'video'] &&
+              request.resource.data.mediaUrl is string &&
+              request.resource.data.mediaUrl.size() > 0 &&
+              request.resource.data.mediaSizeBytes is int &&
+              request.resource.data.mediaSizeBytes >= 0 &&
+              (
+                request.resource.data.mediaType != 'video' ||
+                request.resource.data.mediaSizeBytes <= 52428800
+              )
+            )
+          ) &&
           request.auth.uid in
             get(/databases/$(database)/documents/conversations/$(conversationId))
               .data.participantIds &&

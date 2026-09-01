@@ -4,6 +4,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../../services/user_session_service.dart';
+import '../../services/cabuyao_barangay_service.dart';
 import '../../theme/app_colors.dart';
 
 class LocationSettingsScreen extends StatefulWidget {
@@ -72,13 +73,18 @@ class _LocationSettingsScreenState extends State<LocationSettingsScreen> {
         position.longitude,
       );
       final place = placemarks.isNotEmpty ? placemarks.first : null;
-      final locationName = [
-        place?.subLocality,
-        place?.locality,
-      ].whereType<String>().where((part) => part.trim().isNotEmpty).join(', ');
+      var locationName = await CabuyaoBarangayService.fromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+      locationName ??= CabuyaoBarangayService.fromPlacemark(place);
+      if (locationName == null) {
+        _showMessage('Breedr is available in Cabuyao only.');
+        return;
+      }
 
       final detected = _BarangayLocation(
-        name: locationName.isNotEmpty ? locationName : 'Detected Location',
+        name: locationName,
         city: '',
         latitude: position.latitude,
         longitude: position.longitude,
@@ -106,19 +112,37 @@ class _LocationSettingsScreenState extends State<LocationSettingsScreen> {
       return;
     }
 
+    var latitude = location.latitude;
+    var longitude = location.longitude;
+    if (latitude == 0 && longitude == 0) {
+      final coordinates =
+          await CabuyaoBarangayService.representativeCoordinatesFor(
+            location.displayName,
+          );
+      latitude = coordinates?.$1 ?? latitude;
+      longitude = coordinates?.$2 ?? longitude;
+    }
+    final canonical = CabuyaoBarangayService.canonicalName(
+      location.displayName,
+    );
+    final locationName = canonical == null
+        ? location.displayName
+        : CabuyaoBarangayService.format(canonical);
     final payload = {
-      'locationName': location.displayName,
-      'latitude': location.latitude,
-      'longitude': location.longitude,
+      'locationName': locationName,
+      'barangay': canonical ?? location.name,
+      'city': 'Cabuyao Laguna',
+      'latitude': latitude,
+      'longitude': longitude,
       'updatedAt': FieldValue.serverTimestamp(),
     };
 
     try {
       if (target == _LocationTarget.user) {
-        await _firestore.collection('users').doc(user.uid).set(
-              payload,
-              SetOptions(merge: true),
-            );
+        await _firestore
+            .collection('users')
+            .doc(user.uid)
+            .set(payload, SetOptions(merge: true));
       } else if (target == _LocationTarget.allPets) {
         final pets = await _firestore
             .collection('pets')
@@ -130,10 +154,10 @@ class _LocationSettingsScreenState extends State<LocationSettingsScreen> {
         }
         await batch.commit();
       } else if (target == _LocationTarget.pet && petId != null) {
-        await _firestore.collection('pets').doc(petId).set(
-              payload,
-              SetOptions(merge: true),
-            );
+        await _firestore
+            .collection('pets')
+            .doc(petId)
+            .set(payload, SetOptions(merge: true));
       }
 
       if (!mounted) return;
@@ -150,9 +174,9 @@ class _LocationSettingsScreenState extends State<LocationSettingsScreen> {
 
   void _showMessage(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -160,9 +184,7 @@ class _LocationSettingsScreenState extends State<LocationSettingsScreen> {
     final user = UserSessionService.instance.currentUser;
 
     if (user == null) {
-      return const Scaffold(
-        body: Center(child: Text('Please sign in again.')),
-      );
+      return const Scaffold(body: Center(child: Text('Please sign in again.')));
     }
 
     return Scaffold(
@@ -228,15 +250,6 @@ class _LocationSettingsScreenState extends State<LocationSettingsScreen> {
                             const _SmallLabel('UPDATE LOCATION'),
                             const SizedBox(height: 4),
                             _ActionRow(
-                              title: 'Search your barangay',
-                              subtitle: 'Type the barangay you live in',
-                              onTap: () => _openSearch(
-                                target: _LocationTarget.user,
-                                currentLocation: locationName,
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            _ActionRow(
                               title: _detecting
                                   ? 'Finding your location...'
                                   : 'Detect current location',
@@ -268,9 +281,9 @@ class _LocationSettingsScreenState extends State<LocationSettingsScreen> {
                               onApplyAll: pets.isEmpty
                                   ? null
                                   : () => _openSearch(
-                                        target: _LocationTarget.allPets,
-                                        currentLocation: locationName,
-                                      ),
+                                      target: _LocationTarget.allPets,
+                                      currentLocation: locationName,
+                                    ),
                               onPetTap: (pet) => _openSearch(
                                 target: _LocationTarget.pet,
                                 petId: pet.id,
@@ -324,7 +337,8 @@ class _SearchLocationScreenState extends State<SearchLocationScreen> {
   @override
   void initState() {
     super.initState();
-    _selected = _cabuyaoBarangays
+    _selected =
+        _cabuyaoBarangays
             .where((location) => location.displayName == widget.currentLocation)
             .isNotEmpty
         ? _cabuyaoBarangays.firstWhere(
@@ -355,7 +369,10 @@ class _SearchLocationScreenState extends State<SearchLocationScreen> {
                 children: [
                   IconButton(
                     onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.arrow_back, color: AppColors.primary),
+                    icon: const Icon(
+                      Icons.arrow_back,
+                      color: AppColors.primary,
+                    ),
                   ),
                   const SizedBox(width: 4),
                   const Text(
@@ -376,16 +393,20 @@ class _SearchLocationScreenState extends State<SearchLocationScreen> {
                   hintText: 'Barangay',
                   filled: true,
                   fillColor: Colors.white,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 12,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(4),
                     borderSide: const BorderSide(color: Color(0xFF777777)),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(4),
-                    borderSide:
-                        const BorderSide(color: AppColors.primary, width: 1.3),
+                    borderSide: const BorderSide(
+                      color: AppColors.primary,
+                      width: 1.3,
+                    ),
                   ),
                 ),
               ),
@@ -412,7 +433,7 @@ class _SearchLocationScreenState extends State<SearchLocationScreen> {
                       ? const _EmptyLocationSearch()
                       : ListView.separated(
                           itemCount: _filtered.length,
-                          separatorBuilder: (_, __) => const Divider(
+                          separatorBuilder: (_, _) => const Divider(
                             height: 1,
                             color: Color(0xFFFFCAD5),
                           ),
@@ -422,7 +443,8 @@ class _SearchLocationScreenState extends State<SearchLocationScreen> {
                             return _BarangayTile(
                               location: location,
                               selected: isSelected,
-                              current: location.displayName ==
+                              current:
+                                  location.displayName ==
                                   widget.currentLocation,
                               onTap: () => setState(() {
                                 _selected = location;
@@ -475,10 +497,14 @@ class _LocationMapCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final display = locationName.trim().isEmpty ? 'Location not set' : locationName;
+    final display = locationName.trim().isEmpty
+        ? 'Location not set'
+        : locationName;
     final parts = display.split(',').map((part) => part.trim()).toList();
     final title = parts.isNotEmpty ? parts.first : display;
-    final subtitle = parts.length > 1 ? parts.skip(1).join(', ') : 'Cabuyao, Laguna';
+    final subtitle = parts.length > 1
+        ? parts.skip(1).join(', ')
+        : 'Cabuyao, Laguna';
 
     return Container(
       decoration: BoxDecoration(
@@ -629,8 +655,10 @@ class _PetsLocationCard extends StatelessWidget {
                   style: TextButton.styleFrom(
                     foregroundColor: AppColors.primary,
                     backgroundColor: const Color(0xFFFFDDE6),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(18),
                     ),
@@ -659,7 +687,8 @@ class _PetsLocationCard extends StatelessWidget {
               final data = pet.data();
               final name = data['name'] as String? ?? 'Pet';
               final breed = data['breed'] as String? ?? '';
-              final photo = data['petProfilePhoto'] as String? ??
+              final photo =
+                  data['petProfilePhoto'] as String? ??
                   data['profilePhoto'] as String? ??
                   '';
               final location =
@@ -722,9 +751,7 @@ class _PetLocationRow extends StatelessWidget {
                         if (breed.isNotEmpty)
                           TextSpan(
                             text: '  •  $breed',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                            ),
+                            style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
                       ],
                     ),
@@ -778,10 +805,7 @@ class _BarangayTile extends StatelessWidget {
             CircleAvatar(
               radius: 24,
               backgroundColor: location.assetColor.withValues(alpha: 0.28),
-              child: Icon(
-                Icons.location_city,
-                color: location.assetColor,
-              ),
+              child: Icon(Icons.location_city, color: location.assetColor),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -1065,69 +1089,15 @@ class _BarangayLocation {
 
 enum _LocationTarget { user, allPets, pet }
 
-const _cabuyaoBarangays = [
-  _BarangayLocation(
-    name: 'Barangay Banay Banay',
-    city: 'Cabuyao City, Laguna',
-    latitude: 14.2738,
-    longitude: 121.1253,
-    distanceText: '0.3km away',
-    assetColor: Color(0xFF7C5636),
-  ),
-  _BarangayLocation(
-    name: 'Barangay Banlic',
-    city: 'Cabuyao City, Laguna',
-    latitude: 14.2774,
-    longitude: 121.1096,
-    distanceText: '1.4km away',
-    assetColor: Color(0xFF74A8B8),
-  ),
-  _BarangayLocation(
-    name: 'Barangay Bigaa',
-    city: 'Cabuyao City, Laguna',
-    latitude: 14.2913,
-    longitude: 121.1111,
-    distanceText: '1.3km away',
-    assetColor: Color(0xFF61A1C8),
-  ),
-  _BarangayLocation(
-    name: 'Barangay Butong',
-    city: 'Cabuyao City, Laguna',
-    latitude: 14.2722,
-    longitude: 121.1172,
-    distanceText: '1.5km away',
-    assetColor: Color(0xFFE7B64D),
-  ),
-  _BarangayLocation(
-    name: 'Barangay Casile',
-    city: 'Cabuyao City, Laguna',
-    latitude: 14.2436,
-    longitude: 121.1469,
-    distanceText: '1.7km away',
-    assetColor: Color(0xFF8ABF62),
-  ),
-  _BarangayLocation(
-    name: 'Barangay Niugan',
-    city: 'Cabuyao City, Laguna',
-    latitude: 14.2879,
-    longitude: 121.1326,
-    distanceText: '0.8km away',
-    assetColor: Color(0xFFB992E8),
-  ),
-  _BarangayLocation(
-    name: 'Barangay Sala',
-    city: 'Cabuyao City, Laguna',
-    latitude: 14.2483,
-    longitude: 121.1183,
-    distanceText: '0.1km away',
-    assetColor: Color(0xFFDB8A72),
-  ),
-  _BarangayLocation(
-    name: 'Barangay Mamatid',
-    city: 'Cabuyao City, Laguna',
-    latitude: 14.2538,
-    longitude: 121.1376,
-    distanceText: '3.0km away',
-    assetColor: Color(0xFF78B4A5),
-  ),
-];
+final _cabuyaoBarangays = CabuyaoBarangayService.barangays
+    .map(
+      (barangay) => _BarangayLocation(
+        name: CabuyaoBarangayService.format(barangay),
+        city: '',
+        latitude: 0,
+        longitude: 0,
+        distanceText: 'Cabuyao Laguna',
+        assetColor: const Color(0xFFB992E8),
+      ),
+    )
+    .toList(growable: false);

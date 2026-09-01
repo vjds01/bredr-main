@@ -172,6 +172,7 @@ class AdoptionListing {
   final DateTime? adminHiddenUntil;
   final String moderationListingStatus;
   final DateTime? moderationHiddenUntil;
+  final String moderationSourceAction;
   final String? reservedFor;
   final String? approvedRequestId;
   final String listingCycleId;
@@ -214,6 +215,7 @@ class AdoptionListing {
     required this.adminHiddenUntil,
     required this.moderationListingStatus,
     required this.moderationHiddenUntil,
+    required this.moderationSourceAction,
     required this.reservedFor,
     required this.approvedRequestId,
     required this.listingCycleId,
@@ -287,12 +289,15 @@ class AdoptionListing {
           data['petProfilePhoto'] as String? ??
           data['profilePhoto'] as String? ??
           '',
-      additionalImages: _stringListFromAny(
-        data['additionalImages'] ??
-            data['additionalPhotos'] ??
-            data['additionalPhotoUrls'] ??
-            data['morePhotos'],
-      ),
+      additionalImages: <String>[
+        ..._stringListFromAny(
+          data['additionalImages'] ??
+              data['additionalPhotos'] ??
+              data['additionalPhotoUrls'] ??
+              data['morePhotos'],
+        ),
+        ..._stringListFromAny(data['additionalVideos']),
+      ],
       healthRecords:
           (data['healthRecords'] as List?)
               ?.whereType<Map>()
@@ -323,6 +328,10 @@ class AdoptionListing {
           .trim()
           .toLowerCase(),
       moderationHiddenUntil: _dateTimeFromAny(data['moderationHiddenUntil']),
+      moderationSourceAction: (data['moderationSourceAction'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase(),
       reservedFor: data['reservedFor'] as String?,
       approvedRequestId: data['approvedRequestId'] as String?,
       listingCycleId:
@@ -369,6 +378,9 @@ class AdoptionListing {
   bool get isHiddenByAdmin {
     if (moderationListingStatus == 'removed') return true;
     if (moderationListingStatus == 'hidden') {
+      // Older admin warnings incorrectly hid every listing indefinitely.
+      // A warning is notice-only, so those legacy records remain visible.
+      if (moderationSourceAction == 'warned') return false;
       final until = moderationHiddenUntil;
       return until == null || until.isAfter(DateTime.now());
     }

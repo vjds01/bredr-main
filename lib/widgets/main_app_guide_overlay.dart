@@ -225,6 +225,8 @@ class _TapZone extends StatelessWidget {
   }
 }
 
+// Retained so older guide configurations can still be restored safely.
+// ignore: unused_element
 class _LegacyGuideCardPreview extends StatelessWidget {
   final MainAppGuideStep step;
   final int currentIndex;
@@ -249,33 +251,33 @@ class _LegacyGuideCardPreview extends StatelessWidget {
     return Material(
       color: Colors.white.withValues(alpha: 0.62),
       child: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(12, 18, 12, 24),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: constraints.maxHeight - 42,
-                  ),
-                  child: Align(
-                    alignment: _alignmentFor(step.placement),
-                    child: _GuideCard(
-                      stepNumber: currentIndex + 1,
-                      totalSteps: total,
-                      title: step.title,
-                      body: step.body,
-                      previewType: step.previewType,
-                      isFirst: isFirst,
-                      isLast: isLast,
-                      onSkip: onSkip,
-                      onBack: onBack,
-                      onNext: onNext,
-                    ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(12, 18, 12, 24),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: constraints.maxHeight - 42,
+                ),
+                child: Align(
+                  alignment: _alignmentFor(step.placement),
+                  child: _GuideCard(
+                    stepNumber: currentIndex + 1,
+                    totalSteps: total,
+                    title: step.title,
+                    body: step.body,
+                    previewType: step.previewType,
+                    isFirst: isFirst,
+                    isLast: isLast,
+                    onSkip: onSkip,
+                    onBack: onBack,
+                    onNext: onNext,
                   ),
                 ),
-              );
-            },
-          ),
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -425,10 +427,7 @@ class _GuideButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
           ),
         ),
-        child: Text(
-          label,
-          style: const TextStyle(fontWeight: FontWeight.w900),
-        ),
+        child: Text(label, style: const TextStyle(fontWeight: FontWeight.w900)),
       );
     }
 
@@ -438,14 +437,9 @@ class _GuideButton extends StatelessWidget {
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
-      child: Text(
-        label,
-        style: const TextStyle(fontWeight: FontWeight.w900),
-      ),
+      child: Text(label, style: const TextStyle(fontWeight: FontWeight.w900)),
     );
   }
 }
@@ -468,33 +462,33 @@ class _GuidePreview extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: switch (type) {
         GuidePreviewType.breedingWelcome => const _BreedingGuidePreview(
-            focus: _BreedingFocus.card,
-          ),
+          focus: _BreedingFocus.card,
+        ),
         GuidePreviewType.breedingCard => const _BreedingGuidePreview(
-            focus: _BreedingFocus.details,
-          ),
+          focus: _BreedingFocus.details,
+        ),
         GuidePreviewType.breedingLike => const _BreedingGuidePreview(
-            focus: _BreedingFocus.like,
-          ),
+          focus: _BreedingFocus.like,
+        ),
         GuidePreviewType.breedingPass => const _BreedingGuidePreview(
-            focus: _BreedingFocus.pass,
-          ),
+          focus: _BreedingFocus.pass,
+        ),
         GuidePreviewType.breedingSwipe => const _BreedingGuidePreview(
-            focus: _BreedingFocus.card,
-          ),
+          focus: _BreedingFocus.card,
+        ),
         GuidePreviewType.breedingFilter => const _BreedingGuidePreview(
-            focus: _BreedingFocus.filter,
-          ),
+          focus: _BreedingFocus.filter,
+        ),
         GuidePreviewType.breedingMatch => const _MatchGuidePreview(),
         GuidePreviewType.adoptionBrowse => const _AdoptionGuidePreview(
-            selected: 'Browse',
-          ),
+          selected: 'Browse',
+        ),
         GuidePreviewType.adoptionRequest => const _AdoptionGuidePreview(
-            selected: 'My Request',
-          ),
+          selected: 'My Request',
+        ),
         GuidePreviewType.adoptionListings => const _AdoptionGuidePreview(
-            selected: 'My Listings',
-          ),
+          selected: 'My Listings',
+        ),
         GuidePreviewType.chat => const _ChatGuidePreview(),
         GuidePreviewType.notifications => const _NotificationsGuidePreview(),
         GuidePreviewType.profile => const _ProfileGuidePreview(),
@@ -966,7 +960,9 @@ class _FocusWrap extends StatelessWidget {
       padding: EdgeInsets.all(active ? 4 : 0),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
-        border: active ? Border.all(color: AppColors.primary, width: 2.5) : null,
+        border: active
+            ? Border.all(color: AppColors.primary, width: 2.5)
+            : null,
         boxShadow: active
             ? [
                 BoxShadow(
@@ -1097,10 +1093,7 @@ class _AdoptionPetRow extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 8,
-          ),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8),
         ],
       ),
       child: Row(
@@ -1237,8 +1230,10 @@ class _NotificationMockRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(10),

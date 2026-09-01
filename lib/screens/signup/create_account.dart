@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../theme/app_colors.dart';
 import '../auth/welcome_screen.dart';
 import '../auth/login_screen.dart';
@@ -40,45 +41,49 @@ class _Step1AboutYouState extends State<Step1AboutYou> {
   //         ),
   //       ),
   //     ); old go next code 5/25
-  
+
   void _goNext() {
+    // VALIDATION
 
-  // VALIDATION
+    if (_nameCtrl.text.trim().isEmpty ||
+        _emailCtrl.text.trim().isEmpty ||
+        _usernameCtrl.text.trim().isEmpty ||
+        _passCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please complete all required fields.')),
+      );
 
-  if (_nameCtrl.text.trim().isEmpty ||
-      _emailCtrl.text.trim().isEmpty ||
-      _usernameCtrl.text.trim().isEmpty ||
-      _passCtrl.text.trim().isEmpty) {
+      return;
+    }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Please fill in all fields'),
-      ),
-    );
+    final email = _emailCtrl.text.trim();
+    final isValidEmail = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email);
+    if (!isValidEmail) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a valid email address.')),
+      );
+      return;
+    }
 
-    return;
-  }
+    // PASSWORD LENGTH CHECK
 
-  // PASSWORD LENGTH CHECK
+    if (_passCtrl.text.trim().length < 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Password must be at least 6 characters long.'),
+        ),
+      );
 
-  if (_passCtrl.text.trim().length < 6) {
+      return;
+    }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Password must be at least 6 characters'),
-      ),
-    );
-
-    return;
-  }
-
-  // NAVIGATE TO NEXT SCREEN ONLY
+    // NAVIGATE TO NEXT SCREEN ONLY
 
     final onboardingData = OnboardingData(
       authProvider: 'email',
       fullName: _nameCtrl.text.trim(),
       userName: _usernameCtrl.text.trim().toLowerCase(),
-      email: _emailCtrl.text.trim(),
+      email: email,
       password: _passCtrl.text.trim(),
     );
 
@@ -86,9 +91,7 @@ class _Step1AboutYouState extends State<Step1AboutYou> {
       context,
       MaterialPageRoute(
         builder: (_) => CabuyaoAccessGate(
-          child: WelcomeScreen(
-            onboardingData: onboardingData,
-          ),
+          child: WelcomeScreen(onboardingData: onboardingData),
         ),
       ),
     );
@@ -98,12 +101,29 @@ class _Step1AboutYouState extends State<Step1AboutYou> {
     setState(() => _isGoogleLoading = true);
 
     try {
-      final userCredential =
-          await UserSessionService.instance.signInWithGoogle();
+      final userCredential = await UserSessionService.instance
+          .signInWithGoogle();
       final user = userCredential.user;
 
       if (user == null) {
         throw Exception('Unable to sign in with Google');
+      }
+
+      final hasProfile = await UserSessionService.instance.hasBreedrProfile();
+      if (hasProfile) {
+        await UserSessionService.instance.signOut();
+        if (!mounted) return;
+
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const LoginScreen(
+              initialMessage:
+                  'An account with this email already exists. Please log in instead.',
+            ),
+          ),
+        );
+        return;
       }
 
       final email = user.email ?? '';
@@ -136,11 +156,9 @@ class _Step1AboutYouState extends State<Step1AboutYou> {
 
       debugPrint('Google sign up error: $e');
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_googleSignInMessage(e, signingUp: true)),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_googleSignUpMessage(e))));
     } finally {
       if (mounted) {
         setState(() => _isGoogleLoading = false);
@@ -154,32 +172,44 @@ class _Step1AboutYouState extends State<Step1AboutYou> {
     return cleaned.isEmpty ? 'breedr_user' : cleaned;
   }
 
-  String _googleSignInMessage(Object error, {required bool signingUp}) {
-    final action = signingUp ? 'sign-up' : 'login';
+  String _googleSignUpMessage(Object error) {
+    if (error is FirebaseAuthException) {
+      switch (error.code) {
+        case 'account-exists-with-different-credential':
+        case 'credential-already-in-use':
+          return 'An account with this email already exists. Please log in using its original sign-in method.';
+        case 'user-disabled':
+          return 'This account has been disabled. Please contact support.';
+        case 'too-many-requests':
+          return 'Too many sign-up attempts. Please wait and try again.';
+        case 'network-request-failed':
+          return 'Please check your internet connection and try again.';
+        case 'operation-not-allowed':
+          return 'Google sign-up is currently unavailable. Please contact support.';
+      }
+    }
+
     final message = error.toString().toLowerCase();
 
     if (message.contains('canceled') || message.contains('cancelled')) {
-      return 'Google $action was cancelled.';
+      return 'Google sign-up was cancelled.';
     }
     if (message.contains('clientconfigurationerror') ||
         message.contains('providerconfigurationerror') ||
         message.contains('developer console')) {
-      return 'Google $action is not configured correctly yet. Please contact support.';
+      return 'Google sign-up is not configured correctly. Please contact support.';
     }
     if (message.contains('uiunavailable')) {
-      return 'Google $action is unavailable on this device. Please try email sign-up.';
+      return 'Google sign-up is unavailable on this device. Please use email sign-up.';
     }
     if (message.contains('usermismatch')) {
       return 'Please use the same Google account and try again.';
-    }
-    if (message.contains('no breedr account')) {
-      return 'No Breedr account was found. Please sign up first.';
     }
     if (message.contains('network')) {
       return 'Please check your internet connection and try again.';
     }
 
-    return 'Google $action could not be completed. Please try again.';
+    return 'Google sign-up could not be completed. Please try again.';
   }
 
   @override
@@ -200,8 +230,11 @@ class _Step1AboutYouState extends State<Step1AboutYou> {
                     Padding(
                       padding: const EdgeInsets.only(top: 8, left: 0),
                       child: IconButton(
-                        icon: const Icon(Icons.arrow_back_ios,
-                            color: AppColors.primary, size: 20),
+                        icon: const Icon(
+                          Icons.arrow_back_ios,
+                          color: AppColors.primary,
+                          size: 20,
+                        ),
                         onPressed: () => Navigator.pop(context),
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
@@ -323,7 +356,8 @@ class _Step1AboutYouState extends State<Step1AboutYou> {
                           size: 20,
                         ),
                         onPressed: () => setState(
-                            () => _obscurePassword = !_obscurePassword),
+                          () => _obscurePassword = !_obscurePassword,
+                        ),
                       ),
                     ),
 
@@ -337,9 +371,12 @@ class _Step1AboutYouState extends State<Step1AboutYou> {
                         onPressed: _goNext,
                         style: OutlinedButton.styleFrom(
                           side: const BorderSide(
-                              color: AppColors.primary, width: 1.5),
+                            color: AppColors.primary,
+                            width: 1.5,
+                          ),
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                         child: const Text(
                           'Sign up',
@@ -360,13 +397,16 @@ class _Step1AboutYouState extends State<Step1AboutYou> {
                         onTap: () => Navigator.pushReplacement(
                           context,
                           MaterialPageRoute(
-                              builder: (_) => const LoginScreen()),
+                            builder: (_) => const LoginScreen(),
+                          ),
                         ),
                         child: RichText(
                           text: const TextSpan(
                             text: 'Already have an account? ',
                             style: TextStyle(
-                                color: Color(0xFF999999), fontSize: 13),
+                              color: Color(0xFF999999),
+                              fontSize: 13,
+                            ),
                             children: [
                               TextSpan(
                                 text: 'Log in here.',
@@ -391,9 +431,13 @@ class _Step1AboutYouState extends State<Step1AboutYou> {
                         Expanded(child: Divider(color: Color(0xFFDDDDDD))),
                         Padding(
                           padding: EdgeInsets.symmetric(horizontal: 12),
-                          child: Text('or',
-                              style: TextStyle(
-                                  color: Color(0xFF999999), fontSize: 13)),
+                          child: Text(
+                            'or',
+                            style: TextStyle(
+                              color: Color(0xFF999999),
+                              fontSize: 13,
+                            ),
+                          ),
                         ),
                         Expanded(child: Divider(color: Color(0xFFDDDDDD))),
                       ],
@@ -406,13 +450,15 @@ class _Step1AboutYouState extends State<Step1AboutYou> {
                       width: double.infinity,
                       height: 52,
                       child: OutlinedButton(
-                        onPressed:
-                            _isGoogleLoading ? null : _signUpWithGoogle,
+                        onPressed: _isGoogleLoading ? null : _signUpWithGoogle,
                         style: OutlinedButton.styleFrom(
                           side: const BorderSide(
-                              color: AppColors.primary, width: 1.5),
+                            color: AppColors.primary,
+                            width: 1.5,
+                          ),
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                           backgroundColor: Colors.white,
                         ),
                         child: _isGoogleLoading
@@ -432,13 +478,13 @@ class _Step1AboutYouState extends State<Step1AboutYou> {
                                     height: 22,
                                     errorBuilder: (context, error, stack) =>
                                         const Text(
-                                      'G',
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                        color: Color(0xFF4285F4),
-                                      ),
-                                    ),
+                                          'G',
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(0xFF4285F4),
+                                          ),
+                                        ),
                                   ),
                                   const SizedBox(width: 10),
                                   const Text(
@@ -462,18 +508,24 @@ class _Step1AboutYouState extends State<Step1AboutYou> {
                         textAlign: TextAlign.center,
                         text: const TextSpan(
                           style: TextStyle(
-                              fontSize: 11, color: Color(0xFF999999)),
+                            fontSize: 11,
+                            color: Color(0xFF999999),
+                          ),
                           children: [
-                            TextSpan(text: "By signing up, you agree to Breedr's "),
+                            TextSpan(
+                              text: "By signing up, you agree to Breedr's ",
+                            ),
                             TextSpan(
                               text: 'Terms of Service and Privacy Policy',
                               style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF666666)),
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF666666),
+                              ),
                             ),
                             TextSpan(
-                                text:
-                                    '. Your Google account will only be used for authentication.'),
+                              text:
+                                  '. Your Google account will only be used for authentication.',
+                            ),
                           ],
                         ),
                       ),
@@ -487,8 +539,7 @@ class _Step1AboutYouState extends State<Step1AboutYou> {
 
             // Continue to next step — pinned at bottom
             Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
               child: SizedBox(
                 width: double.infinity,
                 height: 52,
@@ -499,12 +550,12 @@ class _Step1AboutYouState extends State<Step1AboutYou> {
                     foregroundColor: Colors.white,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   child: const Text(
                     'Continue to next step →',
-                    style: TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w600),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                   ),
                 ),
               ),
@@ -566,15 +617,15 @@ class _InputField extends StatelessWidget {
       style: const TextStyle(fontSize: 14, color: Color(0xFF333333)),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle:
-            const TextStyle(color: Color(0xFFBBBBBB), fontSize: 14),
-        prefixIcon:
-            Icon(prefixIcon, color: const Color(0xFFBBBBBB), size: 20),
+        hintStyle: const TextStyle(color: Color(0xFFBBBBBB), fontSize: 14),
+        prefixIcon: Icon(prefixIcon, color: const Color(0xFFBBBBBB), size: 20),
         suffixIcon: suffixIcon,
         filled: true,
         fillColor: Colors.white,
-        contentPadding:
-            const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+        contentPadding: const EdgeInsets.symmetric(
+          vertical: 14,
+          horizontal: 16,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide.none,
@@ -585,8 +636,7 @@ class _InputField extends StatelessWidget {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide:
-              const BorderSide(color: AppColors.primary, width: 1.2),
+          borderSide: const BorderSide(color: AppColors.primary, width: 1.2),
         ),
       ),
     );

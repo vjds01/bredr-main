@@ -46,9 +46,9 @@ class _HealthVaultScreenState extends State<HealthVaultScreen> {
     if (result == null) return;
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Uploading health record...')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Uploading health record...')));
 
     try {
       final petData = pet.data() ?? const <String, dynamic>{};
@@ -63,7 +63,7 @@ class _HealthVaultScreenState extends State<HealthVaultScreen> {
         'fileName': result.fileName,
         'fileUrl': fileUrl,
         'dateIssued': result.dateIssued,
-        'nextDue': _nextDueDate(result.type, result.dateIssued),
+        'nextUpdate': result.nextUpdate,
         'veterinarian': result.veterinarian,
         'clinic': result.clinic,
         'verificationStatus': 'pending',
@@ -84,9 +84,9 @@ class _HealthVaultScreenState extends State<HealthVaultScreen> {
       });
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Health record saved.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Health record saved.')));
     } catch (error) {
       debugPrint('Health record save failed: $error');
       if (!mounted) return;
@@ -169,13 +169,12 @@ class _HealthVaultScreenState extends State<HealthVaultScreen> {
                         final data = pet.data();
                         return _HealthPetTab(
                           name: data['name'] as String? ?? 'Pet',
-                          photoUrl:
-                              data['petProfilePhoto'] as String? ?? '',
+                          photoUrl: data['petProfilePhoto'] as String? ?? '',
                           selected: pet.id == selectedPet?.id,
                           onTap: () => setState(() => _selectedPetId = pet.id),
                         );
                       },
-                      separatorBuilder: (_, __) => const SizedBox(width: 18),
+                      separatorBuilder: (_, _) => const SizedBox(width: 18),
                       itemCount: pets.length,
                     ),
                   ),
@@ -235,18 +234,16 @@ class _HealthVaultPetBody extends StatelessWidget {
           const _HealthNoRecordsCard()
         else
           ...records.asMap().entries.map(
-                (entry) => Padding(
-                  padding: const EdgeInsets.only(bottom: 14),
-                  child: _HealthVaultRecordCard(
-                    record: entry.value,
-                    onView: () => _showHealthRecordPreview(
-                      context,
-                      record: entry.value,
-                    ),
-                    onReplace: () => onReplace(entry.value, entry.key),
-                  ),
-                ),
+            (entry) => Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: _HealthVaultRecordCard(
+                record: entry.value,
+                onView: () =>
+                    _showHealthRecordPreview(context, record: entry.value),
+                onReplace: () => onReplace(entry.value, entry.key),
               ),
+            ),
+          ),
         const SizedBox(height: 6),
         _HealthAddButton(onTap: onAdd),
       ],
@@ -329,7 +326,7 @@ class _HealthDueSoonBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final nextDue = record['nextDue'] as String? ?? '';
+    final nextUpdate = _recordNextUpdate(record);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -359,9 +356,9 @@ class _HealthDueSoonBanner extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  nextDue.isEmpty
+                  nextUpdate.isEmpty
                       ? 'A health record is due soon. Upload a new record to keep the badge.'
-                      : 'Vaccination expires in $nextDue. Upload new record to keep badge.',
+                      : 'Next health update: $nextUpdate. Upload a new record when it is ready.',
                   style: const TextStyle(
                     color: Color(0xFFFF8A00),
                     fontSize: 11,
@@ -393,7 +390,7 @@ class _HealthVaultRecordCard extends StatelessWidget {
     final type = record['type'] as String? ?? 'Health Record';
     final fileName = record['fileName'] as String? ?? '';
     final dateIssued = record['dateIssued'] as String? ?? '';
-    final nextDue = record['nextDue'] as String? ?? '';
+    final nextUpdate = _recordNextUpdate(record);
     final dueSoon = _isDueSoonRecord(record);
 
     return Container(
@@ -452,7 +449,7 @@ class _HealthVaultRecordCard extends StatelessWidget {
               ),
               const SizedBox(width: 18),
               Expanded(
-                child: _HealthDateBox(label: 'NEXT DUE', value: nextDue),
+                child: _HealthDateBox(label: 'NEXT UPDATE', value: nextUpdate),
               ),
             ],
           ),
@@ -512,10 +509,7 @@ class _HealthStatusPill extends StatelessWidget {
   final String label;
   final bool dueSoon;
 
-  const _HealthStatusPill({
-    required this.label,
-    required this.dueSoon,
-  });
+  const _HealthStatusPill({required this.label, required this.dueSoon});
 
   @override
   Widget build(BuildContext context) {
@@ -541,10 +535,7 @@ class _HealthDateBox extends StatelessWidget {
   final String label;
   final String value;
 
-  const _HealthDateBox({
-    required this.label,
-    required this.value,
-  });
+  const _HealthDateBox({required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
@@ -605,10 +596,7 @@ class _HealthBlueButton extends StatelessWidget {
           foregroundColor: Colors.white,
           elevation: 0,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-          textStyle: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w900,
-          ),
+          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
         ),
       ),
     );
@@ -630,10 +618,7 @@ class _HealthAddButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-            color: const Color(0xFF0050B4),
-            width: 1.5,
-          ),
+          border: Border.all(color: const Color(0xFF0050B4), width: 1.5),
         ),
         child: const Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -735,6 +720,7 @@ class _HealthRecordEditResult {
   final String fileName;
   final File? file;
   final String dateIssued;
+  final String nextUpdate;
   final String veterinarian;
   final String clinic;
 
@@ -743,6 +729,7 @@ class _HealthRecordEditResult {
     required this.fileName,
     required this.file,
     required this.dateIssued,
+    required this.nextUpdate,
     required this.veterinarian,
     required this.clinic,
   });
@@ -751,9 +738,7 @@ class _HealthRecordEditResult {
 class _HealthRecordEditorDialog extends StatefulWidget {
   final Map<String, dynamic>? initialRecord;
 
-  const _HealthRecordEditorDialog({
-    this.initialRecord,
-  });
+  const _HealthRecordEditorDialog({this.initialRecord});
 
   @override
   State<_HealthRecordEditorDialog> createState() =>
@@ -762,11 +747,13 @@ class _HealthRecordEditorDialog extends StatefulWidget {
 
 class _HealthRecordEditorDialogState extends State<_HealthRecordEditorDialog> {
   final _dateController = TextEditingController();
+  final _nextUpdateController = TextEditingController();
   final _vetController = TextEditingController();
   final _clinicController = TextEditingController();
   String _type = 'Vaccination';
   String _fileName = '';
   File? _file;
+  bool _validationAttempted = false;
 
   static const _types = [
     'Vaccination',
@@ -784,6 +771,7 @@ class _HealthRecordEditorDialogState extends State<_HealthRecordEditorDialog> {
     _type = record['type'] as String? ?? _type;
     _fileName = record['fileName'] as String? ?? '';
     _dateController.text = record['dateIssued'] as String? ?? '';
+    _nextUpdateController.text = _recordNextUpdate(record);
     _vetController.text = record['veterinarian'] as String? ?? '';
     _clinicController.text = record['clinic'] as String? ?? '';
   }
@@ -791,6 +779,7 @@ class _HealthRecordEditorDialogState extends State<_HealthRecordEditorDialog> {
   @override
   void dispose() {
     _dateController.dispose();
+    _nextUpdateController.dispose();
     _vetController.dispose();
     _clinicController.dispose();
     super.dispose();
@@ -800,14 +789,36 @@ class _HealthRecordEditorDialogState extends State<_HealthRecordEditorDialog> {
     final now = DateTime.now();
     final picked = await showDatePicker(
       context: context,
-      initialDate: _parseHealthDate(_dateController.text) ??
+      initialDate:
+          _parseHealthDate(_dateController.text) ??
           _parseNamedHealthDate(_dateController.text) ??
           now,
       firstDate: DateTime(now.year - 30),
       lastDate: DateTime(now.year + 1),
     );
     if (picked == null) return;
-    setState(() => _dateController.text = _formatHealthDate(picked));
+    setState(() {
+      _dateController.text = _formatHealthDate(picked);
+      _nextUpdateController.text = _formatHealthDate(
+        DateTime(picked.year + 1, picked.month, picked.day),
+      );
+    });
+  }
+
+  Future<void> _pickNextUpdate() async {
+    final now = DateTime.now();
+    final initial =
+        _parseHealthDate(_nextUpdateController.text) ??
+        _parseNamedHealthDate(_nextUpdateController.text) ??
+        now.add(const Duration(days: 365));
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial.isBefore(now) ? now : initial,
+      firstDate: now,
+      lastDate: DateTime(now.year + 20),
+    );
+    if (picked == null) return;
+    setState(() => _nextUpdateController.text = _formatHealthDate(picked));
   }
 
   Future<void> _pickFile() async {
@@ -829,7 +840,9 @@ class _HealthRecordEditorDialogState extends State<_HealthRecordEditorDialog> {
       debugPrint('Health file picker failed: $error');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unable to open files. Please try again.')),
+        const SnackBar(
+          content: Text('Unable to open files. Please try again.'),
+        ),
       );
     }
   }
@@ -847,14 +860,12 @@ class _HealthRecordEditorDialogState extends State<_HealthRecordEditorDialog> {
   }
 
   void _submit() {
+    setState(() => _validationAttempted = true);
     if (_fileName.isEmpty ||
         _dateController.text.trim().isEmpty ||
+        _nextUpdateController.text.trim().isEmpty ||
+        _vetController.text.trim().isEmpty ||
         _clinicController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please upload a record, select a date, and choose a clinic.'),
-        ),
-      );
       return;
     }
 
@@ -872,6 +883,7 @@ class _HealthRecordEditorDialogState extends State<_HealthRecordEditorDialog> {
           fileName: _fileName,
           file: _file,
           dateIssued: _dateController.text.trim(),
+          nextUpdate: _nextUpdateController.text.trim(),
           veterinarian: _vetController.text.trim(),
           clinic: _clinicController.text.trim(),
         ),
@@ -904,10 +916,7 @@ class _HealthRecordEditorDialogState extends State<_HealthRecordEditorDialog> {
                 ),
                 IconButton(
                   onPressed: () => Navigator.pop(context),
-                  icon: const Icon(
-                    Icons.cancel,
-                    color: Color(0xFF1D78FF),
-                  ),
+                  icon: const Icon(Icons.cancel, color: Color(0xFF1D78FF)),
                 ),
               ],
             ),
@@ -957,6 +966,25 @@ class _HealthRecordEditorDialogState extends State<_HealthRecordEditorDialog> {
               readOnly: true,
               onTap: _pickDate,
               suffix: Icons.calendar_month_outlined,
+              errorText:
+                  _validationAttempted && _dateController.text.trim().isEmpty
+                  ? 'Date Issued is required.'
+                  : null,
+            ),
+            const SizedBox(height: 12),
+            const _HealthEditorLabel('NEXT UPDATE'),
+            const SizedBox(height: 8),
+            _HealthEditorField(
+              controller: _nextUpdateController,
+              hint: 'Select next update date',
+              readOnly: true,
+              onTap: _pickNextUpdate,
+              suffix: Icons.event_repeat_outlined,
+              errorText:
+                  _validationAttempted &&
+                      _nextUpdateController.text.trim().isEmpty
+                  ? 'Next Update is required.'
+                  : null,
             ),
             const SizedBox(height: 12),
             const _HealthEditorLabel('ISSUED BY'),
@@ -969,6 +997,11 @@ class _HealthRecordEditorDialogState extends State<_HealthRecordEditorDialog> {
             _HealthEditorField(
               controller: _vetController,
               hint: 'Enter name of veterinarian...',
+              errorText:
+                  _validationAttempted && _vetController.text.trim().isEmpty
+                  ? 'Veterinarian name is required.'
+                  : null,
+              onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 8),
             const Text(
@@ -990,7 +1023,36 @@ class _HealthRecordEditorDialogState extends State<_HealthRecordEditorDialog> {
                   setState(() => _clinicController.text = clinic);
                 }
               },
+              errorText:
+                  _validationAttempted && _clinicController.text.trim().isEmpty
+                  ? 'Veterinary clinic is required.'
+                  : null,
             ),
+            if (_validationAttempted &&
+                (_fileName.isEmpty ||
+                    _dateController.text.trim().isEmpty ||
+                    _nextUpdateController.text.trim().isEmpty ||
+                    _vetController.text.trim().isEmpty ||
+                    _clinicController.text.trim().isEmpty)) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(11),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFE5E8),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFE04455)),
+                ),
+                child: const Text(
+                  'Please complete all required health-record information.',
+                  style: TextStyle(
+                    color: Color(0xFFB32635),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 18),
             SizedBox(
               width: double.infinity,
@@ -1042,6 +1104,8 @@ class _HealthEditorField extends StatelessWidget {
   final bool readOnly;
   final VoidCallback? onTap;
   final IconData? suffix;
+  final String? errorText;
+  final ValueChanged<String>? onChanged;
 
   const _HealthEditorField({
     required this.controller,
@@ -1049,6 +1113,8 @@ class _HealthEditorField extends StatelessWidget {
     this.readOnly = false,
     this.onTap,
     this.suffix,
+    this.errorText,
+    this.onChanged,
   });
 
   @override
@@ -1057,12 +1123,14 @@ class _HealthEditorField extends StatelessWidget {
       controller: controller,
       readOnly: readOnly,
       onTap: onTap,
+      onChanged: onChanged,
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: const TextStyle(color: Color(0xFFAAAAAA), fontSize: 11),
         suffixIcon: suffix == null
             ? null
             : Icon(suffix, color: const Color(0xFF0050B4), size: 18),
+        errorText: errorText,
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 10,
@@ -1239,8 +1307,8 @@ class _ClinicPickerDialogState extends State<_ClinicPickerDialog> {
     final results = query.isEmpty
         ? _clinics
         : _clinics
-            .where((clinic) => clinic.toLowerCase().contains(query))
-            .toList();
+              .where((clinic) => clinic.toLowerCase().contains(query))
+              .toList();
 
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
@@ -1277,10 +1345,7 @@ class _ClinicPickerDialogState extends State<_ClinicPickerDialog> {
               controller: _searchController,
               onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
-                prefixIcon: const Icon(
-                  Icons.search,
-                  color: Color(0xFF0050B4),
-                ),
+                prefixIcon: const Icon(Icons.search, color: Color(0xFF0050B4)),
                 hintText: 'Search veterinary clinic...',
                 isDense: true,
                 border: OutlineInputBorder(
@@ -1302,7 +1367,7 @@ class _ClinicPickerDialogState extends State<_ClinicPickerDialog> {
               child: ListView.separated(
                 shrinkWrap: true,
                 itemCount: results.length,
-                separatorBuilder: (_, __) =>
+                separatorBuilder: (_, _) =>
                     const Divider(height: 1, color: Color(0xFFE8E8E8)),
                 itemBuilder: (context, index) {
                   final clinic = results[index];
@@ -1311,7 +1376,10 @@ class _ClinicPickerDialogState extends State<_ClinicPickerDialog> {
                     leading: const CircleAvatar(
                       radius: 18,
                       backgroundColor: Color(0xFFEAF3FF),
-                      child: Icon(Icons.local_hospital, color: Color(0xFF0050B4)),
+                      child: Icon(
+                        Icons.local_hospital,
+                        color: Color(0xFF0050B4),
+                      ),
                     ),
                     title: Text(
                       clinic,
@@ -1343,9 +1411,7 @@ class _ClinicPickerDialogState extends State<_ClinicPickerDialog> {
 class _HealthVerificationDialog extends StatelessWidget {
   final VoidCallback onConfirm;
 
-  const _HealthVerificationDialog({
-    required this.onConfirm,
-  });
+  const _HealthVerificationDialog({required this.onConfirm});
 
   @override
   Widget build(BuildContext context) {
@@ -1485,7 +1551,7 @@ String _formatHealthDate(DateTime date) {
   return '${months[date.month - 1]} ${date.day}, ${date.year}';
 }
 
-String _nextDueDate(String type, String dateIssued) {
+String _suggestedNextUpdate(String dateIssued) {
   final issued =
       _parseHealthDate(dateIssued) ?? _parseNamedHealthDate(dateIssued);
   if (issued == null) return '';
@@ -1507,8 +1573,9 @@ DateTime? _parseNamedHealthDate(String value) {
     'november': 11,
     'december': 12,
   };
-  final match = RegExp(r'^([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})$')
-      .firstMatch(value.trim());
+  final match = RegExp(
+    r'^([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})$',
+  ).firstMatch(value.trim());
   if (match == null) return null;
   final month = months[match.group(1)!.toLowerCase()];
   final day = int.tryParse(match.group(2)!);
@@ -1518,9 +1585,16 @@ DateTime? _parseNamedHealthDate(String value) {
 }
 
 bool _isDueSoonRecord(Map<String, dynamic> record) {
-  final rawDue = record['nextDue'] as String? ?? '';
+  final rawDue = _recordNextUpdate(record);
   final due = _parseNamedHealthDate(rawDue) ?? _parseHealthDate(rawDue);
   if (due == null) return false;
   final now = DateTime.now();
   return due.difference(now).inDays <= 45;
+}
+
+String _recordNextUpdate(Map<String, dynamic> record) {
+  final stored =
+      (record['nextUpdate'] ?? record['nextDue'])?.toString().trim() ?? '';
+  if (stored.isNotEmpty) return stored;
+  return _suggestedNextUpdate(record['dateIssued']?.toString() ?? '');
 }

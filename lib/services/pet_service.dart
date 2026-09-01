@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/pet_listing_data.dart';
@@ -93,6 +95,16 @@ class PetService {
       }
     }
 
+    final additionalVideoUrls = <String>[];
+    for (final video in pet.additionalVideoFiles) {
+      if (await video.length() > 50 * 1024 * 1024) {
+        throw const CloudinaryUploadException(
+          'Videos must be 50 MB or smaller.',
+        );
+      }
+      additionalVideoUrls.add(await _cloudinary.uploadVideoOrThrow(video));
+    }
+
     final petWithOwner = pet.copyWith(
       ownerId: user.uid,
       ownerName: userData?['fullName'] as String? ?? user.displayName ?? '',
@@ -103,20 +115,49 @@ class PetService {
     final petData = petWithOwner.toFirestore(
       profilePhotoUrl: profilePhotoUrl,
       additionalImageUrls: additionalImageUrls,
+      additionalVideoUrls: additionalVideoUrls,
     );
 
-    final document = await _firestore.collection('pets').add({
-      ...petData,
-      'duplicateKey': duplicateKey,
-      'normalizedName': _normalizeText(pet.name),
-      'normalizedSpecies': _normalizeText(pet.species),
-      'normalizedPurpose': purpose,
+    final document = _firestore.collection('pets').doc();
+    final publicationKey = _firestore
+        .collection('petPublicationKeys')
+        .doc(_publicationKeyId(duplicateKey));
+    await _firestore.runTransaction((transaction) async {
+      final keySnapshot = await transaction.get(publicationKey);
+      final existingPetId = keySnapshot.data()?['petId'] as String?;
+
+      if (existingPetId != null && existingPetId.isNotEmpty) {
+        final existingPet = await transaction.get(
+          _firestore.collection('pets').doc(existingPetId),
+        );
+        final status = _normalizeText(
+          (existingPet.data()?['status'] ?? '').toString(),
+        );
+        if (existingPet.exists && !_isTerminalPetStatus(status)) {
+          throw DuplicatePetListingException(pet.name);
+        }
+      }
+
+      transaction.set(document, {
+        ...petData,
+        'duplicateKey': duplicateKey,
+        'normalizedName': _normalizeText(pet.name),
+        'normalizedSpecies': _normalizeText(pet.species),
+        'normalizedPurpose': purpose,
+      });
+      transaction.set(publicationKey, {
+        'ownerId': user.uid,
+        'petId': document.id,
+        'duplicateKey': duplicateKey,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
     });
 
     return PetPublishResult(
       document: document,
       profilePhotoUrl: profilePhotoUrl,
       additionalImageUrls: additionalImageUrls,
+      additionalVideoUrls: additionalVideoUrls,
     );
   }
 
@@ -191,6 +232,10 @@ class PetService {
     return value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
   }
 
+  String _publicationKeyId(String duplicateKey) {
+    return base64Url.encode(utf8.encode(duplicateKey)).replaceAll('=', '');
+  }
+
   Future<List<PetHealthRecordData>> _uploadHealthRecords(
     List<PetHealthRecordData> records,
   ) async {
@@ -224,10 +269,12 @@ class PetPublishResult {
   final DocumentReference<Map<String, dynamic>> document;
   final String profilePhotoUrl;
   final List<String> additionalImageUrls;
+  final List<String> additionalVideoUrls;
 
   const PetPublishResult({
     required this.document,
     required this.profilePhotoUrl,
     required this.additionalImageUrls,
+    this.additionalVideoUrls = const [],
   });
 }

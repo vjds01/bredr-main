@@ -3,7 +3,6 @@ import '../../theme/app_colors.dart';
 import '../../widgets/breedr_logo.dart';
 import 'location_permission_screen.dart';
 import 'login_screen.dart';
-import 'cabuyao_access_gate_screen.dart';
 
 class GetStartedScreen extends StatelessWidget {
   const GetStartedScreen({super.key});
@@ -46,9 +45,7 @@ class GetStartedScreen extends StatelessWidget {
                     onPressed: () => Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => const CabuyaoAccessGate(
-                          child: LocationPermissionScreen(),
-                        ),
+                        builder: (_) => const LocationPermissionScreen(),
                       ),
                     ),
                     style: ElevatedButton.styleFrom(

@@ -41,9 +41,9 @@ class _AdoptionBrowseScreenState extends State<AdoptionBrowseScreen>
   void initState() {
     super.initState();
     _tabController = TabController(
-      length: 4,
+      length: 3,
       vsync: this,
-      initialIndex: widget.initialTab.clamp(0, 3).toInt(),
+      initialIndex: widget.initialTab.clamp(0, 2).toInt(),
     );
     widget.activationSignal?.addListener(_handleActivation);
     _startLocationSearch();
@@ -76,10 +76,8 @@ class _AdoptionBrowseScreenState extends State<AdoptionBrowseScreen>
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (_) => _AdoptionFilterSheet(
-        initialFilter: _filter,
-        listings: listings,
-      ),
+      builder: (_) =>
+          _AdoptionFilterSheet(initialFilter: _filter, listings: listings),
     );
     if (filter == null || !mounted) return;
     setState(() => _filter = filter);
@@ -99,15 +97,24 @@ class _AdoptionBrowseScreenState extends State<AdoptionBrowseScreen>
       );
     }
 
+    if (widget.initialTab == 3) {
+      return const _AdoptionHistoryScreen();
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFFFF5F8),
       body: SafeArea(
         child: Column(
           children: [
             _AdoptionHeader(
-              favoritePetIds:
-                  AdoptionService.instance.watchFavoritePetIds(
+              favoritePetIds: AdoptionService.instance.watchFavoritePetIds(
                 purpose: 'adoption',
+              ),
+              onOpenHistory: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const AdoptionBrowseScreen(initialTab: 3),
+                ),
               ),
             ),
             if (widget.initialTab != 0)
@@ -134,23 +141,82 @@ class _AdoptionBrowseScreenState extends State<AdoptionBrowseScreen>
                   ],
                 ),
               ),
-            TabBar(
-              controller: _tabController,
-              isScrollable: true,
-              labelColor: const Color(0xFF222222),
-              unselectedLabelColor: const Color(0xFF555555),
-              labelStyle: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
+            Container(
+              height: 47,
+              margin: const EdgeInsets.fromLTRB(18, 8, 18, 8),
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: const Color(0xFFE8DDE1)),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x12000000), blurRadius: 8),
+                ],
               ),
-              indicatorColor: AppColors.primary,
-              indicatorWeight: 2,
-              tabs: const [
-                Tab(text: 'Browse'),
-                Tab(text: 'My Request'),
-                Tab(text: 'My Listings'),
-                Tab(text: 'History'),
-              ],
+              child: TabBar(
+                controller: _tabController,
+                dividerColor: Colors.transparent,
+                labelColor: AppColors.primary,
+                unselectedLabelColor: const Color(0xFF444444),
+                labelStyle: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+                indicatorSize: TabBarIndicatorSize.tab,
+                indicator: BoxDecoration(
+                  color: const Color(0xFFFFEFF3),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFFFFC7D2)),
+                ),
+                tabs: const [
+                  Tab(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.search, size: 16),
+                        SizedBox(width: 4),
+                        Text('Browse'),
+                      ],
+                    ),
+                  ),
+                  Tab(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.person_search_outlined, size: 16),
+                        SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            'My Request',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Tab(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.list_alt_outlined, size: 16),
+                        SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            'My Listings',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            _ListingFilterBar(
+              selectedFilter: _listingFilter,
+              onFilterChanged: (filter) {
+                setState(() => _listingFilter = filter);
+              },
             ),
             Expanded(
               child: TabBarView(
@@ -158,17 +224,12 @@ class _AdoptionBrowseScreenState extends State<AdoptionBrowseScreen>
                 children: [
                   _BrowseTab(
                     filter: _filter,
+                    quickFilter: _listingFilter,
                     showLocationSearch: _showLocationSearch,
                     onShowFilter: _showFilterSheet,
                   ),
-                  const _MyRequestsTab(),
-                  _MyListingsTab(
-                    selectedFilter: _listingFilter,
-                    onFilterChanged: (filter) {
-                      setState(() => _listingFilter = filter);
-                    },
-                  ),
-                  const _AdoptionHistoryTab(),
+                  _MyRequestsTab(selectedFilter: _listingFilter),
+                  _MyListingsTab(selectedFilter: _listingFilter),
                 ],
               ),
             ),
@@ -190,24 +251,34 @@ String _tabTitle(int tabIndex) {
 
 class _AdoptionHeader extends StatelessWidget {
   final Stream<Set<String>> favoritePetIds;
+  final VoidCallback onOpenHistory;
 
-  const _AdoptionHeader({required this.favoritePetIds});
+  const _AdoptionHeader({
+    required this.favoritePetIds,
+    required this.onOpenHistory,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 10, 14, 4),
+      padding: const EdgeInsets.fromLTRB(22, 16, 16, 4),
       child: Row(
         children: [
           const Expanded(
             child: Text(
-              'ADOPTION',
+              'Adoption',
               style: TextStyle(
                 color: Color(0xFF111111),
-                fontSize: 20,
+                fontSize: 34,
                 fontWeight: FontWeight.w900,
               ),
             ),
+          ),
+          IconButton(
+            tooltip: 'Adoption history',
+            onPressed: onOpenHistory,
+            icon: const Icon(Icons.history_rounded),
+            color: AppColors.primary,
           ),
           StreamBuilder<Set<String>>(
             stream: favoritePetIds,
@@ -249,8 +320,7 @@ class _AdoptionHeader extends StatelessWidget {
                           alignment: Alignment.center,
                           decoration: const BoxDecoration(
                             color: AppColors.primary,
-                            borderRadius:
-                                BorderRadius.all(Radius.circular(10)),
+                            borderRadius: BorderRadius.all(Radius.circular(10)),
                           ),
                           child: Text(
                             count > 99 ? '99+' : '$count',
@@ -304,9 +374,7 @@ class _SavedListingsSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<Set<String>>(
-      stream: AdoptionService.instance.watchFavoritePetIds(
-        purpose: 'adoption',
-      ),
+      stream: AdoptionService.instance.watchFavoritePetIds(purpose: 'adoption'),
       initialData: const {},
       builder: (context, favoriteSnapshot) {
         final favoriteIds = favoriteSnapshot.data ?? const <String>{};
@@ -370,13 +438,58 @@ class _SavedListingsSheet extends StatelessWidget {
   }
 }
 
+class _ListingFilterBar extends StatelessWidget {
+  final _ListingQuickFilter selectedFilter;
+  final ValueChanged<_ListingQuickFilter> onFilterChanged;
+
+  const _ListingFilterBar({
+    required this.selectedFilter,
+    required this.onFilterChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.fromLTRB(18, 6, 18, 8),
+      child: Row(
+        children: _ListingQuickFilter.values.map((filter) {
+          final selected = filter == selectedFilter;
+          return Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: ChoiceChip(
+              avatar: Icon(filter.icon, size: 16),
+              label: Text(filter.label),
+              selected: selected,
+              showCheckmark: false,
+              onSelected: (_) => onFilterChanged(filter),
+              backgroundColor: Colors.white,
+              selectedColor: const Color(0xFFFFEFF3),
+              side: BorderSide(
+                color: selected ? AppColors.primary : const Color(0xFFE8E1E3),
+              ),
+              labelStyle: TextStyle(
+                color: selected ? AppColors.primary : const Color(0xFF333333),
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
 class _BrowseTab extends StatelessWidget {
   final _AdoptionFilter filter;
+  final _ListingQuickFilter quickFilter;
   final bool showLocationSearch;
   final Future<void> Function(List<AdoptionListing>) onShowFilter;
 
   const _BrowseTab({
     required this.filter,
+    required this.quickFilter,
     required this.showLocationSearch,
     required this.onShowFilter,
   });
@@ -400,8 +513,10 @@ class _BrowseTab extends StatelessWidget {
         }
 
         final allListings = snapshot.data!;
-        final listings =
-            allListings.where(filter.matches).toList(growable: false);
+        final listings = allListings
+            .where(filter.matches)
+            .where(quickFilter.matches)
+            .toList(growable: false);
 
         if (showLocationSearch) {
           return const _AdoptionLocationSearch();
@@ -447,8 +562,7 @@ class _BrowseTab extends StatelessWidget {
                           : 'Try changing the breed, age, price, or verification filters.',
                     )
                   : StreamBuilder<Set<String>>(
-                      stream:
-                          AdoptionService.instance.watchFavoritePetIds(
+                      stream: AdoptionService.instance.watchFavoritePetIds(
                         purpose: 'adoption',
                       ),
                       initialData: const {},
@@ -456,15 +570,15 @@ class _BrowseTab extends StatelessWidget {
                         final favorites =
                             favoriteSnapshot.data ?? const <String>{};
                         return ListView.builder(
-                          padding:
-                              const EdgeInsets.fromLTRB(16, 2, 16, 28),
+                          padding: const EdgeInsets.fromLTRB(16, 2, 16, 28),
                           itemCount: listings.length,
                           itemBuilder: (context, index) => Padding(
                             padding: const EdgeInsets.only(bottom: 16),
                             child: _AdoptionListingCard(
                               listing: listings[index],
-                              isFavorite:
-                                  favorites.contains(listings[index].id),
+                              isFavorite: favorites.contains(
+                                listings[index].id,
+                              ),
                             ),
                           ),
                         );
@@ -490,16 +604,10 @@ class _AdoptionLocationSearch extends StatelessWidget {
         Image.asset(
           'assets/images/Location.png',
           fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => const ColoredBox(
-            color: Color(0xFFFFE9EF),
-          ),
+          errorBuilder: (_, _, _) => const ColoredBox(color: Color(0xFFFFE9EF)),
         ),
         Container(color: Colors.white.withValues(alpha: 0.42)),
-        const Positioned(
-          left: 18,
-          top: 100,
-          child: _MapPetPin(species: 'cat'),
-        ),
+        const Positioned(left: 18, top: 100, child: _MapPetPin(species: 'cat')),
         const Positioned(
           right: 14,
           top: 205,
@@ -518,9 +626,9 @@ class _AdoptionLocationSearch extends StatelessWidget {
                 stream: userId == null
                     ? null
                     : FirebaseFirestore.instance
-                        .collection('users')
-                        .doc(userId)
-                        .snapshots(),
+                          .collection('users')
+                          .doc(userId)
+                          .snapshots(),
                 builder: (context, snapshot) {
                   final photo =
                       snapshot.data?.data()?['profilePhoto'] as String? ?? '';
@@ -530,10 +638,7 @@ class _AdoptionLocationSearch extends StatelessWidget {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: const Color(0xFFFFC8D3),
-                      border: Border.all(
-                        color: AppColors.primary,
-                        width: 5,
-                      ),
+                      border: Border.all(color: AppColors.primary, width: 5),
                     ),
                     clipBehavior: Clip.antiAlias,
                     child: BreedrNetworkImage(
@@ -580,9 +685,7 @@ class _MapPetPin extends StatelessWidget {
         shape: BoxShape.circle,
         color: const Color(0xFFFFE3EA),
         border: Border.all(color: Colors.white, width: 3),
-        boxShadow: const [
-          BoxShadow(color: Color(0x33000000), blurRadius: 5),
-        ],
+        boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 5)],
       ),
       child: Icon(
         species == 'cat' ? Icons.cruelty_free : Icons.pets,
@@ -596,10 +699,7 @@ class _AdoptionListingCard extends StatefulWidget {
   final AdoptionListing listing;
   final bool isFavorite;
 
-  const _AdoptionListingCard({
-    required this.listing,
-    required this.isFavorite,
-  });
+  const _AdoptionListingCard({required this.listing, required this.isFavorite});
 
   @override
   State<_AdoptionListingCard> createState() => _AdoptionListingCardState();
@@ -612,8 +712,9 @@ class _AdoptionListingCardState extends State<_AdoptionListingCard> {
     if (_saving) return;
     setState(() => _saving = true);
     try {
-      final saved =
-          await AdoptionService.instance.toggleFavorite(widget.listing.id);
+      final saved = await AdoptionService.instance.toggleFavorite(
+        widget.listing.id,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -626,9 +727,9 @@ class _AdoptionListingCardState extends State<_AdoptionListingCard> {
       );
     } on AdoptionServiceException catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -639,9 +740,7 @@ class _AdoptionListingCardState extends State<_AdoptionListingCard> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => PetAdoptionProfileScreen(
-          listingId: widget.listing.id,
-        ),
+        builder: (_) => PetAdoptionProfileScreen(listingId: widget.listing.id),
       ),
     );
   }
@@ -651,11 +750,11 @@ class _AdoptionListingCardState extends State<_AdoptionListingCard> {
     final listing = widget.listing;
     return InkWell(
       onTap: _openProfile,
-      borderRadius: BorderRadius.circular(6),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.circular(16),
           boxShadow: const [
             BoxShadow(
               color: Color(0x18000000),
@@ -669,7 +768,7 @@ class _AdoptionListingCardState extends State<_AdoptionListingCard> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SizedBox(
-              height: 188,
+              height: 205,
               width: double.infinity,
               child: Stack(
                 fit: StackFit.expand,
@@ -681,11 +780,6 @@ class _AdoptionListingCardState extends State<_AdoptionListingCard> {
                   Positioned(
                     right: 12,
                     top: 12,
-                    child: _AdoptionTypeBadge(listing: listing),
-                  ),
-                  Positioned(
-                    right: 12,
-                    bottom: 12,
                     child: IconButton.filled(
                       tooltip: widget.isFavorite
                           ? 'Remove from Favorites'
@@ -702,73 +796,77 @@ class _AdoptionListingCardState extends State<_AdoptionListingCard> {
                       ),
                     ),
                   ),
+                  const Positioned(
+                    left: 14,
+                    top: 14,
+                    child: _InfoChip(
+                      text: 'Available',
+                      color: Color(0xFFDDF5DE),
+                    ),
+                  ),
                 ],
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 15),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
+                      _OwnerAvatar(url: listing.profilePhoto, size: 48),
+                      const SizedBox(width: 10),
                       Expanded(
-                        child: Text(
-                          listing.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: AppColors.primary,
-                            fontSize: 24,
-                            fontWeight: FontWeight.w900,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              listing.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF222222),
+                                fontSize: 24,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            Text(
+                              listing.breed,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFF666666),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      if (listing.isForSale)
-                        Text(
-                          'PHP ${_formatPrice(listing.price ?? 0)}',
-                          style: const TextStyle(
-                            color: Color(0xFF1478D4),
-                            fontSize: 15,
-                            fontWeight: FontWeight.w900,
-                          ),
+                      Text(
+                        listing.isForSale
+                            ? '₱ ${_formatPrice(listing.price ?? 0)}'
+                            : 'Free',
+                        style: const TextStyle(
+                          color: AppColors.primary,
+                          fontSize: 19,
+                          fontWeight: FontWeight.w900,
                         ),
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    [
-                      listing.breed,
-                      listing.breedSize,
-                      listing.gender,
-                      listing.age,
-                    ].where((value) => value.trim().isNotEmpty).join('  |  '),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF333333),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
+                  const SizedBox(height: 7),
                   Row(
                     children: [
-                      const Icon(
-                        Icons.location_on,
-                        size: 13,
-                        color: Color(0xFF777777),
-                      ),
-                      const SizedBox(width: 3),
+                      const SizedBox(width: 58),
                       Expanded(
                         child: Text(
-                          listing.locationName.isEmpty
-                              ? 'Location not available'
-                              : listing.locationName,
+                          [listing.age, listing.gender, listing.locationName]
+                              .where((value) => value.trim().isNotEmpty)
+                              .join('  •  '),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            color: Color(0xFF777777),
+                            color: Color(0xFF666666),
                             fontSize: 10,
                           ),
                         ),
@@ -797,26 +895,19 @@ class _AdoptionListingCardState extends State<_AdoptionListingCard> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      _OwnerAvatar(url: listing.ownerPhoto),
-                      const SizedBox(width: 7),
-                      Expanded(
-                        child: Text(
-                          listing.ownerName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton.icon(
+                      onPressed: _openProfile,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFFFFE9EE),
+                        foregroundColor: AppColors.primary,
+                        visualDensity: VisualDensity.compact,
                       ),
-                      const Icon(
-                        Icons.chevron_right,
-                        color: AppColors.primary,
-                      ),
-                    ],
+                      label: const Text('View Details'),
+                      iconAlignment: IconAlignment.end,
+                      icon: const Icon(Icons.arrow_forward, size: 16),
+                    ),
                   ),
                 ],
               ),
@@ -829,7 +920,9 @@ class _AdoptionListingCardState extends State<_AdoptionListingCard> {
 }
 
 class _MyRequestsTab extends StatelessWidget {
-  const _MyRequestsTab();
+  final _ListingQuickFilter selectedFilter;
+
+  const _MyRequestsTab({required this.selectedFilter});
 
   @override
   Widget build(BuildContext context) {
@@ -848,7 +941,12 @@ class _MyRequestsTab extends StatelessWidget {
             child: CircularProgressIndicator(color: AppColors.primary),
           );
         }
-        final requests = snapshot.data!;
+        final allRequests = snapshot.data!;
+        final requests = allRequests
+            .where(
+              (request) => selectedFilter.matchesSnapshot(request.petSnapshot),
+            )
+            .toList();
         if (requests.isEmpty) {
           return const _AdoptionEmptyState(
             icon: Icons.assignment_outlined,
@@ -858,12 +956,14 @@ class _MyRequestsTab extends StatelessWidget {
           );
         }
         final approved = requests
-            .where((request) =>
-                request.status == AdoptionRequestStatus.approved)
+            .where(
+              (request) => request.status == AdoptionRequestStatus.approved,
+            )
             .toList();
         final others = requests
-            .where((request) =>
-                request.status != AdoptionRequestStatus.approved)
+            .where(
+              (request) => request.status != AdoptionRequestStatus.approved,
+            )
             .toList();
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
@@ -927,9 +1027,7 @@ class _ApplicantRequestCard extends StatelessWidget {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => AdoptionRequestDetailScreen(
-              requestId: request.id,
-            ),
+            builder: (_) => AdoptionRequestDetailScreen(requestId: request.id),
           ),
         );
       },
@@ -937,7 +1035,7 @@ class _ApplicantRequestCard extends StatelessWidget {
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.circular(16),
           boxShadow: const [
             BoxShadow(
               color: Color(0x18000000),
@@ -951,11 +1049,32 @@ class _ApplicantRequestCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SizedBox(
-              height: 120,
+              height: 178,
               width: double.infinity,
-              child: _PetImage(
-                url: photo,
-                species: pet['species'] as String? ?? '',
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  _PetImage(
+                    url: photo,
+                    species: pet['species'] as String? ?? '',
+                  ),
+                  const Positioned(
+                    left: 12,
+                    top: 12,
+                    child: _InfoChip(
+                      text: 'Available',
+                      color: Color(0xFFDDF5DE),
+                    ),
+                  ),
+                  Positioned(
+                    right: 12,
+                    top: 12,
+                    child: _InfoChip(
+                      text: status.shortLabel,
+                      color: status.background,
+                    ),
+                  ),
+                ],
               ),
             ),
             Padding(
@@ -966,31 +1085,55 @@ class _ApplicantRequestCard extends StatelessWidget {
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: AppColors.primary,
-                            fontSize: 21,
-                            fontWeight: FontWeight.w900,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF222222),
+                                fontSize: 21,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            Text(
+                              _snapshotText(pet['breed']),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFF666666),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                       if (type == 'forSale' && price != null)
                         Text(
-                          'PHP ${_formatPrice(price)}',
+                          '₱ ${_formatPrice(price)}',
                           style: const TextStyle(
-                            color: Color(0xFF1478D4),
+                            color: AppColors.primary,
                             fontWeight: FontWeight.w900,
                           ),
                         )
                       else
-                        const _InfoChip(
-                          text: 'Free',
-                          color: Color(0xFFFFE9BB),
-                        ),
+                        const _InfoChip(text: 'Free', color: Color(0xFFFFE9BB)),
                     ],
+                  ),
+                  const SizedBox(height: 7),
+                  Text(
+                    [pet['age'], pet['gender'], pet['locationName']]
+                        .map((value) => _snapshotText(value))
+                        .where((value) => value.isNotEmpty)
+                        .join('  •  '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: Color(0xFF666666),
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Container(
@@ -1025,6 +1168,12 @@ class _ApplicantRequestCard extends StatelessWidget {
                       ],
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  _RequestOwnerIdentity(
+                    ownerId: request.ownerId,
+                    snapshotName: pet['ownerName'],
+                    snapshotPhoto: pet['ownerPhoto'],
+                  ),
                 ],
               ),
             ),
@@ -1034,10 +1183,9 @@ class _ApplicantRequestCard extends StatelessWidget {
     );
   }
 
-  void _showRequestSummary(
-    BuildContext context,
-    AdoptionRequest request,
-  ) {
+  // Retained for the legacy request-summary presentation.
+  // ignore: unused_element
+  void _showRequestSummary(BuildContext context, AdoptionRequest request) {
     final status = _requestPresentation(request.status);
     showModalBottomSheet<void>(
       context: context,
@@ -1067,10 +1215,7 @@ class _ApplicantRequestCard extends StatelessWidget {
               Text(
                 _requestHelpText(request.status),
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Color(0xFF666666),
-                  fontSize: 12,
-                ),
+                style: const TextStyle(color: Color(0xFF666666), fontSize: 12),
               ),
               const SizedBox(height: 16),
               if (request.status == AdoptionRequestStatus.pending ||
@@ -1113,8 +1258,9 @@ class _ApplicantRequestCard extends StatelessWidget {
     AdoptionRequest request,
   ) async {
     try {
-      final eligibility =
-          await AdoptionService.instance.validateWithdrawal(request.id);
+      final eligibility = await AdoptionService.instance.validateWithdrawal(
+        request.id,
+      );
       if (!context.mounted) return;
       if (!eligibility.allowed) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1142,9 +1288,7 @@ class _ApplicantRequestCard extends StatelessWidget {
             ),
             FilledButton(
               onPressed: () => Navigator.pop(dialogContext, true),
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.primary,
-              ),
+              style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
               child: const Text('Withdraw'),
             ),
           ],
@@ -1159,26 +1303,106 @@ class _ApplicantRequestCard extends StatelessWidget {
       );
     } on AdoptionServiceException catch (error) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
     } on FirebaseException catch (error) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_firebaseActionMessage(error))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_firebaseActionMessage(error))));
     }
   }
 }
 
+class _RequestOwnerIdentity extends StatelessWidget {
+  final String ownerId;
+  final Object? snapshotName;
+  final Object? snapshotPhoto;
+
+  const _RequestOwnerIdentity({
+    required this.ownerId,
+    required this.snapshotName,
+    required this.snapshotPhoto,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: ownerId.trim().isEmpty
+          ? null
+          : FirebaseFirestore.instance
+                .collection('users')
+                .doc(ownerId)
+                .snapshots(),
+      builder: (context, snapshot) {
+        final user = snapshot.data?.data();
+        final storedName = _usableOwnerName(snapshotName);
+        final ownerName = storedName.isNotEmpty
+            ? storedName
+            : _ownerNameFromUser(user);
+        final storedPhoto = _snapshotText(snapshotPhoto);
+        final ownerPhoto = storedPhoto.isNotEmpty
+            ? storedPhoto
+            : _ownerPhotoFromUser(user);
+
+        return Row(
+          children: [
+            _OwnerAvatar(url: ownerPhoto, size: 34),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                ownerName.isEmpty ? 'Pet owner' : ownerName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+String _usableOwnerName(Object? value) {
+  final name = _snapshotText(value);
+  final normalized = name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+  return normalized == 'petowner' || normalized == 'owner' ? '' : name;
+}
+
+String _ownerNameFromUser(Map<String, dynamic>? user) {
+  if (user == null) return '';
+  for (final key in [
+    'fullName',
+    'name',
+    'displayName',
+    'display_name',
+    'userName',
+    'username',
+  ]) {
+    final name = _usableOwnerName(user[key]);
+    if (name.isNotEmpty) return name;
+  }
+  return '';
+}
+
+String _ownerPhotoFromUser(Map<String, dynamic>? user) {
+  if (user == null) return '';
+  for (final key in ['profilePhoto', 'photoURL', 'photoUrl']) {
+    final photo = _snapshotText(user[key]);
+    if (photo.isNotEmpty) return photo;
+  }
+  return '';
+}
+
 class _MyListingsTab extends StatelessWidget {
   final _ListingQuickFilter selectedFilter;
-  final ValueChanged<_ListingQuickFilter> onFilterChanged;
 
-  const _MyListingsTab({
-    required this.selectedFilter,
-    required this.onFilterChanged,
-  });
+  const _MyListingsTab({required this.selectedFilter});
 
   @override
   Widget build(BuildContext context) {
@@ -1204,35 +1428,8 @@ class _MyListingsTab extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-              child: Row(
-                children: _ListingQuickFilter.values
-                    .map(
-                      (filter) => Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: ChoiceChip(
-                          label: Text(filter.label),
-                          selected: selectedFilter == filter,
-                          onSelected: (_) => onFilterChanged(filter),
-                          selectedColor: Colors.white,
-                          backgroundColor: const Color(0xFFFFDFE6),
-                          side: selectedFilter == filter
-                              ? const BorderSide(
-                                  color: Color(0xFF222222),
-                                  width: 1.5,
-                                )
-                              : BorderSide.none,
-                          showCheckmark: false,
-                        ),
-                      ),
-                    )
-                    .toList(),
-              ),
-            ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(18, 6, 18, 10),
+              padding: const EdgeInsets.fromLTRB(18, 8, 18, 10),
               child: Text(
                 'Your Listings (${listings.length})',
                 style: const TextStyle(
@@ -1258,9 +1455,7 @@ class _MyListingsTab extends StatelessWidget {
                       itemCount: listings.length,
                       itemBuilder: (context, index) => Padding(
                         padding: const EdgeInsets.only(bottom: 16),
-                        child: _OwnerListingCard(
-                          listing: listings[index],
-                        ),
+                        child: _OwnerListingCard(listing: listings[index]),
                       ),
                     ),
             ),
@@ -1315,6 +1510,30 @@ class _AdoptionHistoryTab extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _AdoptionHistoryScreen extends StatelessWidget {
+  const _AdoptionHistoryScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFFFF5F8),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFFFFF5F8),
+        surfaceTintColor: Colors.transparent,
+        foregroundColor: AppColors.primary,
+        title: const Text(
+          'Adoption History',
+          style: TextStyle(
+            color: Color(0xFF222222),
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+      body: const SafeArea(top: false, child: _AdoptionHistoryTab()),
     );
   }
 }
@@ -1486,7 +1705,7 @@ class _OwnerListingCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: const [
           BoxShadow(
             color: Color(0x18000000),
@@ -1500,19 +1719,21 @@ class _OwnerListingCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            height: 145,
+            height: 180,
             width: double.infinity,
             child: Stack(
               fit: StackFit.expand,
               children: [
-                _PetImage(
-                  url: listing.profilePhoto,
-                  species: listing.species,
-                ),
+                _PetImage(url: listing.profilePhoto, species: listing.species),
                 Positioned(
-                  top: 10,
-                  right: 10,
-                  child: _AdoptionTypeBadge(listing: listing),
+                  top: 12,
+                  left: 12,
+                  child: _InfoChip(
+                    text: _listingStatusLabel(listing.status),
+                    color: listing.status == AdoptionListingStatus.reserved
+                        ? const Color(0xFFFFE2AF)
+                        : const Color(0xFFDDF5DE),
+                  ),
                 ),
               ],
             ),
@@ -1524,39 +1745,61 @@ class _OwnerListingCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
+                    _OwnerAvatar(url: listing.profilePhoto, size: 46),
+                    const SizedBox(width: 10),
                     Expanded(
-                      child: Text(
-                        listing.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: AppColors.primary,
-                          fontSize: 23,
-                          fontWeight: FontWeight.w900,
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            listing.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Color(0xFF222222),
+                              fontSize: 22,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          Text(
+                            listing.breed,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: Color(0xFF666666),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    if (listing.isForSale)
-                      Text(
-                        'PHP ${_formatPrice(listing.price ?? 0)}',
-                        style: const TextStyle(
-                          color: Color(0xFF1478D4),
-                          fontWeight: FontWeight.w900,
-                        ),
+                    Text(
+                      listing.isForSale
+                          ? '₱ ${_formatPrice(listing.price ?? 0)}'
+                          : 'Free',
+                      style: const TextStyle(
+                        color: AppColors.primary,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
                       ),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  [
-                    listing.breed,
-                    listing.breedSize,
-                    listing.gender,
-                    listing.age,
-                  ].where((value) => value.isNotEmpty).join('  |  '),
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
+                const SizedBox(height: 6),
+                Padding(
+                  padding: const EdgeInsets.only(left: 56),
+                  child: Text(
+                    [
+                      listing.age,
+                      listing.gender,
+                      listing.locationName,
+                    ].where((value) => value.isNotEmpty).join('  •  '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: Color(0xFF666666),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -1586,8 +1829,9 @@ class _OwnerListingCard extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     StreamBuilder<int>(
-                      stream: AdoptionService.instance
-                          .watchListingViewCount(listing.id),
+                      stream: AdoptionService.instance.watchListingViewCount(
+                        listing.id,
+                      ),
                       initialData: 0,
                       builder: (_, snapshot) => _Metric(
                         icon: Icons.visibility_outlined,
@@ -1597,8 +1841,9 @@ class _OwnerListingCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 18),
                     StreamBuilder<int>(
-                      stream: AdoptionService.instance
-                          .watchActiveRequestCount(listing.id),
+                      stream: AdoptionService.instance.watchActiveRequestCount(
+                        listing.id,
+                      ),
                       initialData: 0,
                       builder: (_, snapshot) => _Metric(
                         icon: Icons.favorite,
@@ -1612,10 +1857,7 @@ class _OwnerListingCard extends StatelessWidget {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: () => _showListingRequests(
-                      context,
-                      listing,
-                    ),
+                    onPressed: () => _showListingRequests(context, listing),
                     style: FilledButton.styleFrom(
                       backgroundColor: AppColors.primary,
                     ),
@@ -1634,10 +1876,7 @@ class _OwnerListingCard extends StatelessWidget {
     );
   }
 
-  void _showListingRequests(
-    BuildContext context,
-    AdoptionListing listing,
-  ) {
+  void _showListingRequests(BuildContext context, AdoptionListing listing) {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -1715,9 +1954,7 @@ class _ListingRequestsSheet extends StatelessWidget {
                       itemCount: requests.length,
                       itemBuilder: (context, index) => Padding(
                         padding: const EdgeInsets.only(bottom: 12),
-                        child: _OwnerRequestCard(
-                          request: requests[index],
-                        ),
+                        child: _OwnerRequestCard(request: requests[index]),
                       ),
                     ),
             ),
@@ -1741,15 +1978,14 @@ class _OwnerRequestCard extends StatelessWidget {
     final status = _requestPresentation(request.status);
     return InkWell(
       onTap: () {
-        AdoptionService.instance.markRequestUnderReview(request.id).catchError(
-          (_) {},
-        );
+        AdoptionService.instance
+            .markRequestUnderReview(request.id)
+            .catchError((_) {});
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => OwnerAdoptionRequestDetailScreen(
-              requestId: request.id,
-            ),
+            builder: (_) =>
+                OwnerAdoptionRequestDetailScreen(requestId: request.id),
           ),
         );
       },
@@ -1795,8 +2031,8 @@ class _OwnerRequestCard extends StatelessWidget {
                     spacing: 5,
                     children: [
                       _InfoChip(
-                        text: applicant['homeType'] as String? ??
-                            'Home not set',
+                        text:
+                            applicant['homeType'] as String? ?? 'Home not set',
                         color: const Color(0xFFFFE4EA),
                       ),
                       if (applicant['childrenAtHome'] == true)
@@ -1840,10 +2076,9 @@ class _OwnerRequestCard extends StatelessWidget {
     );
   }
 
-  void _showApplicantAnswers(
-    BuildContext context,
-    AdoptionRequest request,
-  ) {
+  // Retained for the legacy applicant-answer presentation.
+  // ignore: unused_element
+  void _showApplicantAnswers(BuildContext context, AdoptionRequest request) {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -1893,9 +2128,9 @@ class _ApplicantAnswersSheetState extends State<_ApplicantAnswersSheet> {
       );
     } on AdoptionServiceException catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
     } finally {
       if (mounted) setState(() => _processing = false);
     }
@@ -1905,7 +2140,8 @@ class _ApplicantAnswersSheetState extends State<_ApplicantAnswersSheet> {
   Widget build(BuildContext context) {
     final request = widget.request;
     final applicant = request.applicantSnapshot;
-    final canDecide = request.status == AdoptionRequestStatus.pending ||
+    final canDecide =
+        request.status == AdoptionRequestStatus.pending ||
         request.status == AdoptionRequestStatus.underReview;
     return Column(
       children: [
@@ -2037,8 +2273,7 @@ class _AdoptionFilterSheet extends StatefulWidget {
   });
 
   @override
-  State<_AdoptionFilterSheet> createState() =>
-      _AdoptionFilterSheetState();
+  State<_AdoptionFilterSheet> createState() => _AdoptionFilterSheetState();
 }
 
 class _AdoptionFilterSheetState extends State<_AdoptionFilterSheet> {
@@ -2062,18 +2297,18 @@ class _AdoptionFilterSheetState extends State<_AdoptionFilterSheet> {
   List<String> get _availableBreeds {
     final species = _species.toLowerCase();
     if (species == 'all') return const [];
-    final breeds = widget.listings
-        .where((listing) =>
-            listing.species.toLowerCase() == species.toLowerCase())
-        .expand((listing) => [
-              listing.breed,
-              ...listing.breedTags,
-            ])
-        .map((breed) => breed.trim())
-        .where((breed) => breed.isNotEmpty)
-        .toSet()
-        .toList()
-      ..sort();
+    final breeds =
+        widget.listings
+            .where(
+              (listing) =>
+                  listing.species.toLowerCase() == species.toLowerCase(),
+            )
+            .expand((listing) => [listing.breed, ...listing.breedTags])
+            .map((breed) => breed.trim())
+            .where((breed) => breed.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
     final fallback = breedNamesForSpecies(_species);
     for (final breed in fallback) {
       if (!breeds.contains(breed)) breeds.add(breed);
@@ -2094,10 +2329,8 @@ class _AdoptionFilterSheetState extends State<_AdoptionFilterSheet> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _BreedPickerSheet(
-        breeds: _availableBreeds,
-        selectedBreed: _breed,
-      ),
+      builder: (_) =>
+          _BreedPickerSheet(breeds: _availableBreeds, selectedBreed: _breed),
     );
     if (!mounted) return;
     setState(() => _breed = selected);
@@ -2114,8 +2347,7 @@ class _AdoptionFilterSheetState extends State<_AdoptionFilterSheet> {
         _maxAgeWeeks != null &&
         _minAgeWeeks! > _maxAgeWeeks!) {
       setState(() {
-        _error =
-            'Minimum adoption age cannot be greater than maximum age.';
+        _error = 'Minimum adoption age cannot be greater than maximum age.';
       });
       return;
     }
@@ -2124,9 +2356,7 @@ class _AdoptionFilterSheetState extends State<_AdoptionFilterSheet> {
       setState(() => _error = 'Price values cannot be negative.');
       return;
     }
-    if (_minPrice != null &&
-        _maxPrice != null &&
-        _minPrice! > _maxPrice!) {
+    if (_minPrice != null && _maxPrice != null && _minPrice! > _maxPrice!) {
       setState(() {
         _error = 'Minimum price cannot be greater than maximum price.';
       });
@@ -2168,16 +2398,10 @@ class _AdoptionFilterSheetState extends State<_AdoptionFilterSheet> {
                 const Expanded(
                   child: Text(
                     'Filter Adoption',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w900,
-                    ),
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
                   ),
                 ),
-                TextButton(
-                  onPressed: _apply,
-                  child: const Text('DONE'),
-                ),
+                TextButton(onPressed: _apply, child: const Text('DONE')),
               ],
             ),
             const SizedBox(height: 12),
@@ -2207,7 +2431,8 @@ class _AdoptionFilterSheetState extends State<_AdoptionFilterSheet> {
                 child: Text(
                   _species.toLowerCase() == 'all'
                       ? 'Any Breed'
-                      : _breed ?? 'Any ${_species.toLowerCase() == 'dog' ? 'Dog' : 'Cat'} Breed',
+                      : _breed ??
+                            'Any ${_species.toLowerCase() == 'dog' ? 'Dog' : 'Cat'} Breed',
                 ),
               ),
             ),
@@ -2250,10 +2475,7 @@ class _AdoptionFilterSheetState extends State<_AdoptionFilterSheet> {
             SegmentedButton<AdoptionType?>(
               segments: const [
                 ButtonSegment(value: null, label: Text('All')),
-                ButtonSegment(
-                  value: AdoptionType.free,
-                  label: Text('Free'),
-                ),
+                ButtonSegment(value: AdoptionType.free, label: Text('Free')),
                 ButtonSegment(
                   value: AdoptionType.forSale,
                   label: Text('For Sale'),
@@ -2296,8 +2518,7 @@ class _AdoptionFilterSheetState extends State<_AdoptionFilterSheet> {
                 'Vaccinated Only',
                 style: TextStyle(fontWeight: FontWeight.w800),
               ),
-              subtitle:
-                  const Text('Show only pets with vaccination records'),
+              subtitle: const Text('Show only pets with vaccination records'),
               value: _vaccinatedOnly,
               activeTrackColor: AppColors.primary,
               onChanged: (value) {
@@ -2361,10 +2582,7 @@ class _BreedPickerSheet extends StatefulWidget {
   final List<String> breeds;
   final String? selectedBreed;
 
-  const _BreedPickerSheet({
-    required this.breeds,
-    required this.selectedBreed,
-  });
+  const _BreedPickerSheet({required this.breeds, required this.selectedBreed});
 
   @override
   State<_BreedPickerSheet> createState() => _BreedPickerSheetState();
@@ -2376,9 +2594,7 @@ class _BreedPickerSheetState extends State<_BreedPickerSheet> {
   @override
   Widget build(BuildContext context) {
     final breeds = widget.breeds
-        .where(
-          (breed) => breed.toLowerCase().contains(_query.toLowerCase()),
-        )
+        .where((breed) => breed.toLowerCase().contains(_query.toLowerCase()))
         .toList();
     return DraggableScrollableSheet(
       initialChildSize: 0.76,
@@ -2405,10 +2621,7 @@ class _BreedPickerSheetState extends State<_BreedPickerSheet> {
                   ),
                 ),
                 TextButton(
-                  onPressed: () => Navigator.pop(
-                    context,
-                    widget.selectedBreed,
-                  ),
+                  onPressed: () => Navigator.pop(context, widget.selectedBreed),
                   child: const Text('DONE'),
                 ),
               ],
@@ -2519,8 +2732,9 @@ class _AgeInputState extends State<_AgeInput> {
             Expanded(
               child: TextField(
                 controller: _controller,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 onChanged: (_) => _emit(),
                 decoration: const InputDecoration(
                   hintText: 'Age',
@@ -2580,9 +2794,8 @@ class _NumberFieldState extends State<_NumberField> {
     return TextField(
       controller: _controller,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      onChanged: (value) => widget.onChanged(
-        double.tryParse(value.replaceAll(',', '').trim()),
-      ),
+      onChanged: (value) =>
+          widget.onChanged(double.tryParse(value.replaceAll(',', '').trim())),
       decoration: InputDecoration(
         labelText: widget.label,
         prefixText: 'PHP ',
@@ -2622,26 +2835,22 @@ class _AdoptionFilter {
     }
     if (species.toLowerCase() != 'all' && breed != null) {
       final target = breed!.trim().toLowerCase();
-      final listingBreeds = [
-        listing.breed,
-        ...listing.breedTags,
-      ]
+      final listingBreeds = [listing.breed, ...listing.breedTags]
           .map((value) => value.trim().toLowerCase())
           .where((value) => value.isNotEmpty)
           .toSet();
-      final matchesBreed = listingBreeds.contains(target) ||
+      final matchesBreed =
+          listingBreeds.contains(target) ||
           listingBreeds.any(
             (value) => value.contains(target) || target.contains(value),
           );
       if (!matchesBreed) return false;
     }
     final ageWeeks = _parseAgeInWeeks(listing.age);
-    if (minAgeWeeks != null &&
-        (ageWeeks == null || ageWeeks < minAgeWeeks!)) {
+    if (minAgeWeeks != null && (ageWeeks == null || ageWeeks < minAgeWeeks!)) {
       return false;
     }
-    if (maxAgeWeeks != null &&
-        (ageWeeks == null || ageWeeks > maxAgeWeeks!)) {
+    if (maxAgeWeeks != null && (ageWeeks == null || ageWeeks > maxAgeWeeks!)) {
       return false;
     }
     final vaccinated = listing.healthRecords.any((record) {
@@ -2667,6 +2876,21 @@ class _AdoptionFilter {
 enum _ListingQuickFilter { all, dogs, cats, free, forSale }
 
 extension on _ListingQuickFilter {
+  IconData get icon {
+    switch (this) {
+      case _ListingQuickFilter.all:
+        return Icons.grid_view_rounded;
+      case _ListingQuickFilter.dogs:
+        return Icons.pets;
+      case _ListingQuickFilter.cats:
+        return Icons.cruelty_free;
+      case _ListingQuickFilter.free:
+        return Icons.card_giftcard;
+      case _ListingQuickFilter.forSale:
+        return Icons.sell_outlined;
+    }
+  }
+
   String get label {
     switch (this) {
       case _ListingQuickFilter.all:
@@ -2694,6 +2918,23 @@ extension on _ListingQuickFilter {
         return !listing.isForSale;
       case _ListingQuickFilter.forSale:
         return listing.isForSale;
+    }
+  }
+
+  bool matchesSnapshot(Map<String, dynamic> pet) {
+    final species = (pet['species'] ?? '').toString().toLowerCase();
+    final type = (pet['adoptionType'] ?? '').toString().toLowerCase();
+    switch (this) {
+      case _ListingQuickFilter.all:
+        return true;
+      case _ListingQuickFilter.dogs:
+        return species == 'dog';
+      case _ListingQuickFilter.cats:
+        return species == 'cat';
+      case _ListingQuickFilter.free:
+        return type != 'forsale' && type != 'for_sale';
+      case _ListingQuickFilter.forSale:
+        return type == 'forsale' || type == 'for_sale';
     }
   }
 }
@@ -2740,10 +2981,7 @@ class _AdoptionEmptyState extends StatelessWidget {
             Text(
               message,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Color(0xFF777777),
-                fontSize: 12,
-              ),
+              style: const TextStyle(color: Color(0xFF777777), fontSize: 12),
             ),
           ],
         ),
@@ -2756,10 +2994,7 @@ class _PetImage extends StatelessWidget {
   final String url;
   final String species;
 
-  const _PetImage({
-    required this.url,
-    required this.species,
-  });
+  const _PetImage({required this.url, required this.species});
 
   @override
   Widget build(BuildContext context) {
@@ -2791,41 +3026,11 @@ class _PetPlaceholder extends StatelessWidget {
   }
 }
 
-class _AdoptionTypeBadge extends StatelessWidget {
-  final AdoptionListing listing;
-
-  const _AdoptionTypeBadge({required this.listing});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: listing.isForSale
-            ? const Color(0xFF2389E8)
-            : AppColors.primary,
-        borderRadius: BorderRadius.circular(15),
-      ),
-      child: Text(
-        listing.isForSale ? 'FOR SALE' : 'FREE',
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 9,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-    );
-  }
-}
-
 class _InfoChip extends StatelessWidget {
   final String text;
   final Color color;
 
-  const _InfoChip({
-    required this.text,
-    required this.color,
-  });
+  const _InfoChip({required this.text, required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -2851,10 +3056,7 @@ class _OwnerAvatar extends StatelessWidget {
   final String url;
   final double size;
 
-  const _OwnerAvatar({
-    required this.url,
-    this.size = 34,
-  });
+  const _OwnerAvatar({required this.url, this.size = 34});
 
   @override
   Widget build(BuildContext context) {
@@ -2881,11 +3083,7 @@ class _Metric extends StatelessWidget {
   final int value;
   final String label;
 
-  const _Metric({
-    required this.icon,
-    required this.value,
-    required this.label,
-  });
+  const _Metric({required this.icon, required this.value, required this.label});
 
   @override
   Widget build(BuildContext context) {
@@ -2933,6 +3131,15 @@ class _RequestPresentation {
     required this.color,
     required this.background,
   });
+
+  String get shortLabel {
+    if (message.contains('approved')) return 'Interview Approved';
+    if (message.contains('reviewing')) return 'Under Review';
+    if (message.contains('Waiting')) return 'Pending';
+    if (message.contains('declined')) return 'Declined';
+    if (message.contains('withdrew')) return 'Withdrawn';
+    return 'Completed';
+  }
 }
 
 String _requestHelpText(AdoptionRequestStatus status) {

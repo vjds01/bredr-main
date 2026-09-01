@@ -1164,9 +1164,6 @@ class AdoptionService {
         return;
       }
 
-      final petIds =
-          (data['petIds'] as List?)?.cast<String>() ?? const <String>[];
-      final petId = petIds.isEmpty ? '' : petIds.first;
       final requestId = data['requestId'] as String? ?? '';
       final petNames = Map<String, dynamic>.from(
         data['petNames'] as Map? ?? const {},
@@ -2345,31 +2342,59 @@ class AdoptionService {
     required String detail,
     List<AdoptionEvidenceFile> evidenceFiles = const [],
   }) async {
+    await reportPetListingSnapshot(
+      petId: listing.id,
+      petName: listing.name,
+      species: listing.species,
+      breed: listing.breed,
+      purpose: 'adoption',
+      profilePhoto: listing.profilePhoto,
+      ownerId: listing.ownerId,
+      ownerName: listing.ownerName,
+      reason: reason,
+      detail: detail,
+      evidenceFiles: evidenceFiles,
+    );
+  }
+
+  Future<void> reportPetListingSnapshot({
+    required String petId,
+    required String petName,
+    required String species,
+    required String breed,
+    required String purpose,
+    required String profilePhoto,
+    required String ownerId,
+    required String ownerName,
+    required String reason,
+    required String detail,
+    List<AdoptionEvidenceFile> evidenceFiles = const [],
+  }) async {
     final user = UserSessionService.instance.currentUser;
     if (user == null) {
       throw const AdoptionServiceException('Please sign in again.');
     }
-    if (listing.ownerId == user.uid) {
+    if (ownerId == user.uid) {
       throw const AdoptionServiceException(
         'You cannot report your own listing.',
       );
     }
     await _createReport(
       type: 'listing',
-      targetId: listing.id,
-      reportedUserId: listing.ownerId,
+      targetId: petId,
+      reportedUserId: ownerId,
       reason: reason,
       detail: detail,
       evidenceFiles: evidenceFiles,
       targetSnapshot: {
-        'petId': listing.id,
-        'petName': listing.name,
-        'species': listing.species,
-        'breed': listing.breed,
-        'purpose': 'adoption',
-        'profilePhoto': listing.profilePhoto,
-        'ownerId': listing.ownerId,
-        'ownerName': listing.ownerName,
+        'petId': petId,
+        'petName': petName,
+        'species': species,
+        'breed': breed,
+        'purpose': purpose.trim().toLowerCase(),
+        'profilePhoto': profilePhoto,
+        'ownerId': ownerId,
+        'ownerName': ownerName,
       },
       duplicateMessage:
           'You have already submitted a report for this pet listing.',

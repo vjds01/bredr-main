@@ -1,6 +1,16 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'user_session_service.dart';
+
+String _firstText(Map<String, dynamic> data, List<String> keys) {
+  for (final key in keys) {
+    final value = data[key]?.toString().trim() ?? '';
+    if (value.isNotEmpty) return value;
+  }
+  return '';
+}
 
 class BreedingMatchService {
   BreedingMatchService._();
@@ -31,6 +41,66 @@ class BreedingMatchService {
               .where((id) => id.isNotEmpty)
               .toSet(),
         );
+  }
+
+  Stream<List<BreedingIncomingLike>> watchUnansweredIncomingLikes(
+    String targetPetId,
+  ) {
+    if (targetPetId.isEmpty) {
+      return Stream.value(const <BreedingIncomingLike>[]);
+    }
+
+    late StreamController<List<BreedingIncomingLike>> controller;
+    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? incomingSub;
+    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? outgoingSub;
+    var incoming = const <BreedingIncomingLike>[];
+    var answeredPetIds = const <String>{};
+    var hasIncoming = false;
+    var hasOutgoing = false;
+
+    void emit() {
+      if (!hasIncoming || !hasOutgoing || controller.isClosed) return;
+      controller.add(
+        incoming
+            .where((like) => !answeredPetIds.contains(like.likingPetId))
+            .toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt)),
+      );
+    }
+
+    controller = StreamController<List<BreedingIncomingLike>>(
+      onListen: () {
+        incomingSub = _firestore
+            .collection('swipes')
+            .where('targetPetId', isEqualTo: targetPetId)
+            .snapshots()
+            .listen((snapshot) {
+              incoming = snapshot.docs
+                  .where((doc) => doc.data()['action'] == 'like')
+                  .map(BreedingIncomingLike.fromDocument)
+                  .toList();
+              hasIncoming = true;
+              emit();
+            }, onError: controller.addError);
+        outgoingSub = _firestore
+            .collection('swipes')
+            .where('swiperPetId', isEqualTo: targetPetId)
+            .snapshots()
+            .listen((snapshot) {
+              answeredPetIds = snapshot.docs
+                  .map((doc) => doc.data()['targetPetId'] as String? ?? '')
+                  .where((id) => id.isNotEmpty)
+                  .toSet();
+              hasOutgoing = true;
+              emit();
+            }, onError: controller.addError);
+      },
+      onCancel: () async {
+        await incomingSub?.cancel();
+        await outgoingSub?.cancel();
+      },
+    );
+    return controller.stream;
   }
 
   Future<SwipeResult> recordSwipe({
@@ -100,7 +170,15 @@ class BreedingMatchService {
         transaction.set(likeNotificationReference, {
           'notificationId': likeNotificationReference.id,
           'recipientId': targetOwnerId,
+          'actorId': swiperOwnerId,
+          'petId': swiperPetId,
+          'petName': swiperPetName,
+          'petPhoto': swiperPetPhoto,
+          'secondaryPetId': targetPetId,
+          'secondaryPetName': targetPetName,
+          'secondaryPetPhoto': targetPetPhoto,
           'type': 'breeding_like_received',
+          'purpose': 'breeding',
           'title': '$swiperPetName liked $targetPetName',
           'message':
               '$swiperPetName liked $targetPetName. Like them back to start a breeding chat.',
@@ -153,7 +231,15 @@ class BreedingMatchService {
       transaction.set(swiperMatchNotificationReference, {
         'notificationId': swiperMatchNotificationReference.id,
         'recipientId': swiperOwnerId,
+        'actorId': targetOwnerId,
+        'petId': targetPetId,
+        'petName': targetPetName,
+        'petPhoto': targetPetPhoto,
+        'secondaryPetId': swiperPetId,
+        'secondaryPetName': swiperPetName,
+        'secondaryPetPhoto': swiperPetPhoto,
         'type': 'breeding_match_created',
+        'purpose': 'breeding',
         'title': "It's a match!",
         'message':
             '$targetPetName also likes $swiperPetName. Chat is now open.',
@@ -165,7 +251,15 @@ class BreedingMatchService {
       transaction.set(targetMatchNotificationReference, {
         'notificationId': targetMatchNotificationReference.id,
         'recipientId': targetOwnerId,
+        'actorId': swiperOwnerId,
+        'petId': swiperPetId,
+        'petName': swiperPetName,
+        'petPhoto': swiperPetPhoto,
+        'secondaryPetId': targetPetId,
+        'secondaryPetName': targetPetName,
+        'secondaryPetPhoto': targetPetPhoto,
         'type': 'breeding_match_created',
+        'purpose': 'breeding',
         'title': "It's a match!",
         'message':
             '$swiperPetName also likes $targetPetName. Chat is now open.',
@@ -227,10 +321,19 @@ class BreedingMatchService {
   Future<void> sendMessage({
     required String matchId,
     required String text,
+    String? mediaType,
+    String? mediaUrl,
+    String? mediaFileName,
+    int? mediaSizeBytes,
   }) async {
     final user = UserSessionService.instance.currentUser;
     final trimmed = text.trim();
-    if (user == null || trimmed.isEmpty) return;
+    final normalizedMediaType = mediaType?.trim().toLowerCase();
+    final normalizedMediaUrl = mediaUrl?.trim() ?? '';
+    final hasMedia =
+        (normalizedMediaType == 'image' || normalizedMediaType == 'video') &&
+        normalizedMediaUrl.isNotEmpty;
+    if (user == null || (trimmed.isEmpty && !hasMedia)) return;
 
     final conversation = _firestore.collection('conversations').doc(matchId);
     final message = conversation.collection('messages').doc();
@@ -240,6 +343,10 @@ class BreedingMatchService {
       final snapshot = await transaction.get(conversation);
       final data = snapshot.data();
       if (data == null) throw StateError('Conversation not found.');
+      final senderSnapshot = await transaction.get(
+        _firestore.collection('users').doc(user.uid),
+      );
+      final senderData = senderSnapshot.data() ?? const <String, dynamic>{};
 
       final participantIds =
           (data['participantIds'] as List?)?.cast<String>() ?? const <String>[];
@@ -289,20 +396,65 @@ class BreedingMatchService {
         data['lastReadAt'] as Map? ?? const <String, dynamic>{},
       );
       lastReadAt[user.uid] = FieldValue.serverTimestamp();
+      final petOwners = Map<String, dynamic>.from(
+        data['petOwners'] as Map? ?? const {},
+      );
+      final petNames = Map<String, dynamic>.from(
+        data['petNames'] as Map? ?? const {},
+      );
+      final petPhotos = Map<String, dynamic>.from(
+        data['petPhotos'] as Map? ?? const {},
+      );
+      final senderPetId = petOwners.entries
+          .where((entry) => entry.value == user.uid)
+          .map((entry) => entry.key)
+          .firstOrNull;
+      final senderName = _firstText(senderData, const [
+        'fullName',
+        'name',
+        'displayName',
+        'userName',
+        'username',
+      ]);
+      final senderPhoto = _firstText(senderData, const [
+        'profilePhoto',
+        'photoURL',
+        'photoUrl',
+      ]);
 
+      final preview = hasMedia
+          ? normalizedMediaType == 'video'
+                ? 'Sent a video'
+                : 'Sent a photo'
+          : trimmed;
       transaction.set(message, {
         'messageId': message.id,
         'senderId': user.uid,
         'text': trimmed,
+        'type': hasMedia ? 'media' : 'text',
+        if (hasMedia) 'mediaType': normalizedMediaType,
+        if (hasMedia) 'mediaUrl': normalizedMediaUrl,
+        if (hasMedia && mediaFileName?.trim().isNotEmpty == true)
+          'mediaFileName': mediaFileName!.trim(),
+        if (hasMedia && mediaSizeBytes != null)
+          'mediaSizeBytes': mediaSizeBytes,
         'readBy': [user.uid],
         'createdAt': FieldValue.serverTimestamp(),
       });
       transaction.set(notification, {
         'notificationId': notification.id,
         'recipientId': recipientId,
+        'actorId': user.uid,
+        if (senderName.isNotEmpty) 'actorName': senderName,
+        if (senderPhoto.isNotEmpty) 'actorPhoto': senderPhoto,
+        if (senderPetId case final petId?) ...{
+          'petId': petId,
+          'petName': petNames[petId],
+          'petPhoto': petPhotos[petId],
+        },
         'type': 'new_message',
         'title': 'New message',
-        'message': trimmed,
+        'message': preview,
         'purpose': purpose,
         'matchId': matchId,
         'conversationId': matchId,
@@ -310,7 +462,7 @@ class BreedingMatchService {
         'createdAt': FieldValue.serverTimestamp(),
       });
       transaction.update(conversation, <String, dynamic>{
-        'lastMessage': trimmed,
+        'lastMessage': preview,
         'lastMessageSenderId': user.uid,
         'lastMessageAt': FieldValue.serverTimestamp(),
         'unreadCounts': unreadCounts,
@@ -963,6 +1115,34 @@ class BreedingMatchService {
         });
       }
     });
+  }
+}
+
+class BreedingIncomingLike {
+  final String likingPetId;
+  final String likingPetName;
+  final String likingOwnerId;
+  final DateTime createdAt;
+
+  const BreedingIncomingLike({
+    required this.likingPetId,
+    required this.likingPetName,
+    required this.likingOwnerId,
+    required this.createdAt,
+  });
+
+  factory BreedingIncomingLike.fromDocument(
+    QueryDocumentSnapshot<Map<String, dynamic>> document,
+  ) {
+    final data = document.data();
+    return BreedingIncomingLike(
+      likingPetId: data['swiperPetId'] as String? ?? '',
+      likingPetName: data['swiperPetName'] as String? ?? 'Pet',
+      likingOwnerId: data['swiperOwnerId'] as String? ?? '',
+      createdAt:
+          (data['createdAt'] as Timestamp?)?.toDate() ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+    );
   }
 }
 

@@ -731,7 +731,7 @@ class _DashboardTab extends StatelessWidget {
               (data['moderationStatus'] ?? data['status'] ?? 'active')
                   .toString()
                   .toLowerCase();
-          return role != 'admin' && status == 'active';
+          return role != 'admin' && (status == 'active' || status == 'warned');
         }).length,
       );
     });
@@ -978,7 +978,12 @@ class _AccountsTab extends StatelessWidget {
                     const <QueryDocumentSnapshot<Map<String, dynamic>>>[])
                 .where((doc) => _matches(doc.data()))
                 .toList()
-              ..sort((a, b) => _name(a.data()).compareTo(_name(b.data())));
+              ..sort((a, b) {
+                final first = _name(a.data()).trim().toLowerCase();
+                final second = _name(b.data()).trim().toLowerCase();
+                final byName = first.compareTo(second);
+                return byName != 0 ? byName : a.id.compareTo(b.id);
+              });
         return ListView(
           padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
           children: [
@@ -1035,7 +1040,10 @@ class _AccountsTab extends StatelessWidget {
       return false;
     }
     final status = _moderationStatus(data);
-    if (filter != 'all' && status != filter) return false;
+    if (filter == 'active' && status != 'active' && status != 'warned') {
+      return false;
+    }
+    if (filter != 'all' && filter != 'active' && status != filter) return false;
     if (search.trim().isEmpty) return true;
     final haystack = [
       data['fullName'],
@@ -1173,6 +1181,9 @@ class _ReportDetailSheetState extends State<_ReportDetailSheet> {
   }
 
   Future<void> _confirmAction() async {
+    if (_accountAction == 'Warned' && _listingAction != 'none') {
+      setState(() => _listingAction = 'none');
+    }
     await _resolve(
       status: 'resolved',
       adminAction: _actionLabel(_accountAction, _listingAction),
@@ -1191,6 +1202,9 @@ class _ReportDetailSheetState extends State<_ReportDetailSheet> {
     required String listingAction,
     required String defaultUserNote,
   }) async {
+    final effectiveListingAction = actionKey == 'Warned'
+        ? 'none'
+        : listingAction;
     final userNote = defaultUserNote.trim();
     if (userNote.isEmpty) {
       _showSnack('Please add an explanation before confirming.');
@@ -1232,7 +1246,7 @@ class _ReportDetailSheetState extends State<_ReportDetailSheet> {
         'adminAction': adminAction,
         'actionKey': actionKey,
         'severity': severity,
-        'listingAction': listingAction,
+        'listingAction': effectiveListingAction,
         'internalNote': _internalNote.text.trim(),
         'userNote': userNote,
         'resolvedAt': FieldValue.serverTimestamp(),
@@ -1276,10 +1290,10 @@ class _ReportDetailSheetState extends State<_ReportDetailSheet> {
         );
       }
       if (_isListingReportType(type) && targetId.isNotEmpty) {
-        final listingActionEndsAt = listingAction == 'hide'
+        final listingActionEndsAt = effectiveListingAction == 'hide'
             ? Timestamp.fromDate(DateTime.now().add(const Duration(days: 3)))
             : null;
-        final listingUpdate = switch (listingAction) {
+        final listingUpdate = switch (effectiveListingAction) {
           'hide' => {
             'adminListingStatus': 'hidden',
             'adminHidden': true,
@@ -1313,7 +1327,7 @@ class _ReportDetailSheetState extends State<_ReportDetailSheet> {
             SetOptions(merge: true),
           );
         }
-        if (listingAction != 'none') {
+        if (effectiveListingAction != 'none') {
           batch.update(reportRef, {
             'listingActionEndsAt': listingActionEndsAt,
             'listingActionAppliedAt': FieldValue.serverTimestamp(),
@@ -1326,7 +1340,7 @@ class _ReportDetailSheetState extends State<_ReportDetailSheet> {
         'action': adminAction,
         'actionKey': actionKey,
         'severity': severity,
-        'listingAction': listingAction,
+        'listingAction': effectiveListingAction,
         'status': status,
         'targetId': targetId,
         'targetName': _targetTitle(data),
@@ -1539,9 +1553,19 @@ class _ReportDetailSheetState extends State<_ReportDetailSheet> {
           'Suspended30': 'Suspend Account (30 Days)',
           'Banned': 'Permanently Disable Account',
         },
-        onChanged: (value) => setState(() => _accountAction = value),
+        onChanged: (value) => setState(() {
+          _accountAction = value;
+          if (value == 'Warned') _listingAction = 'none';
+        }),
       ),
-      if (_isListingReportType(type))
+      if (_accountAction == 'Warned')
+        const _AdminInfoPanel(
+          icon: Icons.info_outline,
+          title: 'Formal warning only',
+          body:
+              'This records a formal warning only. The account stays active, no features are restricted, and no listings are hidden or removed.',
+        ),
+      if (_isListingReportType(type) && _accountAction != 'Warned')
         _DropdownField(
           label: 'Listing Action',
           icon: Icons.pets,
@@ -1665,6 +1689,8 @@ class _ReportDetailSheetState extends State<_ReportDetailSheet> {
     orElse: () => _severityOptions.first,
   );
 
+  // Retained for the legacy moderation workflow.
+  // ignore: unused_element
   Future<void> _showActionEditor() async {
     await showModalBottomSheet<void>(
       context: context,
@@ -1702,7 +1728,7 @@ class _ReportDetailSheetState extends State<_ReportDetailSheet> {
                       label: 'Severity',
                       value: _severity,
                       items: const {
-                        'minor': 'Minor - warning or light restriction',
+                        'minor': 'Minor - formal warning only',
                         'serious': 'Serious - temporary suspension',
                         'severe': 'Severe - ban or permanent removal',
                       },
@@ -1714,6 +1740,9 @@ class _ReportDetailSheetState extends State<_ReportDetailSheet> {
                             'severe' => 'Banned',
                             _ => 'Warned',
                           };
+                          if (_accountAction == 'Warned') {
+                            _listingAction = 'none';
+                          }
                         });
                         setState(() {
                           _severity = value;
@@ -1722,6 +1751,9 @@ class _ReportDetailSheetState extends State<_ReportDetailSheet> {
                             'severe' => 'Banned',
                             _ => 'Warned',
                           };
+                          if (_accountAction == 'Warned') {
+                            _listingAction = 'none';
+                          }
                         });
                       },
                     ),
@@ -1735,11 +1767,18 @@ class _ReportDetailSheetState extends State<_ReportDetailSheet> {
                         'Banned': 'Ban account',
                       },
                       onChanged: (value) {
-                        setSheetState(() => _accountAction = value);
-                        setState(() => _accountAction = value);
+                        setSheetState(() {
+                          _accountAction = value;
+                          if (value == 'Warned') _listingAction = 'none';
+                        });
+                        setState(() {
+                          _accountAction = value;
+                          if (value == 'Warned') _listingAction = 'none';
+                        });
                       },
                     ),
-                    if ((widget.data['type'] ?? '') == 'listing')
+                    if ((widget.data['type'] ?? '') == 'listing' &&
+                        _accountAction != 'Warned')
                       _DropdownField(
                         label: 'Listing Action',
                         value: _listingAction,
@@ -1871,13 +1910,12 @@ class _ReturnDetailSheetState extends State<_ReturnDetailSheet> {
     }
     final hasAdminAccess = await UserSessionService.instance
         .isCurrentUserAdmin();
+    if (!mounted) return;
     if (!hasAdminAccess) {
-      if (mounted) {
-        _showGlobalSnack(
-          context,
-          'This account is not configured as an admin. Check its role in Firestore.',
-        );
-      }
+      _showGlobalSnack(
+        context,
+        'This account is not configured as an admin. Check its role in Firestore.',
+      );
       return;
     }
     if (!skipPrompt) {
@@ -2233,20 +2271,24 @@ class _UserDetailSheetState extends State<_UserDetailSheet> {
       return;
     }
     final label = _actionLabel(action, 'none');
-    final ok = _requiresRestrictionConfirmation(action)
-        ? await _showAccountRestrictionConfirmation(
-            context: context,
-            action: action,
-            userName: _name(widget.data),
-            userExplanation: userNote,
-          )
-        : await _confirm(
-            context,
-            title: '$label?',
-            message:
-                'This will update the user moderation status and log the action.',
-            confirmText: 'Confirm',
-          );
+    if (!mounted) return;
+    final bool ok;
+    if (_requiresRestrictionConfirmation(action)) {
+      ok = await _showAccountRestrictionConfirmation(
+        context: context,
+        action: action,
+        userName: _name(widget.data),
+        userExplanation: userNote,
+      );
+    } else {
+      ok = await _confirm(
+        context,
+        title: '$label?',
+        message:
+            'This will update the user moderation status and log the action.',
+        confirmText: 'Confirm',
+      );
+    }
     if (!ok || !mounted) return;
     setState(() => _saving = true);
     final admin = UserSessionService.instance.currentUser;
@@ -2504,6 +2546,13 @@ class _UserDetailSheetState extends State<_UserDetailSheet> {
         },
         onChanged: (value) => setState(() => _action = value),
       ),
+      if (_action == 'Warned')
+        const _AdminInfoPanel(
+          icon: Icons.info_outline,
+          title: 'Formal Warning Only',
+          body:
+              'The warning will be recorded, but the account remains active. No features are restricted and no listings are hidden or removed.',
+        ),
       _TextArea(
         label: 'Internal Admin Note (admins only)',
         helperText: 'Ready-made summary — edit as needed.',
@@ -4442,7 +4491,7 @@ class _DecisionSheetFrame extends StatelessWidget {
           children: [
             CircleAvatar(
               radius: 30,
-              backgroundColor: iconColor.withOpacity(0.12),
+              backgroundColor: iconColor.withValues(alpha: 0.12),
               child: Icon(icon, color: iconColor, size: 30),
             ),
             const SizedBox(height: 18),
@@ -4984,6 +5033,8 @@ class _UserHeader extends StatelessWidget {
   }
 }
 
+// Retained for the legacy moderation workflow.
+// ignore: unused_element
 class _ActionButtonGrid extends StatelessWidget {
   final bool disabled;
   final ValueChanged<String> onAction;
@@ -5612,7 +5663,7 @@ class _SectionCard extends StatelessWidget {
                   ),
                 ),
               ),
-              if (trailing != null) trailing!,
+              ?trailing,
             ],
           ),
           const SizedBox(height: 12),
@@ -6034,7 +6085,7 @@ class _DropdownField extends StatelessWidget {
           _FieldLabel(label: label, icon: icon),
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
-            value: value,
+            initialValue: value,
             decoration: InputDecoration(
               filled: true,
               fillColor: const Color(0xFFFFF7FA),
@@ -6277,7 +6328,7 @@ class _StatCard extends StatelessWidget {
                 assetPath,
                 fit: BoxFit.contain,
                 filterQuality: FilterQuality.high,
-                errorBuilder: (_, __, ___) => _IconBubble(icon: icon),
+                errorBuilder: (_, _, _) => _IconBubble(icon: icon),
               ),
             ),
             const Spacer(),
@@ -6540,6 +6591,8 @@ class _SheetHandle extends StatelessWidget {
   }
 }
 
+// Retained for legacy admin detail layouts.
+// ignore: unused_element
 class _InfoRow extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -7317,6 +7370,22 @@ Future<void> _queueUserPetModerationUpdates({
     final currentStatus = (pet.data()['moderationListingStatus'] ?? '')
         .toString()
         .toLowerCase();
+    final sourceAction = (pet.data()['moderationSourceAction'] ?? '')
+        .toString();
+
+    if (action == 'Warned') {
+      if (currentStatus != 'hidden' || sourceAction != 'Warned') continue;
+      batch.set(pet.reference, {
+        'moderationListingStatus': 'active',
+        'moderationHiddenUntil': FieldValue.delete(),
+        'moderationHiddenAt': FieldValue.delete(),
+        'moderationHiddenBy': FieldValue.delete(),
+        'moderationSourceAction': FieldValue.delete(),
+        'moderationHiddenReason': FieldValue.delete(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      continue;
+    }
 
     if (action == 'Restored') {
       if (currentStatus != 'hidden') continue;
