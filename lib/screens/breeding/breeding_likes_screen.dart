@@ -292,6 +292,20 @@ class _BreedingLikeProfileScreenState extends State<BreedingLikeProfileScreen> {
         Navigator.pop(context);
         return;
       }
+      if (result.existingMatch) {
+        await Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ChatConversationScreen(
+              matchId: result.matchId!,
+              otherPetName: target.name,
+              otherPetPhoto: target.photoUrl,
+              otherOwnerId: target.ownerId,
+            ),
+          ),
+        );
+        return;
+      }
       final action = await Navigator.push<String>(
         context,
         MaterialPageRoute(

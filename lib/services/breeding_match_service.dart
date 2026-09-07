@@ -43,6 +43,58 @@ class BreedingMatchService {
         );
   }
 
+  Stream<Set<String>> watchUnavailableCandidatePetIds(String swiperPetId) {
+    if (swiperPetId.isEmpty) return Stream.value(const <String>{});
+
+    late StreamController<Set<String>> controller;
+    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? swipeSubscription;
+    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? matchSubscription;
+    var swipedIds = const <String>{};
+    var matchedIds = const <String>{};
+    var hasSwipes = false;
+    var hasMatches = false;
+
+    void emit() {
+      if (!hasSwipes || !hasMatches || controller.isClosed) return;
+      controller.add({...swipedIds, ...matchedIds});
+    }
+
+    controller = StreamController<Set<String>>(
+      onListen: () {
+        swipeSubscription = _firestore
+            .collection('swipes')
+            .where('swiperPetId', isEqualTo: swiperPetId)
+            .snapshots()
+            .listen((snapshot) {
+              swipedIds = snapshot.docs
+                  .map((doc) => doc.data()['targetPetId'] as String? ?? '')
+                  .where((id) => id.isNotEmpty)
+                  .toSet();
+              hasSwipes = true;
+              emit();
+            }, onError: controller.addError);
+        matchSubscription = _firestore
+            .collection('matches')
+            .where('petIds', arrayContains: swiperPetId)
+            .snapshots()
+            .listen((snapshot) {
+              matchedIds = snapshot.docs
+                  .expand((doc) => (doc.data()['petIds'] as List? ?? const []))
+                  .map((id) => id.toString())
+                  .where((id) => id.isNotEmpty && id != swiperPetId)
+                  .toSet();
+              hasMatches = true;
+              emit();
+            }, onError: controller.addError);
+      },
+      onCancel: () async {
+        await swipeSubscription?.cancel();
+        await matchSubscription?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
   Stream<List<BreedingIncomingLike>> watchUnansweredIncomingLikes(
     String targetPetId,
   ) {
@@ -138,11 +190,17 @@ class BreedingMatchService {
         .doc();
 
     var matched = false;
+    var existingRelationship = false;
 
     await _firestore.runTransaction((transaction) async {
-      final existingMatch = await transaction.get(matchReference);
-      if (existingMatch.data()?['status'] == 'unmatched') {
+      final existingMatchSnapshot = await transaction.get(matchReference);
+      if (existingMatchSnapshot.data()?['status'] == 'unmatched') {
         throw StateError('These pets were permanently unmatched.');
+      }
+      if (existingMatchSnapshot.exists) {
+        matched = true;
+        existingRelationship = true;
+        return;
       }
 
       final reverseSwipe = liked
@@ -273,6 +331,7 @@ class BreedingMatchService {
     return SwipeResult(
       matched: matched,
       matchId: matched ? resolvedMatchId : null,
+      existingMatch: existingRelationship,
     );
   }
 
@@ -1108,8 +1167,9 @@ class BreedingMatchService {
 
       if (removeFromListings) {
         transaction.update(_firestore.collection('pets').doc(ownPetId), {
-          'status': 'matched',
+          'status': 'paused',
           'isActive': false,
+          'breedingAvailability': 'offline',
           'matchId': matchId,
           'updatedAt': FieldValue.serverTimestamp(),
         });
@@ -1149,6 +1209,11 @@ class BreedingIncomingLike {
 class SwipeResult {
   final bool matched;
   final String? matchId;
+  final bool existingMatch;
 
-  const SwipeResult({required this.matched, this.matchId});
+  const SwipeResult({
+    required this.matched,
+    this.matchId,
+    this.existingMatch = false,
+  });
 }

@@ -21,14 +21,13 @@ class UserSessionService {
   Future<void> _ensureGoogleInitialized() async {
     if (_googleInitialized) return;
 
-    await _googleSignIn.initialize(
-      serverClientId: googleServerClientId,
-    );
+    await _googleSignIn.initialize(serverClientId: googleServerClientId);
 
     _googleInitialized = true;
   }
 
-  Future<DocumentSnapshot<Map<String, dynamic>>?> getCurrentUserProfile() async {
+  Future<DocumentSnapshot<Map<String, dynamic>>?>
+  getCurrentUserProfile() async {
     final user = currentUser;
 
     if (user == null) {
@@ -49,12 +48,18 @@ class UserSessionService {
     return role == 'admin';
   }
 
+  Future<bool> isCurrentUserVeterinaryAdmin() async {
+    final user = currentUser;
+    if (user?.email?.trim().toLowerCase() == 'breedr_vet@yahoo.com') {
+      return true;
+    }
+    final profile = await getCurrentUserProfile();
+    final role = profile?.data()?['role']?.toString().trim().toLowerCase();
+    return role == 'veterinary_admin';
+  }
+
   Future<bool> shouldAutoLogin() async {
-    final user = currentUser ??
-        await _auth.authStateChanges().first.timeout(
-              const Duration(seconds: 2),
-              onTimeout: () => null,
-            );
+    final user = await _restoredUser();
 
     if (user == null) {
       return false;
@@ -74,26 +79,28 @@ class UserSessionService {
   }
 
   Future<bool> hasCurrentSession() async {
-    if (currentUser != null) {
-      return true;
-    }
+    return await _restoredUser() != null;
+  }
 
-    final user = await _auth.authStateChanges().first.timeout(
-          const Duration(seconds: 2),
-          onTimeout: () => null,
-        );
+  /// Firebase can emit a temporary null auth state while Android restores its
+  /// persisted credentials after a cold start. Waiting for the first non-null
+  /// event prevents the splash screen from treating that brief state as a
+  /// logout. A genuinely signed-out user simply reaches the timeout.
+  Future<User?> _restoredUser() async {
+    final existingUser = currentUser;
+    if (existingUser != null) return existingUser;
 
-    return user != null;
+    return _auth
+        .authStateChanges()
+        .firstWhere((user) => user != null)
+        .timeout(const Duration(seconds: 4), onTimeout: () => null);
   }
 
   Future<UserCredential> signInWithEmail({
     required String email,
     required String password,
   }) {
-    return _auth.signInWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
+    return _auth.signInWithEmailAndPassword(email: email, password: password);
   }
 
   Future<UserCredential> signInWithGoogle() async {

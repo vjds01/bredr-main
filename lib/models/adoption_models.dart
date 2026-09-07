@@ -157,6 +157,7 @@ class AdoptionListing {
   final double? longitude;
   final String profilePhoto;
   final List<String> additionalImages;
+  final List<String> additionalVideos;
   final List<Map<String, dynamic>> healthRecords;
   final List<AdoptionQuestion> questions;
   final AdoptionType adoptionType;
@@ -200,6 +201,7 @@ class AdoptionListing {
     required this.longitude,
     required this.profilePhoto,
     required this.additionalImages,
+    required this.additionalVideos,
     required this.healthRecords,
     required this.questions,
     required this.adoptionType,
@@ -289,15 +291,15 @@ class AdoptionListing {
           data['petProfilePhoto'] as String? ??
           data['profilePhoto'] as String? ??
           '',
-      additionalImages: <String>[
-        ..._stringListFromAny(
-          data['additionalImages'] ??
-              data['additionalPhotos'] ??
-              data['additionalPhotoUrls'] ??
-              data['morePhotos'],
-        ),
-        ..._stringListFromAny(data['additionalVideos']),
-      ],
+      additionalImages: _stringListFromAny(
+        data['additionalImages'] ??
+            data['additionalPhotos'] ??
+            data['additionalPhotoUrls'] ??
+            data['morePhotos'],
+      ),
+      additionalVideos: _stringListFromAny(
+        data['additionalVideos'] ?? data['additionalVideoUrls'],
+      ),
       healthRecords:
           (data['healthRecords'] as List?)
               ?.whereType<Map>()
@@ -312,8 +314,7 @@ class AdoptionListing {
       price: rawType == 'FREE' ? null : (details['price'] as num?)?.toDouble(),
       priceNegotiable: details['priceNegotiable'] as bool? ?? false,
       noOtherPets: details['noOtherPets'] as bool? ?? false,
-      vetVerified:
-          data['vetVerified'] as bool? ?? data['hasHealthRecords'] == true,
+      vetVerified: data['vetVerified'] == true,
       status: _listingStatus(rawStatus),
       isActive: data['isActive'] as bool? ?? true,
       adminListingStatus: (data['adminListingStatus'] ?? '')

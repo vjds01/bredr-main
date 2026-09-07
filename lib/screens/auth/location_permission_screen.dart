@@ -6,11 +6,17 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import '../../services/location_service.dart';
 import '../../services/cabuyao_access_service.dart';
-import '../../services/cabuyao_barangay_service.dart';
 import '../../widgets/cabuyao_barangay_picker.dart';
 
 class LocationPermissionScreen extends StatefulWidget {
-  const LocationPermissionScreen({super.key});
+  const LocationPermissionScreen({
+    super.key,
+    this.destination,
+    this.returnResult = false,
+  }) : assert(destination == null || !returnResult);
+
+  final Widget? destination;
+  final bool returnResult;
 
   @override
   State<LocationPermissionScreen> createState() =>
@@ -92,20 +98,21 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen> {
         position.longitude,
       );
 
+      if (!mounted) return;
       final place = placemarks.isNotEmpty ? placemarks.first : null;
-      var locationName = CabuyaoBarangayService.fromPlacemark(place);
-      locationName ??= await CabuyaoBarangayService.fromCoordinates(
-        position.latitude,
-        position.longitude,
+      final locationName = await resolveDetectedCabuyaoBarangay(
+        context,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        accuracyMeters: position.accuracy,
+        placemark: place,
       );
-      if (locationName == null && mounted) {
-        locationName = await showCabuyaoBarangayPicker(context);
-      }
       if (locationName == null) return;
 
       //saving location
       LocationService.instance.latitude = position.latitude;
       LocationService.instance.longitude = position.longitude;
+      LocationService.instance.accuracyMeters = position.accuracy;
       LocationService.instance.locationName = locationName;
 
       debugPrint("Latitude: ${position.latitude}");
@@ -114,10 +121,16 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen> {
 
       if (!mounted) return;
 
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-      );
+      if (widget.returnResult) {
+        Navigator.pop(context, true);
+      } else {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => widget.destination ?? const LoginScreen(),
+          ),
+        );
+      }
     } catch (e) {
       debugPrint('Location detection error: $e');
 

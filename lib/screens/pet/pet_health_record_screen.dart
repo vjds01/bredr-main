@@ -16,7 +16,9 @@ const _red = Color(0xFFF43845);
 const _orange = Color(0xFFF2AA58);
 
 class HealthRecord {
+  final String recordId;
   final String type;
+  final String otherType;
   final String fileName;
   final File? file;
   final String dateIssued;
@@ -25,7 +27,9 @@ class HealthRecord {
   final String clinic;
 
   HealthRecord({
+    this.recordId = '',
     required this.type,
+    this.otherType = '',
     required this.fileName,
     this.file,
     this.dateIssued = '',
@@ -33,6 +37,9 @@ class HealthRecord {
     this.veterinarian = '',
     this.clinic = '',
   });
+
+  String get displayType =>
+      type == 'Other' && otherType.trim().isNotEmpty ? otherType.trim() : type;
 }
 
 class PetHealthRecordScreen extends StatefulWidget {
@@ -98,7 +105,9 @@ class _PetHealthRecordScreenState extends State<PetHealthRecordScreen> {
     return _records
         .map(
           (record) => PetHealthRecordData(
+            recordId: record.recordId,
             type: record.type,
+            otherType: record.otherType,
             fileName: record.fileName,
             file: record.file,
             dateIssued: record.dateIssued,
@@ -112,7 +121,9 @@ class _PetHealthRecordScreenState extends State<PetHealthRecordScreen> {
 
   HealthRecord _fromPetHealthRecord(PetHealthRecordData record) {
     return HealthRecord(
+      recordId: record.recordId,
       type: record.type,
+      otherType: record.otherType,
       fileName: record.fileName,
       file: record.file,
       dateIssued: record.dateIssued,
@@ -419,7 +430,7 @@ class _RecordCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  record.type,
+                  record.displayType,
                   style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
@@ -539,7 +550,7 @@ class _HealthRecordPreviewDialog extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    record.type,
+                    record.displayType,
                     style: const TextStyle(
                       color: _blue,
                       fontSize: 20,
@@ -600,6 +611,7 @@ class _AddHealthRecordSheetState extends State<_AddHealthRecordSheet> {
   final _nextUpdateCtrl = TextEditingController();
   final _vetCtrl = TextEditingController();
   final _clinicCtrl = TextEditingController();
+  final _otherTypeCtrl = TextEditingController();
   bool _showVerifyDialog = false;
   bool _validationAttempted = false;
 
@@ -618,6 +630,7 @@ class _AddHealthRecordSheetState extends State<_AddHealthRecordSheet> {
     if (initial == null) return;
 
     _docType = initial.type;
+    _otherTypeCtrl.text = initial.otherType;
     _file = initial.file;
     _fileName = initial.fileName;
     _dateCtrl.text = initial.dateIssued;
@@ -632,6 +645,7 @@ class _AddHealthRecordSheetState extends State<_AddHealthRecordSheet> {
     _nextUpdateCtrl.dispose();
     _vetCtrl.dispose();
     _clinicCtrl.dispose();
+    _otherTypeCtrl.dispose();
     super.dispose();
   }
 
@@ -641,7 +655,8 @@ class _AddHealthRecordSheetState extends State<_AddHealthRecordSheet> {
         _dateCtrl.text.trim().isEmpty ||
         _nextUpdateCtrl.text.trim().isEmpty ||
         _vetCtrl.text.trim().isEmpty ||
-        _clinicCtrl.text.trim().isEmpty) {
+        _clinicCtrl.text.trim().isEmpty ||
+        (_docType == 'Other' && _otherTypeCtrl.text.trim().isEmpty)) {
       return;
     }
 
@@ -651,7 +666,11 @@ class _AddHealthRecordSheetState extends State<_AddHealthRecordSheet> {
   void _confirmSave() {
     widget.onSave(
       HealthRecord(
+        recordId: widget.initialRecord?.recordId.isNotEmpty == true
+            ? widget.initialRecord!.recordId
+            : DateTime.now().microsecondsSinceEpoch.toString(),
         type: _docType ?? 'Vaccination',
+        otherType: _docType == 'Other' ? _otherTypeCtrl.text.trim() : '',
         fileName: _fileName,
         file: _file,
         dateIssued: _dateCtrl.text.trim(),
@@ -841,7 +860,16 @@ class _AddHealthRecordSheetState extends State<_AddHealthRecordSheet> {
                       ),
                       if (_docType == 'Other') ...[
                         const SizedBox(height: 10),
-                        _BlueTextField(hint: 'Specify Record Type...'),
+                        _BlueTextField(
+                          hint: 'Specify health record...',
+                          controller: _otherTypeCtrl,
+                          errorText:
+                              _validationAttempted &&
+                                  _otherTypeCtrl.text.trim().isEmpty
+                              ? 'Specific health record is required.'
+                              : null,
+                          onChanged: (_) => setState(() {}),
+                        ),
                       ],
                       const SizedBox(height: 20),
                       // UPLOAD FILE
@@ -951,7 +979,9 @@ class _AddHealthRecordSheetState extends State<_AddHealthRecordSheet> {
                               _dateCtrl.text.trim().isEmpty ||
                               _nextUpdateCtrl.text.trim().isEmpty ||
                               _vetCtrl.text.trim().isEmpty ||
-                              _clinicCtrl.text.trim().isEmpty)) ...[
+                              _clinicCtrl.text.trim().isEmpty ||
+                              (_docType == 'Other' &&
+                                  _otherTypeCtrl.text.trim().isEmpty))) ...[
                         const SizedBox(height: 14),
                         const _HealthValidationNotice(),
                       ],

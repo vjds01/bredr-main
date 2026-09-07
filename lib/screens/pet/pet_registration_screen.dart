@@ -8,6 +8,7 @@ import '../../models/pet_listing_data.dart';
 import '../../services/location_service.dart';
 import '../../services/cabuyao_barangay_service.dart';
 import '../../services/pet_registration_draft_service.dart';
+import '../../services/pet_media_validation_service.dart';
 import 'pet_purpose_screen.dart';
 
 class PetRegistrationScreen extends StatefulWidget {
@@ -196,9 +197,9 @@ class _PetRegistrationScreenState extends State<PetRegistrationScreen> {
     var rejectedLargeVideo = false;
     var rejectedVideoCover = false;
     for (final file in selected) {
-      final isVideo = file.path.toLowerCase().endsWith('.mp4');
+      final isVideo = PetMediaValidation.isMp4Path(file.path);
       if (isVideo) {
-        if (file.lengthSync() > 50 * 1024 * 1024) {
+        if (!PetMediaValidation.isVideoSizeAllowed(file.lengthSync())) {
           rejectedLargeVideo = true;
           continue;
         }
@@ -1282,8 +1283,10 @@ class _PetPhotoUploadState extends State<_PetPhotoUpload> {
           dashW: 6,
           gapW: 5,
         ),
-        child: Column(
-          children: [
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
+          child: Column(
+            children: [
             if (_image != null)
               ClipOval(
                 child: Image.file(
@@ -1374,7 +1377,8 @@ class _PetPhotoUploadState extends State<_PetPhotoUpload> {
                 fontWeight: FontWeight.w500,
               ),
             ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1545,6 +1549,71 @@ class _PetDashedCardState extends State<_PetDashedCard> {
     if (files.isNotEmpty) widget.onMediaSelected(files);
   }
 
+  Future<void> _recordVideo() async {
+    final xFile = await ImagePicker().pickVideo(source: ImageSource.camera);
+    if (xFile == null || !mounted) return;
+
+    final video = File(xFile.path);
+    if (!PetMediaValidation.isMp4Path(video.path)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Only MP4 videos can be uploaded.')),
+      );
+      return;
+    }
+    if (!PetMediaValidation.isVideoSizeAllowed(await video.length())) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Video must be 50 MB or smaller.')),
+      );
+      return;
+    }
+
+    widget.onMediaSelected([video]);
+  }
+
+  Future<void> _showMediaMenu() async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Take Photo'),
+              onTap: () => Navigator.pop(context, 'photo'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.video_camera_back_outlined),
+              title: const Text('Record Video'),
+              subtitle: const Text('MP4, up to 50 MB'),
+              onTap: () => Navigator.pop(context, 'video'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Choose Photos or Videos'),
+              subtitle: const Text('JPG, PNG, or MP4'),
+              onTap: () => Navigator.pop(context, 'files'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+
+    switch (action) {
+      case 'photo':
+        await _pickCamera();
+        break;
+      case 'video':
+        await _recordVideo();
+        break;
+      case 'files':
+        await _pickFile();
+        break;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -1606,7 +1675,7 @@ class _PetDashedCardState extends State<_PetDashedCard> {
                     width: double.infinity,
                     height: 42,
                     child: ElevatedButton(
-                      onPressed: _pickFile,
+                      onPressed: _showMediaMenu,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,
                         foregroundColor: Colors.white,
@@ -1616,34 +1685,9 @@ class _PetDashedCardState extends State<_PetDashedCard> {
                         ),
                       ),
                       child: const Text(
-                        'UPLOAD',
+                        'ADD PHOTOS OR VIDEOS',
                         style: TextStyle(
                           fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 42,
-                    child: OutlinedButton(
-                      onPressed: _pickCamera,
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(
-                          color: AppColors.primary,
-                          width: 1.5,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      child: const Text(
-                        'TAKE A PHOTO',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: AppColors.primary,
                           fontWeight: FontWeight.bold,
                         ),
                       ),

@@ -10,6 +10,7 @@ import '../adoption/adoption_request_detail_screen.dart';
 import '../adoption/owner_adoption_request_detail_screen.dart';
 import '../breeding/breeding_likes_screen.dart';
 import '../chat/chats_screen.dart';
+import '../pet/health_vault_screen.dart';
 
 enum _NotificationFilter { all, breeding, adoption }
 
@@ -117,6 +118,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
     final data = document.data() ?? const <String, dynamic>{};
     final type = data['type'] as String? ?? '';
+    if (type.startsWith('health_record_')) {
+      final petId = data['petId']?.toString() ?? '';
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) =>
+              HealthVaultScreen(initialPetId: petId.isEmpty ? null : petId),
+        ),
+      );
+      return;
+    }
+
     if (type == 'breeding_like_received') {
       await _openBreedingLikeNotification(context, data);
       return;
@@ -718,9 +731,15 @@ class _NotificationAvatars extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final secondaryIcon = purpose == 'adoption'
-        ? Icons.home_outlined
-        : Icons.favorite;
+    final secondaryIcon = switch (purpose) {
+      'adoption' => Icons.home_outlined,
+      'health' => Icons.health_and_safety_outlined,
+      _ => Icons.favorite,
+    };
+    final secondaryColor = switch (purpose) {
+      'adoption' || 'health' => const Color(0xFF2D8CFF),
+      _ => AppColors.primary,
+    };
     return SizedBox(
       width: 76,
       height: 58,
@@ -753,9 +772,7 @@ class _NotificationAvatars extends StatelessWidget {
               height: 24,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: purpose == 'adoption'
-                    ? const Color(0xFF2D8CFF)
-                    : AppColors.primary,
+                color: secondaryColor,
                 border: Border.all(color: Colors.white, width: 2),
               ),
               child: Icon(secondaryIcon, color: Colors.white, size: 13),
@@ -823,7 +840,11 @@ class _PurposeChip extends StatelessWidget {
         border: Border.all(color: const Color(0xFF222222), width: 0.8),
       ),
       child: Text(
-        purpose == 'adoption' ? 'Adoption' : 'Breeding',
+        switch (purpose) {
+          'adoption' => 'Adoption',
+          'health' => 'Health',
+          _ => 'Breeding',
+        },
         textAlign: TextAlign.center,
         style: const TextStyle(
           color: Color(0xFF222222),
@@ -1000,6 +1021,21 @@ Future<_ResolvedNotification> _resolveNotification(
   var petName = _notificationText(data['petName'], '');
   var petPhoto = _notificationText(data['petPhoto'], '');
   Map<String, dynamic>? petData;
+
+  if (type.startsWith('health_record_')) {
+    final petId = _notificationText(data['petId'], '');
+    petData = await _notificationDocument('pets', petId);
+    petName = petName.isNotEmpty
+        ? petName
+        : _firstNotificationText(petData, const ['name', 'petName']);
+    petPhoto = petPhoto.isNotEmpty
+        ? petPhoto
+        : _firstNotificationText(petData, const [
+            'petProfilePhoto',
+            'profilePhoto',
+            'photoUrl',
+          ]);
+  }
 
   final conversationId = _notificationText(
     data['conversationId'] ?? data['matchId'],
@@ -1186,6 +1222,13 @@ class _NotificationProfile {
   });
 
   static _NotificationProfile forType(String type) {
+    if (type.startsWith('health_record_')) {
+      return const _NotificationProfile(
+        icon: Icons.health_and_safety_outlined,
+        actionLabel: 'VIEW RECORD',
+        actionColor: Color(0xFF2389E8),
+      );
+    }
     if (type == 'adoption_request_received') {
       return const _NotificationProfile(
         icon: Icons.question_answer_outlined,
@@ -1266,17 +1309,25 @@ class _NotificationProfile {
 
 String _purposeForType(String type) {
   if (type.startsWith('adoption')) return 'adoption';
+  if (type.startsWith('health_record_') || type.startsWith('pet_health')) {
+    return 'health';
+  }
   return 'breeding';
 }
 
 String _purposeForNotification(Map<String, dynamic> data) {
   final type = data['type'] as String? ?? '';
   if (type.startsWith('adoption')) return 'adoption';
+  if (type.startsWith('health_record_') || type.startsWith('pet_health')) {
+    return 'health';
+  }
   if (type.startsWith('breeding') || type == 'match_ended') {
     return 'breeding';
   }
   final purpose = (data['purpose'] as String?)?.trim().toLowerCase();
-  if (purpose == 'adoption' || purpose == 'breeding') return purpose!;
+  if (purpose == 'adoption' || purpose == 'breeding' || purpose == 'health') {
+    return purpose!;
+  }
   return _purposeForType(type);
 }
 

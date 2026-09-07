@@ -61,6 +61,7 @@ class _Step2ReviewProfileState extends State<Step2ReviewProfile> {
   @override
   void dispose() {
     _aboutCtrl.dispose();
+    _locationCtrl.dispose();
     super.dispose();
   }
 
@@ -77,16 +78,16 @@ class _Step2ReviewProfileState extends State<Step2ReviewProfile> {
         _latitude!,
         _longitude!,
       );
-      var locationName = CabuyaoBarangayService.fromPlacemark(
-        placemarks.isNotEmpty ? placemarks.first : null,
-      );
-      locationName ??= await CabuyaoBarangayService.fromCoordinates(
-        _latitude!,
-        _longitude!,
+      if (!mounted) return;
+      final locationName = await resolveDetectedCabuyaoBarangay(
+        context,
+        latitude: _latitude!,
+        longitude: _longitude!,
+        accuracyMeters: LocationService.instance.accuracyMeters ?? 0,
+        placemark: placemarks.isNotEmpty ? placemarks.first : null,
       );
 
       if (locationName == null) {
-        await _chooseBarangay();
         return;
       }
       final resolvedLocationName = locationName;

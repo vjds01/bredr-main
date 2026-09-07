@@ -1,15 +1,16 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/adoption_models.dart';
 import '../../services/adoption_service.dart';
 import '../../services/cloudinary_service.dart';
+import '../../services/pet_media_validation_service.dart';
 import '../../services/user_session_service.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/evidence_picker_helper.dart';
 import '../../widgets/breedr_network_image.dart';
+import '../../widgets/breedr_video_card.dart';
 import 'adoption_application_screen.dart';
 import 'owner_profile_screen.dart';
 
@@ -85,10 +86,10 @@ class _PetAdoptionProfileScreenState extends State<PetAdoptionProfileScreen> {
   Widget _buildProfile(AdoptionListing listing) {
     final currentUserId = UserSessionService.instance.currentUser?.uid;
     final isOwnListing = currentUserId == listing.ownerId;
-    final images = <String>{
-      if (listing.profilePhoto.isNotEmpty) listing.profilePhoto,
-      ...listing.additionalImages.where((url) => url.isNotEmpty),
-    }.toList();
+    final images = PetMediaValidation.uniqueAdditionalUrls(
+      listing.additionalImages,
+      exclude: listing.profilePhoto,
+    );
     if (images.isNotEmpty && _photoIndex.value >= images.length) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _photoIndex.value >= images.length) {
@@ -341,6 +342,17 @@ class _PetAdoptionProfileScreenState extends State<PetAdoptionProfileScreen> {
                       species: listing.species,
                       onChanged: (index) => _photoIndex.value = index,
                     ),
+                  if (listing.additionalVideos.isNotEmpty) ...[
+                    const SizedBox(height: 24),
+                    _SectionTitle('VIDEOS OF ${listing.name.toUpperCase()}'),
+                    const SizedBox(height: 12),
+                    ...listing.additionalVideos.map(
+                      (url) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: BreedrVideoCard(url: url),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 24),
                   const _SectionTitle('POSTED BY'),
                   const SizedBox(height: 10),
@@ -1152,9 +1164,14 @@ class _HealthRecordRow extends StatelessWidget {
 
   const _HealthRecordRow({required this.record});
 
+  String get _displayType {
+    final rawType = record['type'] as String? ?? 'Health record';
+    final otherType = record['otherType']?.toString().trim() ?? '';
+    return rawType == 'Other' && otherType.isNotEmpty ? otherType : rawType;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final type = record['type'] as String? ?? 'Health record';
     final fileName = record['fileName'] as String? ?? '';
     return Container(
       padding: const EdgeInsets.fromLTRB(11, 8, 6, 8),
@@ -1171,7 +1188,10 @@ class _HealthRecordRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(type, style: const TextStyle(fontWeight: FontWeight.w900)),
+                Text(
+                  _displayType,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
                 Text(
                   fileName,
                   maxLines: 1,
@@ -1207,7 +1227,7 @@ class _HealthRecordRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                record['type'] as String? ?? 'Health record',
+                _displayType,
                 style: const TextStyle(
                   color: AppColors.primary,
                   fontSize: 20,
@@ -1307,12 +1327,10 @@ class _PhotoCarousel extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: _isVideoUrl(images[imageIndex])
-                          ? _RemoteVideoTile(url: images[imageIndex])
-                          : _NetworkPetImage(
-                              url: images[imageIndex],
-                              species: species,
-                            ),
+                      child: _NetworkPetImage(
+                        url: images[imageIndex],
+                        species: species,
+                      ),
                     ),
                   ),
                 ),
@@ -1330,36 +1348,6 @@ class _PhotoCarousel extends StatelessWidget {
             ],
           );
         },
-      ),
-    );
-  }
-}
-
-bool _isVideoUrl(String url) =>
-    Uri.tryParse(url)?.path.toLowerCase().endsWith('.mp4') ?? false;
-
-class _RemoteVideoTile extends StatelessWidget {
-  final String url;
-
-  const _RemoteVideoTile({required this.url});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xFF333333),
-      child: InkWell(
-        onTap: () =>
-            launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
-        child: const Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.play_circle_fill, color: Colors.white, size: 72),
-              SizedBox(height: 8),
-              Text('Play video', style: TextStyle(color: Colors.white)),
-            ],
-          ),
-        ),
       ),
     );
   }

@@ -4,8 +4,10 @@ import '../../theme/app_colors.dart';
 import '../auth/welcome_screen.dart';
 import '../auth/login_screen.dart';
 import '../../models/onboarding_data.dart';
+import '../../services/location_service.dart';
 import '../../services/user_session_service.dart';
-import '../auth/cabuyao_access_gate_screen.dart';
+import '../../widgets/registration_error_dialog.dart';
+import '../auth/location_permission_screen.dart';
 
 //done 5/28
 class Step1AboutYou extends StatefulWidget {
@@ -18,6 +20,7 @@ class Step1AboutYou extends StatefulWidget {
 class _Step1AboutYouState extends State<Step1AboutYou> {
   bool _obscurePassword = true;
   bool _isGoogleLoading = false;
+  bool _isNavigating = false;
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _usernameCtrl = TextEditingController();
@@ -42,26 +45,45 @@ class _Step1AboutYouState extends State<Step1AboutYou> {
   //       ),
   //     ); old go next code 5/25
 
-  void _goNext() {
+  Future<void> _goNext() async {
+    if (_isNavigating || _isGoogleLoading) return;
+
     // VALIDATION
 
-    if (_nameCtrl.text.trim().isEmpty ||
-        _emailCtrl.text.trim().isEmpty ||
-        _usernameCtrl.text.trim().isEmpty ||
-        _passCtrl.text.trim().isEmpty) {
+    if (_nameCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please complete all required fields.')),
+        const SnackBar(content: Text('Please enter your full name.')),
       );
-
       return;
     }
 
     final email = _emailCtrl.text.trim();
+    if (email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter your email address.')),
+      );
+      return;
+    }
+
     final isValidEmail = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email);
     if (!isValidEmail) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please enter a valid email address.')),
       );
+      return;
+    }
+
+    if (_usernameCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please enter a username.')));
+      return;
+    }
+
+    if (_passCtrl.text.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please enter a password.')));
       return;
     }
 
@@ -77,6 +99,15 @@ class _Step1AboutYouState extends State<Step1AboutYou> {
       return;
     }
 
+    setState(() => _isNavigating = true);
+
+    if (!await _ensureVerifiedLocation()) {
+      if (mounted) setState(() => _isNavigating = false);
+      return;
+    }
+
+    if (!mounted) return;
+
     // NAVIGATE TO NEXT SCREEN ONLY
 
     final onboardingData = OnboardingData(
@@ -87,20 +118,24 @@ class _Step1AboutYouState extends State<Step1AboutYou> {
       password: _passCtrl.text.trim(),
     );
 
-    Navigator.push(
+    await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => CabuyaoAccessGate(
-          child: WelcomeScreen(onboardingData: onboardingData),
-        ),
+        builder: (_) => WelcomeScreen(onboardingData: onboardingData),
       ),
     );
+
+    if (mounted) setState(() => _isNavigating = false);
   }
 
   Future<void> _signUpWithGoogle() async {
+    if (_isGoogleLoading || _isNavigating) return;
     setState(() => _isGoogleLoading = true);
 
     try {
+      if (!await _ensureVerifiedLocation()) return;
+      if (!mounted) return;
+
       final userCredential = await UserSessionService.instance
           .signInWithGoogle();
       final user = userCredential.user;
@@ -114,14 +149,16 @@ class _Step1AboutYouState extends State<Step1AboutYou> {
         await UserSessionService.instance.signOut();
         if (!mounted) return;
 
+        final goToLogin = await showExistingAccountDialog(
+          context,
+          message:
+              'This Google account is already registered with Breedr. Please log in instead.',
+        );
+        if (!mounted || !goToLogin) return;
+
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(
-            builder: (_) => const LoginScreen(
-              initialMessage:
-                  'An account with this email already exists. Please log in instead.',
-            ),
-          ),
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
         );
         return;
       }
@@ -140,14 +177,12 @@ class _Step1AboutYouState extends State<Step1AboutYou> {
 
       if (!mounted) return;
 
-      Navigator.push(
+      await Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => CabuyaoAccessGate(
-            child: WelcomeScreen(
-              onboardingData: onboardingData,
-              photoUrl: onboardingData.profilePhoto,
-            ),
+          builder: (_) => WelcomeScreen(
+            onboardingData: onboardingData,
+            photoUrl: onboardingData.profilePhoto,
           ),
         ),
       );
@@ -164,6 +199,19 @@ class _Step1AboutYouState extends State<Step1AboutYou> {
         setState(() => _isGoogleLoading = false);
       }
     }
+  }
+
+  Future<bool> _ensureVerifiedLocation() async {
+    if (LocationService.instance.hasVerifiedLocation) return true;
+
+    final verified = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const LocationPermissionScreen(returnResult: true),
+      ),
+    );
+
+    return verified == true && LocationService.instance.hasVerifiedLocation;
   }
 
   String _usernameFromEmail(String email) {
@@ -363,34 +411,6 @@ class _Step1AboutYouState extends State<Step1AboutYou> {
 
                     const SizedBox(height: 24),
 
-                    // Sign up button (outlined)
-                    SizedBox(
-                      width: double.infinity,
-                      height: 52,
-                      child: OutlinedButton(
-                        onPressed: _goNext,
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(
-                            color: AppColors.primary,
-                            width: 1.5,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: const Text(
-                          'Sign up',
-                          style: TextStyle(
-                            color: AppColors.primary,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 10),
-
                     // Already have account
                     Center(
                       child: GestureDetector(
@@ -544,7 +564,9 @@ class _Step1AboutYouState extends State<Step1AboutYou> {
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
-                  onPressed: _goNext,
+                  onPressed: (_isNavigating || _isGoogleLoading)
+                      ? null
+                      : _goNext,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,
@@ -553,10 +575,22 @@ class _Step1AboutYouState extends State<Step1AboutYou> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: const Text(
-                    'Continue to next step →',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                  ),
+                  child: _isNavigating
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text(
+                          'Continue to next step →',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                 ),
               ),
             ),

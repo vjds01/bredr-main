@@ -6,6 +6,7 @@ import '../../theme/app_colors.dart';
 import '../../models/pet_listing_data.dart';
 import '../../services/pet_registration_draft_service.dart';
 import '../../services/pet_service.dart';
+import '../../services/pet_media_validation_service.dart';
 import '../../services/cloudinary_service.dart';
 import '../../services/cabuyao_access_service.dart';
 import '../../services/user_session_service.dart';
@@ -49,6 +50,31 @@ class _PetReviewScreenState extends State<PetReviewScreen> {
       ).showSnackBar(SnackBar(content: Text(validationMessage)));
       return;
     }
+
+    final shouldPublish = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Publish pet profile?'),
+        content: const Text(
+          "Once uploaded, this pet's registration information cannot be edited.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Review Again'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Publish Pet'),
+          ),
+        ],
+      ),
+    );
+    if (shouldPublish != true || !mounted) return;
 
     setState(() => _isPublishing = true);
 
@@ -103,7 +129,7 @@ class _PetReviewScreenState extends State<PetReviewScreen> {
       return 'Add a cover photo before adding pet videos.';
     }
     if (pet.additionalVideoFiles.any(
-      (video) => video.lengthSync() > 50 * 1024 * 1024,
+      (video) => !PetMediaValidation.isVideoSizeAllowed(video.lengthSync()),
     )) {
       return 'Videos must be 50 MB or smaller.';
     }
@@ -354,7 +380,7 @@ class _PetReviewScreenState extends State<PetReviewScreen> {
                               (record) => Padding(
                                 padding: const EdgeInsets.only(bottom: 8),
                                 child: _HealthRecordRow(
-                                  type: record.type,
+                                  type: record.displayType,
                                   file: record.fileName,
                                   imageFile: record.file,
                                   fileUrl: record.fileUrl,

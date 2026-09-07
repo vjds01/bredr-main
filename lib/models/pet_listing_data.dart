@@ -313,7 +313,8 @@ class PetListingData {
       'healthRecords': healthRecords.map((record) => record.toMap()).toList(),
       'hasProfilePhoto': profilePhotoUrl.isNotEmpty,
       'hasHealthRecords': hasHealthRecords,
-      'vetVerified': hasHealthRecords,
+      'vetVerified': false,
+      'verifiedHealthRecordCount': 0,
       'status': 'published',
       'isActive': true,
       'createdAt': FieldValue.serverTimestamp(),
@@ -367,7 +368,10 @@ class PetInterviewQuestion {
 }
 
 class PetHealthRecordData {
+  final String recordId;
   final String type;
+  final String otherType;
+  final String verificationStatus;
   final String fileName;
   final File? file;
   final String fileUrl;
@@ -377,7 +381,10 @@ class PetHealthRecordData {
   final String clinic;
 
   const PetHealthRecordData({
+    this.recordId = '',
     required this.type,
+    this.otherType = '',
+    this.verificationStatus = 'pending',
     required this.fileName,
     this.file,
     this.fileUrl = '',
@@ -387,9 +394,15 @@ class PetHealthRecordData {
     this.clinic = '',
   });
 
+  String get displayType =>
+      type == 'Other' && otherType.trim().isNotEmpty ? otherType.trim() : type;
+
   Map<String, dynamic> toMap() {
     return {
+      'recordId': recordId,
       'type': type,
+      'otherType': otherType,
+      'verificationStatus': verificationStatus,
       'fileName': fileName,
       'fileUrl': fileUrl,
       'dateIssued': dateIssued,
@@ -408,7 +421,10 @@ class PetHealthRecordData {
     final file = PetListingData._fileFromPath(filePath);
 
     return PetHealthRecordData(
+      recordId: json['recordId'] as String? ?? '',
       type: json['type'] as String? ?? '',
+      otherType: json['otherType'] as String? ?? '',
+      verificationStatus: json['verificationStatus'] as String? ?? 'pending',
       fileName: json['fileName'] as String? ?? '',
       file: file,
       fileUrl: json['fileUrl'] as String? ?? '',
@@ -421,7 +437,10 @@ class PetHealthRecordData {
   }
 
   PetHealthRecordData copyWith({
+    String? recordId,
     String? type,
+    String? otherType,
+    String? verificationStatus,
     String? fileName,
     File? file,
     String? fileUrl,
@@ -431,7 +450,10 @@ class PetHealthRecordData {
     String? clinic,
   }) {
     return PetHealthRecordData(
+      recordId: recordId ?? this.recordId,
       type: type ?? this.type,
+      otherType: otherType ?? this.otherType,
+      verificationStatus: verificationStatus ?? this.verificationStatus,
       fileName: fileName ?? this.fileName,
       file: file ?? this.file,
       fileUrl: fileUrl ?? this.fileUrl,

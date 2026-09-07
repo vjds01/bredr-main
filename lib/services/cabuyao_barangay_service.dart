@@ -103,6 +103,28 @@ class CabuyaoBarangayService {
     }
   }
 
+  static Future<CabuyaoBarangayDetection> detect({
+    required double latitude,
+    required double longitude,
+    Placemark? placemark,
+    double? accuracyMeters,
+  }) async {
+    final boundaryLocation = await fromCoordinates(latitude, longitude);
+    final geocodedLocation = fromPlacemark(placemark);
+    final boundaryBarangay = canonicalName(boundaryLocation);
+    final geocodedBarangay = canonicalName(geocodedLocation);
+
+    return CabuyaoBarangayDetection(
+      boundaryLocation: boundaryLocation,
+      geocodedLocation: geocodedLocation,
+      accuracyMeters: accuracyMeters,
+      sourcesDisagree:
+          boundaryBarangay != null &&
+          geocodedBarangay != null &&
+          boundaryBarangay != geocodedBarangay,
+    );
+  }
+
   static Future<(double latitude, double longitude)?>
   representativeCoordinatesFor(String locationName) async {
     try {
@@ -274,4 +296,23 @@ class CabuyaoBarangayService {
       .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
       .trim()
       .replaceAll(RegExp(r'\s+'), ' ');
+}
+
+class CabuyaoBarangayDetection {
+  const CabuyaoBarangayDetection({
+    required this.boundaryLocation,
+    required this.geocodedLocation,
+    required this.accuracyMeters,
+    required this.sourcesDisagree,
+  });
+
+  final String? boundaryLocation;
+  final String? geocodedLocation;
+  final double? accuracyMeters;
+  final bool sourcesDisagree;
+
+  String? get suggestedLocation => boundaryLocation ?? geocodedLocation;
+  bool get hasLowAccuracy => accuracyMeters != null && accuracyMeters! > 100;
+  bool get needsConfirmation =>
+      suggestedLocation == null || sourcesDisagree || hasLowAccuracy;
 }

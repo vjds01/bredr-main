@@ -15,6 +15,13 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
+    function isVeterinaryAdmin() {
+      return signedIn() &&
+        (request.auth.token.email == 'breedr_vet@yahoo.com' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role ==
+           'veterinary_admin');
+    }
+
     function isParticipant(data) {
       return signedIn() && request.auth.uid in data.ownerIds;
     }
@@ -36,8 +43,13 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if signedIn();
-      allow create: if isOwner(userId);
-      allow update: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) &&
+        request.resource.data.get('role', 'user') == 'user';
+      allow update: if
+        (isOwner(userId) &&
+         request.resource.data.get('role', 'user') ==
+           resource.data.get('role', 'user')) ||
+        isAdmin();
     }
 
     match /reports/{reportId} {
@@ -88,13 +100,35 @@ service cloud.firestore {
       allow read, create, update, delete: if isAdmin();
     }
 
+    match /veterinaryActivity/{activityId} {
+      allow read: if isVeterinaryAdmin() &&
+        resource.data.veterinaryAdminId == request.auth.uid;
+      allow create: if isVeterinaryAdmin() &&
+        request.resource.data.veterinaryAdminId == request.auth.uid;
+    }
+
     match /pets/{petId} {
       allow read: if signedIn();
       allow create: if signedIn() &&
         request.resource.data.ownerId == request.auth.uid;
       allow update, delete: if isAdmin();
+      allow update: if isVeterinaryAdmin() &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'healthRecords',
+            'vetVerified',
+            'verifiedHealthRecordCount',
+            'updatedAt'
+          ]);
       allow update: if signedIn() &&
-        resource.data.ownerId == request.auth.uid;
+        resource.data.ownerId == request.auth.uid &&
+        (
+          request.resource.data.get('vetVerified', false) ==
+            resource.data.get('vetVerified', false) ||
+          request.resource.data.get('vetVerified', false) == false
+        ) &&
+        request.resource.data.get('verifiedHealthRecordCount', 0) <=
+          resource.data.get('verifiedHealthRecordCount', 0);
       allow update: if isApprovedAdoptionPartyForPet(resource.data) &&
         resource.data.adoptionStatus == 'reserved' &&
         request.resource.data.diff(resource.data).affectedKeys()

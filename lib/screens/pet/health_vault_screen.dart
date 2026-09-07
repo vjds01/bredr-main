@@ -11,7 +11,9 @@ import '../../theme/app_colors.dart';
 import '../../widgets/breedr_network_image.dart';
 
 class HealthVaultScreen extends StatefulWidget {
-  const HealthVaultScreen({super.key});
+  final String? initialPetId;
+
+  const HealthVaultScreen({super.key, this.initialPetId});
 
   @override
   State<HealthVaultScreen> createState() => _HealthVaultScreenState();
@@ -20,6 +22,12 @@ class HealthVaultScreen extends StatefulWidget {
 class _HealthVaultScreenState extends State<HealthVaultScreen> {
   final _cloudinary = CloudinaryService();
   String? _selectedPetId;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedPetId = widget.initialPetId;
+  }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> _petsStream() {
     final userId = UserSessionService.instance.currentUser?.uid;
@@ -38,9 +46,16 @@ class _HealthVaultScreenState extends State<HealthVaultScreen> {
     Map<String, dynamic>? record,
     int? index,
   }) async {
-    final result = await showDialog<_HealthRecordEditResult>(
+    final petDataBeforeEdit = pet.data() ?? const <String, dynamic>{};
+    if (_isAdoptedHealthPet(petDataBeforeEdit)) {
+      _showAdoptedPetMessage();
+      return;
+    }
+
+    final result = await showModalBottomSheet<_HealthRecordEditResult>(
       context: context,
-      barrierDismissible: false,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (_) => _HealthRecordEditorDialog(initialRecord: record),
     );
     if (result == null) return;
@@ -51,7 +66,12 @@ class _HealthVaultScreenState extends State<HealthVaultScreen> {
     ).showSnackBar(const SnackBar(content: Text('Uploading health record...')));
 
     try {
-      final petData = pet.data() ?? const <String, dynamic>{};
+      final freshPet = await pet.reference.get();
+      final petData = freshPet.data() ?? const <String, dynamic>{};
+      if (_isAdoptedHealthPet(petData)) {
+        _showAdoptedPetMessage();
+        return;
+      }
       final records = (petData['healthRecords'] as List? ?? const [])
           .map((item) => Map<String, dynamic>.from(item as Map))
           .toList();
@@ -59,7 +79,11 @@ class _HealthVaultScreenState extends State<HealthVaultScreen> {
           ? (record?['fileUrl'] as String? ?? '')
           : await _cloudinary.uploadImageOrThrow(result.file!);
       final updatedRecord = {
+        'recordId': record?['recordId']?.toString().isNotEmpty == true
+            ? record!['recordId']
+            : '${pet.id}_${DateTime.now().microsecondsSinceEpoch}',
         'type': result.type,
+        'otherType': result.otherType,
         'fileName': result.fileName,
         'fileUrl': fileUrl,
         'dateIssued': result.dateIssued,
@@ -76,11 +100,22 @@ class _HealthVaultScreenState extends State<HealthVaultScreen> {
         records[index] = updatedRecord;
       }
 
-      await pet.reference.update({
-        'healthRecords': records,
-        'hasHealthRecords': records.isNotEmpty,
-        'vetVerified': records.isNotEmpty,
-        'updatedAt': FieldValue.serverTimestamp(),
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        final latestPet = await transaction.get(pet.reference);
+        if (_isAdoptedHealthPet(latestPet.data() ?? const {})) {
+          throw StateError('adopted-pet-read-only');
+        }
+        transaction.update(pet.reference, {
+          'healthRecords': records,
+          'hasHealthRecords': records.isNotEmpty,
+          'vetVerified': records.any(
+            (item) => item['verificationStatus'] == 'verified',
+          ),
+          'verifiedHealthRecordCount': records
+              .where((item) => item['verificationStatus'] == 'verified')
+              .length,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
       });
 
       if (!mounted) return;
@@ -90,12 +125,27 @@ class _HealthVaultScreenState extends State<HealthVaultScreen> {
     } catch (error) {
       debugPrint('Health record save failed: $error');
       if (!mounted) return;
+      if (error is StateError && error.message == 'adopted-pet-read-only') {
+        _showAdoptedPetMessage();
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Unable to save the health record. Please try again.'),
         ),
       );
     }
+  }
+
+  void _showAdoptedPetMessage() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'This pet has already been adopted. Its health records are read-only.',
+        ),
+      ),
+    );
   }
 
   @override
@@ -183,12 +233,16 @@ class _HealthVaultScreenState extends State<HealthVaultScreen> {
                         ? const SizedBox.shrink()
                         : _HealthVaultPetBody(
                             pet: selectedPet,
-                            onAdd: () => _openEditor(pet: selectedPet),
-                            onReplace: (record, index) => _openEditor(
-                              pet: selectedPet,
-                              record: record,
-                              index: index,
-                            ),
+                            onAdd: _isAdoptedHealthPet(selectedPet.data())
+                                ? null
+                                : () => _openEditor(pet: selectedPet),
+                            onReplace: _isAdoptedHealthPet(selectedPet.data())
+                                ? null
+                                : (record, index) => _openEditor(
+                                    pet: selectedPet,
+                                    record: record,
+                                    index: index,
+                                  ),
                           ),
                   ),
                 ],
@@ -203,8 +257,8 @@ class _HealthVaultScreenState extends State<HealthVaultScreen> {
 
 class _HealthVaultPetBody extends StatelessWidget {
   final DocumentSnapshot<Map<String, dynamic>> pet;
-  final VoidCallback onAdd;
-  final void Function(Map<String, dynamic> record, int index) onReplace;
+  final VoidCallback? onAdd;
+  final void Function(Map<String, dynamic> record, int index)? onReplace;
 
   const _HealthVaultPetBody({
     required this.pet,
@@ -219,13 +273,20 @@ class _HealthVaultPetBody extends StatelessWidget {
         .map((item) => Map<String, dynamic>.from(item as Map))
         .toList();
     final dueSoon = records.firstWhere(
-      _isDueSoonRecord,
+      (record) =>
+          record['verificationStatus'] == 'verified' &&
+          _isDueSoonRecord(record),
       orElse: () => const <String, dynamic>{},
     );
+    final readOnly = _isAdoptedHealthPet(data);
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(42, 0, 42, 28),
       children: [
+        if (readOnly) ...[
+          const _AdoptedHealthReadOnlyNotice(),
+          const SizedBox(height: 14),
+        ],
         if (dueSoon.isNotEmpty) ...[
           _HealthDueSoonBanner(record: dueSoon),
           const SizedBox(height: 22),
@@ -240,15 +301,48 @@ class _HealthVaultPetBody extends StatelessWidget {
                 record: entry.value,
                 onView: () =>
                     _showHealthRecordPreview(context, record: entry.value),
-                onReplace: () => onReplace(entry.value, entry.key),
+                onReplace: onReplace == null
+                    ? null
+                    : () => onReplace!(entry.value, entry.key),
               ),
             ),
           ),
         const SizedBox(height: 6),
-        _HealthAddButton(onTap: onAdd),
+        if (onAdd != null) _HealthAddButton(onTap: onAdd!),
       ],
     );
   }
+}
+
+class _AdoptedHealthReadOnlyNotice extends StatelessWidget {
+  const _AdoptedHealthReadOnlyNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFEDF1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFFFB5C2)),
+      ),
+      child: const Text(
+        'This pet has already been adopted. Existing health records can be viewed but can no longer be changed.',
+        style: TextStyle(
+          color: Color(0xFF9A4454),
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+bool _isAdoptedHealthPet(Map<String, dynamic> data) {
+  return (data['status'] ?? '').toString().trim().toLowerCase() == 'adopted' ||
+      (data['adoptionStatus'] ?? '').toString().trim().toLowerCase() ==
+          'adopted';
 }
 
 class _HealthPetTab extends StatelessWidget {
@@ -377,7 +471,7 @@ class _HealthDueSoonBanner extends StatelessWidget {
 class _HealthVaultRecordCard extends StatelessWidget {
   final Map<String, dynamic> record;
   final VoidCallback onView;
-  final VoidCallback onReplace;
+  final VoidCallback? onReplace;
 
   const _HealthVaultRecordCard({
     required this.record,
@@ -387,11 +481,17 @@ class _HealthVaultRecordCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final type = record['type'] as String? ?? 'Health Record';
+    final rawType = record['type'] as String? ?? 'Health Record';
+    final otherType = record['otherType']?.toString().trim() ?? '';
+    final type = rawType == 'Other' && otherType.isNotEmpty
+        ? otherType
+        : rawType;
     final fileName = record['fileName'] as String? ?? '';
     final dateIssued = record['dateIssued'] as String? ?? '';
     final nextUpdate = _recordNextUpdate(record);
     final dueSoon = _isDueSoonRecord(record);
+    final verificationStatus =
+        record['verificationStatus']?.toString() ?? 'pending';
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -436,8 +536,14 @@ class _HealthVaultRecordCard extends StatelessWidget {
               const _HealthMiniDocument(),
               const SizedBox(width: 10),
               _HealthStatusPill(
-                label: dueSoon ? 'Due Soon' : 'Valid',
-                dueSoon: dueSoon,
+                label: verificationStatus == 'verified'
+                    ? (dueSoon ? 'Due Soon' : 'Verified')
+                    : verificationStatus == 'rejected'
+                    ? 'Rejected'
+                    : verificationStatus == 'replacement_requested'
+                    ? 'Replace'
+                    : 'Pending',
+                dueSoon: dueSoon || verificationStatus != 'verified',
               ),
             ],
           ),
@@ -463,14 +569,16 @@ class _HealthVaultRecordCard extends StatelessWidget {
                   onTap: onView,
                 ),
               ),
-              const SizedBox(width: 18),
-              Expanded(
-                child: _HealthBlueButton(
-                  icon: Icons.sync,
-                  label: 'REPLACE',
-                  onTap: onReplace,
+              if (onReplace != null) ...[
+                const SizedBox(width: 18),
+                Expanded(
+                  child: _HealthBlueButton(
+                    icon: Icons.sync,
+                    label: 'REPLACE',
+                    onTap: onReplace!,
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ],
@@ -717,6 +825,7 @@ class _HealthVaultEmptyState extends StatelessWidget {
 
 class _HealthRecordEditResult {
   final String type;
+  final String otherType;
   final String fileName;
   final File? file;
   final String dateIssued;
@@ -726,6 +835,7 @@ class _HealthRecordEditResult {
 
   const _HealthRecordEditResult({
     required this.type,
+    required this.otherType,
     required this.fileName,
     required this.file,
     required this.dateIssued,
@@ -750,6 +860,7 @@ class _HealthRecordEditorDialogState extends State<_HealthRecordEditorDialog> {
   final _nextUpdateController = TextEditingController();
   final _vetController = TextEditingController();
   final _clinicController = TextEditingController();
+  final _otherTypeController = TextEditingController();
   String _type = 'Vaccination';
   String _fileName = '';
   File? _file;
@@ -768,7 +879,14 @@ class _HealthRecordEditorDialogState extends State<_HealthRecordEditorDialog> {
     super.initState();
     final record = widget.initialRecord;
     if (record == null) return;
-    _type = record['type'] as String? ?? _type;
+    final savedType = record['type'] as String? ?? _type;
+    if (_types.contains(savedType)) {
+      _type = savedType;
+      _otherTypeController.text = record['otherType']?.toString() ?? '';
+    } else {
+      _type = 'Other';
+      _otherTypeController.text = savedType;
+    }
     _fileName = record['fileName'] as String? ?? '';
     _dateController.text = record['dateIssued'] as String? ?? '';
     _nextUpdateController.text = _recordNextUpdate(record);
@@ -782,6 +900,7 @@ class _HealthRecordEditorDialogState extends State<_HealthRecordEditorDialog> {
     _nextUpdateController.dispose();
     _vetController.dispose();
     _clinicController.dispose();
+    _otherTypeController.dispose();
     super.dispose();
   }
 
@@ -865,7 +984,8 @@ class _HealthRecordEditorDialogState extends State<_HealthRecordEditorDialog> {
         _dateController.text.trim().isEmpty ||
         _nextUpdateController.text.trim().isEmpty ||
         _vetController.text.trim().isEmpty ||
-        _clinicController.text.trim().isEmpty) {
+        _clinicController.text.trim().isEmpty ||
+        (_type == 'Other' && _otherTypeController.text.trim().isEmpty)) {
       return;
     }
 
@@ -880,6 +1000,7 @@ class _HealthRecordEditorDialogState extends State<_HealthRecordEditorDialog> {
         context,
         _HealthRecordEditResult(
           type: _type,
+          otherType: _type == 'Other' ? _otherTypeController.text.trim() : '',
           fileName: _fileName,
           file: _file,
           dateIssued: _dateController.text.trim(),
@@ -893,183 +1014,217 @@ class _HealthRecordEditorDialogState extends State<_HealthRecordEditorDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+    return FractionallySizedBox(
+      heightFactor: 0.94,
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        clipBehavior: Clip.antiAlias,
         child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'ADD HEALTH RECORD',
-                    style: TextStyle(
-                      color: Color(0xFF1D78FF),
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
+            Container(
+              color: Color(0xFF0050B4),
+              padding: const EdgeInsets.fromLTRB(22, 14, 12, 14),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'ADD HEALTH RECORD',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ),
-                ),
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.cancel, color: Color(0xFF1D78FF)),
-                ),
-              ],
-            ),
-            const _HealthEditorLabel('DOCUMENT TYPE'),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 7,
-              runSpacing: 7,
-              children: _types.map((type) {
-                final selected = _type == type;
-                return ChoiceChip(
-                  label: Text(type),
-                  selected: selected,
-                  selectedColor: const Color(0xFFD8EAFF),
-                  backgroundColor: const Color(0xFFEAF3FF),
-                  labelStyle: const TextStyle(
-                    color: Color(0xFF0050B4),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close, color: Colors.white),
                   ),
-                  showCheckmark: false,
-                  side: BorderSide.none,
-                  onSelected: (_) => setState(() => _type = type),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 12),
-            const _HealthEditorLabel('UPLOAD FILE'),
-            const SizedBox(height: 8),
-            _HealthUploadBox(
-              fileName: _fileName,
-              file: _file,
-              existingUrl: widget.initialRecord?['fileUrl'] as String? ?? '',
-              onUpload: _pickFile,
-              onTakePhoto: _takePhoto,
-              onDelete: () => setState(() {
-                _file = null;
-                _fileName = '';
-              }),
-            ),
-            const SizedBox(height: 12),
-            const _HealthEditorLabel('DATE ISSUED'),
-            const SizedBox(height: 8),
-            _HealthEditorField(
-              controller: _dateController,
-              hint: 'mm/dd/yyyy',
-              readOnly: true,
-              onTap: _pickDate,
-              suffix: Icons.calendar_month_outlined,
-              errorText:
-                  _validationAttempted && _dateController.text.trim().isEmpty
-                  ? 'Date Issued is required.'
-                  : null,
-            ),
-            const SizedBox(height: 12),
-            const _HealthEditorLabel('NEXT UPDATE'),
-            const SizedBox(height: 8),
-            _HealthEditorField(
-              controller: _nextUpdateController,
-              hint: 'Select next update date',
-              readOnly: true,
-              onTap: _pickNextUpdate,
-              suffix: Icons.event_repeat_outlined,
-              errorText:
-                  _validationAttempted &&
-                      _nextUpdateController.text.trim().isEmpty
-                  ? 'Next Update is required.'
-                  : null,
-            ),
-            const SizedBox(height: 12),
-            const _HealthEditorLabel('ISSUED BY'),
-            const SizedBox(height: 5),
-            const Text(
-              'Name of the veterinarian',
-              style: TextStyle(color: Color(0xFF777777), fontSize: 10),
-            ),
-            const SizedBox(height: 5),
-            _HealthEditorField(
-              controller: _vetController,
-              hint: 'Enter name of veterinarian...',
-              errorText:
-                  _validationAttempted && _vetController.text.trim().isEmpty
-                  ? 'Veterinarian name is required.'
-                  : null,
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Name of the veterinary clinic',
-              style: TextStyle(color: Color(0xFF777777), fontSize: 10),
-            ),
-            const SizedBox(height: 5),
-            _HealthEditorField(
-              controller: _clinicController,
-              hint: 'Select veterinary clinic...',
-              readOnly: true,
-              suffix: Icons.search,
-              onTap: () async {
-                final clinic = await showDialog<String>(
-                  context: context,
-                  builder: (_) => const _ClinicPickerDialog(),
-                );
-                if (clinic != null) {
-                  setState(() => _clinicController.text = clinic);
-                }
-              },
-              errorText:
-                  _validationAttempted && _clinicController.text.trim().isEmpty
-                  ? 'Veterinary clinic is required.'
-                  : null,
-            ),
-            if (_validationAttempted &&
-                (_fileName.isEmpty ||
-                    _dateController.text.trim().isEmpty ||
-                    _nextUpdateController.text.trim().isEmpty ||
-                    _vetController.text.trim().isEmpty ||
-                    _clinicController.text.trim().isEmpty)) ...[
-              const SizedBox(height: 12),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(11),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFE5E8),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFE04455)),
-                ),
-                child: const Text(
-                  'Please complete all required health-record information.',
-                  style: TextStyle(
-                    color: Color(0xFFB32635),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
+                ],
               ),
-            ],
-            const SizedBox(height: 18),
-            SizedBox(
-              width: double.infinity,
-              height: 46,
-              child: ElevatedButton(
-                onPressed: _submit,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0050B4),
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-                child: const Text(
-                  'SAVE HEALTH RECORD',
-                  style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(26, 24, 26, 28),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const _HealthEditorLabel('DOCUMENT TYPE'),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 7,
+                      runSpacing: 7,
+                      children: _types.map((type) {
+                        final selected = _type == type;
+                        return ChoiceChip(
+                          label: Text(type),
+                          selected: selected,
+                          selectedColor: const Color(0xFFD8EAFF),
+                          backgroundColor: const Color(0xFFEAF3FF),
+                          labelStyle: const TextStyle(
+                            color: Color(0xFF0050B4),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                          ),
+                          showCheckmark: false,
+                          side: BorderSide.none,
+                          onSelected: (_) => setState(() => _type = type),
+                        );
+                      }).toList(),
+                    ),
+                    if (_type == 'Other') ...[
+                      const SizedBox(height: 10),
+                      _HealthEditorField(
+                        controller: _otherTypeController,
+                        hint: 'Specify health record...',
+                        errorText:
+                            _validationAttempted &&
+                                _otherTypeController.text.trim().isEmpty
+                            ? 'Specific health record is required.'
+                            : null,
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    const _HealthEditorLabel('UPLOAD FILE'),
+                    const SizedBox(height: 8),
+                    _HealthUploadBox(
+                      fileName: _fileName,
+                      file: _file,
+                      existingUrl:
+                          widget.initialRecord?['fileUrl'] as String? ?? '',
+                      onUpload: _pickFile,
+                      onTakePhoto: _takePhoto,
+                      onDelete: () => setState(() {
+                        _file = null;
+                        _fileName = '';
+                      }),
+                    ),
+                    const SizedBox(height: 12),
+                    const _HealthEditorLabel('DATE ISSUED'),
+                    const SizedBox(height: 8),
+                    _HealthEditorField(
+                      controller: _dateController,
+                      hint: 'mm/dd/yyyy',
+                      readOnly: true,
+                      onTap: _pickDate,
+                      suffix: Icons.calendar_month_outlined,
+                      errorText:
+                          _validationAttempted &&
+                              _dateController.text.trim().isEmpty
+                          ? 'Date Issued is required.'
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
+                    const _HealthEditorLabel('NEXT UPDATE'),
+                    const SizedBox(height: 8),
+                    _HealthEditorField(
+                      controller: _nextUpdateController,
+                      hint: 'Select next update date',
+                      readOnly: true,
+                      onTap: _pickNextUpdate,
+                      suffix: Icons.event_repeat_outlined,
+                      errorText:
+                          _validationAttempted &&
+                              _nextUpdateController.text.trim().isEmpty
+                          ? 'Next Update is required.'
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
+                    const _HealthEditorLabel('ISSUED BY'),
+                    const SizedBox(height: 5),
+                    const Text(
+                      'Name of the veterinarian',
+                      style: TextStyle(color: Color(0xFF777777), fontSize: 10),
+                    ),
+                    const SizedBox(height: 5),
+                    _HealthEditorField(
+                      controller: _vetController,
+                      hint: 'Enter name of veterinarian...',
+                      errorText:
+                          _validationAttempted &&
+                              _vetController.text.trim().isEmpty
+                          ? 'Veterinarian name is required.'
+                          : null,
+                      onChanged: (_) => setState(() {}),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Name of the veterinary clinic',
+                      style: TextStyle(color: Color(0xFF777777), fontSize: 10),
+                    ),
+                    const SizedBox(height: 5),
+                    _HealthEditorField(
+                      controller: _clinicController,
+                      hint: 'Select veterinary clinic...',
+                      readOnly: true,
+                      suffix: Icons.search,
+                      onTap: () async {
+                        final clinic = await showDialog<String>(
+                          context: context,
+                          builder: (_) => const _ClinicPickerDialog(),
+                        );
+                        if (clinic != null) {
+                          setState(() => _clinicController.text = clinic);
+                        }
+                      },
+                      errorText:
+                          _validationAttempted &&
+                              _clinicController.text.trim().isEmpty
+                          ? 'Veterinary clinic is required.'
+                          : null,
+                    ),
+                    if (_validationAttempted &&
+                        (_fileName.isEmpty ||
+                            _dateController.text.trim().isEmpty ||
+                            _nextUpdateController.text.trim().isEmpty ||
+                            _vetController.text.trim().isEmpty ||
+                            _clinicController.text.trim().isEmpty ||
+                            (_type == 'Other' &&
+                                _otherTypeController.text.trim().isEmpty))) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(11),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFE5E8),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFE04455)),
+                        ),
+                        child: const Text(
+                          'Please complete all required health-record information.',
+                          style: TextStyle(
+                            color: Color(0xFFB32635),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 18),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 46,
+                      child: ElevatedButton(
+                        onPressed: _submit,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0050B4),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        child: const Text(
+                          'SAVE HEALTH RECORD',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

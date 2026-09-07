@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/cloudinary_service.dart';
 import '../../services/cabuyao_barangay_service.dart';
+import '../../widgets/registration_error_dialog.dart';
 import '../auth/login_screen.dart';
 import 'dart:io';
 
@@ -39,18 +40,7 @@ class _Step3WelcomeState extends State<Step3Welcome> {
     try {
       debugPrint('Preparing Firebase Auth user...');
 
-      User? user;
-
-      if (widget.onboardingData.authProvider.toLowerCase() == 'google') {
-        user = FirebaseAuth.instance.currentUser;
-      } else {
-        final credential = await FirebaseAuth.instance
-            .createUserWithEmailAndPassword(
-              email: widget.onboardingData.email,
-              password: widget.onboardingData.password,
-            );
-        user = credential.user;
-      }
+      final user = await _prepareAuthenticationUser();
 
       if (user == null) {
         throw Exception('Failed to create user');
@@ -142,22 +132,25 @@ class _Step3WelcomeState extends State<Step3Welcome> {
       if (!mounted) return;
 
       if (e.code == 'email-already-in-use') {
+        final goToLogin = await showExistingAccountDialog(
+          context,
+          message:
+              'The email ${widget.onboardingData.email} is already in use. Please log in or use a different email address.',
+        );
+        if (!mounted || !goToLogin) return;
+
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(
-            builder: (_) => const LoginScreen(
-              initialMessage:
-                  'An account with this email already exists. Please log in instead.',
-            ),
-          ),
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
           (route) => false,
         );
         return;
       }
 
-      ScaffoldMessenger.of(
+      await showRegistrationErrorDialog(
         context,
-      ).showSnackBar(SnackBar(content: Text(_accountCreationMessage(e))));
+        message: _accountCreationMessage(e),
+      );
     } on FirebaseException catch (e) {
       debugPrint('Account profile save error: ${e.code} ${e.message}');
 
@@ -183,6 +176,43 @@ class _Step3WelcomeState extends State<Step3Welcome> {
         setState(() => _isCreatingAccount = false);
       }
     }
+  }
+
+  Future<User?> _prepareAuthenticationUser() async {
+    if (widget.onboardingData.authProvider.toLowerCase() == 'google') {
+      return FirebaseAuth.instance.currentUser;
+    }
+
+    final auth = FirebaseAuth.instance;
+    final currentUser = auth.currentUser;
+    final requestedEmail = widget.onboardingData.email.trim().toLowerCase();
+    final currentEmail = currentUser?.email?.trim().toLowerCase();
+    final isMatchingIncompleteEmailSignup =
+        currentUser != null &&
+        currentEmail == requestedEmail &&
+        currentUser.providerData.any(
+          (provider) => provider.providerId == 'password',
+        );
+
+    if (isMatchingIncompleteEmailSignup) {
+      final existingProfile = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .get();
+      if (existingProfile.exists) {
+        throw FirebaseAuthException(code: 'email-already-in-use');
+      }
+
+      // Authentication succeeded during an earlier attempt, but uploading or
+      // saving the Breedr profile failed. Reuse it so Retry can finish signup.
+      return currentUser;
+    }
+
+    final credential = await auth.createUserWithEmailAndPassword(
+      email: widget.onboardingData.email,
+      password: widget.onboardingData.password,
+    );
+    return credential.user;
   }
 
   String? _validationMessage() {
@@ -226,6 +256,10 @@ class _Step3WelcomeState extends State<Step3Welcome> {
         return 'Too many sign-up attempts. Please wait and try again.';
       case 'network-request-failed':
         return 'Please check your internet connection and try again.';
+      case 'invalid-credential':
+        return 'Your sign-up session is no longer valid. Please go back and try again.';
+      case 'internal-error':
+        return 'The authentication service encountered a problem. Please try again.';
       default:
         return 'Unable to create your account right now. Please try again.';
     }

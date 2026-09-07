@@ -5,5 +5,11 @@ class LocationService {
 
   double? latitude;
   double? longitude;
+  double? accuracyMeters;
   String? locationName;
+
+  bool get hasVerifiedLocation =>
+      latitude != null &&
+      longitude != null &&
+      (locationName?.trim().isNotEmpty ?? false);
 }

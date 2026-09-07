@@ -63,9 +63,13 @@ void main() {
     });
 
     test('detects Niugan from the bundled boundary data', () {
-      final geoJson = jsonDecode(
-        File('assets/data/cabuyao_barangays.geojson').readAsStringSync(),
-      ) as Map<String, dynamic>;
+      final geoJson =
+          jsonDecode(
+                File(
+                  'assets/data/cabuyao_barangays.geojson',
+                ).readAsStringSync(),
+              )
+              as Map<String, dynamic>;
 
       expect(
         CabuyaoBarangayService.fromGeoJson(geoJson, 14.2685, 121.1332),
@@ -94,10 +98,42 @@ void main() {
         ],
       };
 
-      expect(
-        CabuyaoBarangayService.fromGeoJson(geoJson, 16.0, 123.0),
-        isNull,
+      expect(CabuyaoBarangayService.fromGeoJson(geoJson, 16.0, 123.0), isNull);
+    });
+
+    test('prefers the boundary result as the suggested barangay', () {
+      const detection = CabuyaoBarangayDetection(
+        boundaryLocation: 'Brgy. Mamatid, Cabuyao, Laguna',
+        geocodedLocation: 'Brgy. San Isidro, Cabuyao, Laguna',
+        accuracyMeters: 12,
+        sourcesDisagree: true,
       );
+
+      expect(detection.suggestedLocation, 'Brgy. Mamatid, Cabuyao, Laguna');
+      expect(detection.needsConfirmation, isTrue);
+    });
+
+    test('requires confirmation when GPS accuracy is poor', () {
+      const detection = CabuyaoBarangayDetection(
+        boundaryLocation: 'Brgy. Mamatid, Cabuyao, Laguna',
+        geocodedLocation: 'Brgy. Mamatid, Cabuyao, Laguna',
+        accuracyMeters: 180,
+        sourcesDisagree: false,
+      );
+
+      expect(detection.hasLowAccuracy, isTrue);
+      expect(detection.needsConfirmation, isTrue);
+    });
+
+    test('accepts an accurate matching detection automatically', () {
+      const detection = CabuyaoBarangayDetection(
+        boundaryLocation: 'Brgy. Mamatid, Cabuyao, Laguna',
+        geocodedLocation: 'Brgy. Mamatid, Cabuyao, Laguna',
+        accuracyMeters: 18,
+        sourcesDisagree: false,
+      );
+
+      expect(detection.needsConfirmation, isFalse);
     });
   });
 }

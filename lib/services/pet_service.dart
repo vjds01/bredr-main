@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/pet_listing_data.dart';
 import 'cloudinary_service.dart';
+import 'pet_media_validation_service.dart';
 import 'user_session_service.dart';
 
 class PetService {
@@ -13,6 +14,39 @@ class PetService {
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final CloudinaryService _cloudinary = CloudinaryService();
+
+  Future<void> setBreedingAvailability({
+    required String petId,
+    required bool available,
+  }) async {
+    final user = UserSessionService.instance.currentUser;
+    if (user == null) throw StateError('You must be logged in first.');
+
+    final petReference = _firestore.collection('pets').doc(petId);
+    await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(petReference);
+      final data = snapshot.data();
+      if (data == null) {
+        throw StateError('This pet profile could not be found.');
+      }
+      if (data['ownerId'] != user.uid) {
+        throw StateError('Only the pet owner can change this listing.');
+      }
+      final purpose = _normalizeText(
+        (data['normalizedPurpose'] ?? data['purpose'] ?? '').toString(),
+      );
+      if (purpose != 'breeding') {
+        throw StateError('Only breeding listings can be changed here.');
+      }
+
+      transaction.update(petReference, {
+        'status': available ? 'published' : 'paused',
+        'isActive': available,
+        'breedingAvailability': available ? 'available' : 'offline',
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    });
+  }
 
   Future<void> relistReturnedPetForAdoption(String petId) async {
     final user = UserSessionService.instance.currentUser;
@@ -97,7 +131,12 @@ class PetService {
 
     final additionalVideoUrls = <String>[];
     for (final video in pet.additionalVideoFiles) {
-      if (await video.length() > 50 * 1024 * 1024) {
+      if (!PetMediaValidation.isMp4Path(video.path)) {
+        throw const CloudinaryUploadException(
+          'Only MP4 videos can be uploaded.',
+        );
+      }
+      if (!PetMediaValidation.isVideoSizeAllowed(await video.length())) {
         throw const CloudinaryUploadException(
           'Videos must be 50 MB or smaller.',
         );

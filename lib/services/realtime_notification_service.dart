@@ -315,7 +315,9 @@ String? notificationPreferenceKeyForType(String type) {
     return 'adoptionUpdates';
   }
   if (type == 'new_message') return 'newMessages';
-  if (type.startsWith('pet_health')) return 'petHealth';
+  if (type.startsWith('pet_health') || type.startsWith('health_record_')) {
+    return 'petHealth';
+  }
   if (type.startsWith('review')) return 'reviewsReceived';
   return null;
 }

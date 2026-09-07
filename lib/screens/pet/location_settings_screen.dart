@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import '../../services/user_session_service.dart';
 import '../../services/cabuyao_barangay_service.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/cabuyao_barangay_picker.dart';
 
 class LocationSettingsScreen extends StatefulWidget {
   const LocationSettingsScreen({super.key});
@@ -72,12 +73,15 @@ class _LocationSettingsScreenState extends State<LocationSettingsScreen> {
         position.latitude,
         position.longitude,
       );
+      if (!mounted) return;
       final place = placemarks.isNotEmpty ? placemarks.first : null;
-      var locationName = await CabuyaoBarangayService.fromCoordinates(
-        position.latitude,
-        position.longitude,
+      final locationName = await resolveDetectedCabuyaoBarangay(
+        context,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        accuracyMeters: position.accuracy,
+        placemark: place,
       );
-      locationName ??= CabuyaoBarangayService.fromPlacemark(place);
       if (locationName == null) {
         _showMessage('Breedr is available in Cabuyao only.');
         return;
@@ -148,16 +152,32 @@ class _LocationSettingsScreenState extends State<LocationSettingsScreen> {
             .collection('pets')
             .where('ownerId', isEqualTo: user.uid)
             .get();
-        final batch = _firestore.batch();
-        for (final pet in pets.docs) {
-          batch.set(pet.reference, payload, SetOptions(merge: true));
-        }
-        await batch.commit();
+        await _firestore.runTransaction((transaction) async {
+          final currentPets = <DocumentSnapshot<Map<String, dynamic>>>[];
+          for (final pet in pets.docs) {
+            currentPets.add(await transaction.get(pet.reference));
+          }
+          for (final pet in currentPets) {
+            final data = pet.data() ?? const <String, dynamic>{};
+            if (data['ownerId'] != user.uid || _isAdoptedLocationPet(data)) {
+              continue;
+            }
+            transaction.set(pet.reference, payload, SetOptions(merge: true));
+          }
+        });
       } else if (target == _LocationTarget.pet && petId != null) {
-        await _firestore
-            .collection('pets')
-            .doc(petId)
-            .set(payload, SetOptions(merge: true));
+        final petReference = _firestore.collection('pets').doc(petId);
+        await _firestore.runTransaction((transaction) async {
+          final pet = await transaction.get(petReference);
+          final data = pet.data() ?? const <String, dynamic>{};
+          if (data['ownerId'] != user.uid) {
+            throw StateError('pet-owner-mismatch');
+          }
+          if (_isAdoptedLocationPet(data)) {
+            throw StateError('adopted-pet-read-only');
+          }
+          transaction.set(petReference, payload, SetOptions(merge: true));
+        });
       }
 
       if (!mounted) return;
@@ -167,8 +187,12 @@ class _LocationSettingsScreenState extends State<LocationSettingsScreen> {
           ? 'Unable to update this location because permission is missing.'
           : 'Unable to save location. Please try again.';
       _showMessage(message);
-    } catch (_) {
-      _showMessage('Unable to save location. Please try again.');
+    } catch (error) {
+      if (error is StateError && error.message == 'adopted-pet-read-only') {
+        _showMessage('An adopted pet\'s location can no longer be changed.');
+      } else {
+        _showMessage('Unable to save location. Please try again.');
+      }
     }
   }
 
@@ -206,6 +230,9 @@ class _LocationSettingsScreenState extends State<LocationSettingsScreen> {
                   .snapshots(),
               builder: (context, petsSnapshot) {
                 final pets = petsSnapshot.data?.docs ?? [];
+                final editablePets = pets
+                    .where((pet) => !_isAdoptedLocationPet(pet.data()))
+                    .toList();
 
                 return CustomScrollView(
                   slivers: [
@@ -278,18 +305,26 @@ class _LocationSettingsScreenState extends State<LocationSettingsScreen> {
                             const SizedBox(height: 12),
                             _PetsLocationCard(
                               pets: pets,
-                              onApplyAll: pets.isEmpty
+                              onApplyAll: editablePets.isEmpty
                                   ? null
                                   : () => _openSearch(
                                       target: _LocationTarget.allPets,
                                       currentLocation: locationName,
                                     ),
-                              onPetTap: (pet) => _openSearch(
-                                target: _LocationTarget.pet,
-                                petId: pet.id,
-                                currentLocation:
-                                    pet.data()['locationName'] as String?,
-                              ),
+                              onPetTap: (pet) {
+                                if (_isAdoptedLocationPet(pet.data())) {
+                                  _showMessage(
+                                    'An adopted pet\'s location can no longer be changed.',
+                                  );
+                                  return;
+                                }
+                                _openSearch(
+                                  target: _LocationTarget.pet,
+                                  petId: pet.id,
+                                  currentLocation:
+                                      pet.data()['locationName'] as String?,
+                                );
+                              },
                             ),
                             const SizedBox(height: 120),
                             const _PrivacyNote(),
@@ -306,6 +341,12 @@ class _LocationSettingsScreenState extends State<LocationSettingsScreen> {
       ),
     );
   }
+}
+
+bool _isAdoptedLocationPet(Map<String, dynamic> data) {
+  return (data['status'] ?? '').toString().trim().toLowerCase() == 'adopted' ||
+      (data['adoptionStatus'] ?? '').toString().trim().toLowerCase() ==
+          'adopted';
 }
 
 class SearchLocationScreen extends StatefulWidget {
@@ -693,12 +734,14 @@ class _PetsLocationCard extends StatelessWidget {
                   '';
               final location =
                   data['locationName'] as String? ?? 'Location not set';
+              final adopted = _isAdoptedLocationPet(data);
               return _PetLocationRow(
                 name: name,
                 breed: breed,
                 location: location,
                 photoUrl: photo,
                 species: data['species'] as String? ?? '',
+                adopted: adopted,
                 onTap: () => onPetTap(pet),
               );
             }),
@@ -714,6 +757,7 @@ class _PetLocationRow extends StatelessWidget {
   final String location;
   final String photoUrl;
   final String species;
+  final bool adopted;
   final VoidCallback onTap;
 
   const _PetLocationRow({
@@ -722,6 +766,7 @@ class _PetLocationRow extends StatelessWidget {
     required this.location,
     required this.photoUrl,
     required this.species,
+    required this.adopted,
     required this.onTap,
   });
 
@@ -759,6 +804,18 @@ class _PetLocationRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 3),
+                  if (adopted)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 3),
+                      child: Text(
+                        'ADOPTED · READ-ONLY',
+                        style: TextStyle(
+                          color: Color(0xFF8D7F88),
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
                   Text(
                     location,
                     maxLines: 1,
@@ -772,7 +829,10 @@ class _PetLocationRow extends StatelessWidget {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right, color: AppColors.primary),
+            Icon(
+              adopted ? Icons.lock_outline : Icons.chevron_right,
+              color: adopted ? const Color(0xFF999999) : AppColors.primary,
+            ),
           ],
         ),
       ),

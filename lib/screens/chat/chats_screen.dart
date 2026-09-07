@@ -19,6 +19,7 @@ import '../../services/presence_service.dart';
 import '../../services/user_session_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/breedr_network_image.dart';
+import '../adoption/owner_profile_screen.dart';
 import '../breeding/breeding_likes_screen.dart';
 
 bool _shouldShowConversation(Map<String, dynamic> data, String currentUserId) {
@@ -615,9 +616,7 @@ class _ChatPet {
           (data['petProfilePhoto'] as String?) ??
           (data['profilePhoto'] as String?) ??
           '',
-      verified:
-          data['vetVerified'] as bool? ??
-          ((data['healthRecords'] as List?)?.isNotEmpty ?? false),
+      verified: data['vetVerified'] == true,
     );
   }
 
@@ -636,9 +635,7 @@ class _ChatPet {
           data['petProfilePhoto'] as String? ??
           data['profilePhoto'] as String? ??
           '',
-      verified:
-          data['vetVerified'] as bool? ??
-          ((data['healthRecords'] as List?)?.isNotEmpty ?? false),
+      verified: data['vetVerified'] == true,
     );
   }
 
@@ -1601,11 +1598,13 @@ class _OwnerIdentity extends StatelessWidget {
   final String ownerId;
   final bool compact;
   final String label;
+  final VoidCallback? onTap;
 
   const _OwnerIdentity({
     required this.ownerId,
     required this.compact,
     this.label = 'Pet owner',
+    this.onTap,
   });
 
   @override
@@ -1633,7 +1632,7 @@ class _OwnerIdentity extends StatelessWidget {
         final ownerPhoto = data?['profilePhoto'] as String? ?? '';
         final avatarSize = compact ? 18.0 : 24.0;
 
-        return Row(
+        final identity = Row(
           mainAxisSize: MainAxisSize.max,
           children: [
             Text(
@@ -1660,6 +1659,18 @@ class _OwnerIdentity extends StatelessWidget {
               ),
             ),
           ],
+        );
+        if (onTap == null) return identity;
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: identity,
+            ),
+          ),
         );
       },
     );
@@ -1728,6 +1739,36 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
   int? _pendingMediaBytes;
   Timer? _readOnlyTimer;
   DateTime? _scheduledReadOnlyAt;
+
+  Future<void> _openOtherOwnerProfile() async {
+    if (widget.otherOwnerId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('This pet owner profile is unavailable.')),
+      );
+      return;
+    }
+
+    var ratingPurpose = 'breeding';
+    try {
+      final match = await FirebaseFirestore.instance
+          .collection('matches')
+          .doc(widget.matchId)
+          .get();
+      if (match.data()?['purpose'] == 'adoption') ratingPurpose = 'adoption';
+    } catch (_) {
+      // Profile navigation and reporting remain available if this lookup fails.
+    }
+    if (!mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => OwnerProfileScreen(
+          ownerId: widget.otherOwnerId,
+          ratingPurpose: ratingPurpose,
+        ),
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -2201,6 +2242,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                     ownerId: widget.otherOwnerId,
                     compact: false,
                     label: widget.otherParticipantLabel,
+                    onTap: _openOtherOwnerProfile,
                   ),
                   if (!widget.initiallyUnmatched)
                     _ActivityLabel(ownerId: widget.otherOwnerId),
@@ -7295,7 +7337,7 @@ class _CompletionPanelState extends State<_CompletionPanel> {
             const SizedBox(height: 8),
             if (!decisions.containsKey(widget.currentUserId)) ...[
               const Text(
-                'Would you like to remove your pet from breeding listings?',
+                'Would you like to set your pet offline from breeding listings?',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 12),
               ),
@@ -7305,7 +7347,7 @@ class _CompletionPanelState extends State<_CompletionPanel> {
                   Expanded(
                     child: OutlinedButton(
                       onPressed: () => _decideRemoval(context, false),
-                      child: const Text('Keep Listed'),
+                      child: const Text('Keep Available'),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -7316,7 +7358,7 @@ class _CompletionPanelState extends State<_CompletionPanel> {
                         backgroundColor: AppColors.primary,
                         foregroundColor: Colors.white,
                       ),
-                      child: const Text('Remove Pet'),
+                      child: const Text('Set Offline'),
                     ),
                   ),
                 ],
@@ -7324,7 +7366,7 @@ class _CompletionPanelState extends State<_CompletionPanel> {
             ] else
               Text(
                 decisions[widget.currentUserId] == true
-                    ? 'Your pet was removed from breeding listings.'
+                    ? 'Your pet is offline. You can make it available again from My Pets.'
                     : 'Your pet remains available for breeding.',
                 style: const TextStyle(fontSize: 12),
               ),

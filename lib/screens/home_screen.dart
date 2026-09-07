@@ -14,12 +14,15 @@ import '../services/cabuyao_access_service.dart';
 import '../services/cabuyao_barangay_service.dart';
 import '../services/moderation_service.dart';
 import '../services/pet_service.dart';
+import '../services/pet_media_validation_service.dart';
 import '../services/presence_service.dart';
 import '../services/realtime_notification_service.dart';
 import '../services/user_session_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/breedr_network_image.dart';
+import '../widgets/breedr_video_card.dart';
 import '../widgets/main_app_guide_overlay.dart';
+import '../widgets/cabuyao_barangay_picker.dart';
 import 'adoption/adoption_browse_screen.dart';
 import 'auth/get_started_screen.dart';
 import 'auth/moderation_gate_screen.dart';
@@ -2064,12 +2067,15 @@ class _EditProfileScreenState extends State<_EditProfileScreen> {
         position.latitude,
         position.longitude,
       );
+      if (!mounted) return;
       final place = placemarks.isNotEmpty ? placemarks.first : null;
-      var locationName = await CabuyaoBarangayService.fromCoordinates(
-        position.latitude,
-        position.longitude,
+      final locationName = await resolveDetectedCabuyaoBarangay(
+        context,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        accuracyMeters: position.accuracy,
+        placemark: place,
       );
-      locationName ??= CabuyaoBarangayService.fromPlacemark(place);
 
       if (!mounted) return;
       if (locationName == null) {
@@ -2080,7 +2086,7 @@ class _EditProfileScreenState extends State<_EditProfileScreen> {
       setState(() {
         _latitude = position.latitude;
         _longitude = position.longitude;
-        _locationController.text = locationName!;
+        _locationController.text = locationName;
       });
 
       _showMessage('Location detected.');
@@ -3053,10 +3059,21 @@ class _MyPetCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final name = data['name'] as String? ?? 'Pet';
+    final vetVerified = data['vetVerified'] == true;
     final breed = data['breed'] as String? ?? '';
     final purpose = data['purpose'] as String? ?? '';
     final status = data['status'] as String? ?? purpose;
-    final displayStatus = status == 'published' ? purpose : status;
+    final normalizedStatus = status.trim().toLowerCase();
+    final isBreedingOffline =
+        purpose == 'breeding' &&
+        (data['isActive'] == false ||
+            normalizedStatus == 'paused' ||
+            normalizedStatus == 'matched');
+    final displayStatus = isBreedingOffline
+        ? 'Offline'
+        : status == 'published'
+        ? purpose
+        : status;
     final isReturned =
         status == 'unpublished' && data['adoptionStatus'] == 'returned';
     final photoUrl =
@@ -3084,15 +3101,21 @@ class _MyPetCard extends StatelessWidget {
                 icon: Icon(Icons.more_vert, color: Colors.grey.shade700),
                 onSelected: (value) => _confirmStatusChange(context, value),
                 itemBuilder: (context) {
-                  if (status == 'matched' || status == 'adopted') {
+                  if (status == 'adopted') {
                     return const [];
                   }
 
                   if (purpose == 'breeding') {
-                    return const [
+                    return [
                       PopupMenuItem(
-                        value: 'matched',
-                        child: Text('Mark as matched'),
+                        value: isBreedingOffline
+                            ? 'resume_breeding'
+                            : 'pause_breeding',
+                        child: Text(
+                          isBreedingOffline
+                              ? 'Make available for breeding'
+                              : 'Set offline',
+                        ),
                       ),
                     ];
                   }
@@ -3118,15 +3141,30 @@ class _MyPetCard extends StatelessWidget {
             const SizedBox(height: 2),
             _PetAvatar(photoUrl: photoUrl),
             const SizedBox(height: 6),
-            Text(
-              name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.primary,
-                fontSize: 22,
-                fontWeight: FontWeight.w900,
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Flexible(
+                  child: Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.primary,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                if (vetVerified) ...[
+                  const SizedBox(width: 4),
+                  const Icon(
+                    Icons.verified,
+                    color: Color(0xFF35A4FF),
+                    size: 18,
+                  ),
+                ],
+              ],
             ),
             Text(
               breed,
@@ -3151,20 +3189,22 @@ class _MyPetCard extends StatelessWidget {
       await _confirmReturnedPetRelist(context);
       return;
     }
-    final isMatched = status == 'matched';
+    if (status == 'pause_breeding' || status == 'resume_breeding') {
+      await _confirmBreedingAvailability(
+        context,
+        available: status == 'resume_breeding',
+      );
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(
-          isMatched
-              ? 'Mark this pet as matched?'
-              : 'Are you sure you want to mark this pet as adopted?',
-          style: const TextStyle(fontWeight: FontWeight.bold),
+        title: const Text(
+          'Are you sure you want to mark this pet as adopted?',
+          style: TextStyle(fontWeight: FontWeight.bold),
         ),
-        content: Text(
-          isMatched
-              ? 'It will no longer be available for breeding.'
-              : 'This pet will be removed from listings and will no longer be available for adoption.',
+        content: const Text(
+          'This pet will be removed from listings and will no longer be available for adoption.',
         ),
         actions: [
           TextButton(
@@ -3186,6 +3226,48 @@ class _MyPetCard extends StatelessWidget {
       'isActive': false,
       'updatedAt': FieldValue.serverTimestamp(),
     });
+  }
+
+  Future<void> _confirmBreedingAvailability(
+    BuildContext context, {
+    required bool available,
+  }) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(available ? 'Make pet available?' : 'Set pet offline?'),
+        content: Text(
+          available
+              ? 'This pet will appear in breeding listings again.'
+              : 'This pet will be hidden from breeding listings. You can make it available again at any time.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(available ? 'Make Available' : 'Set Offline'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      await PetService.instance.setBreedingAvailability(
+        petId: petId,
+        available: available,
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to update this pet right now. Try again.'),
+        ),
+      );
+    }
   }
 
   Future<void> _confirmReturnedPetRelist(BuildContext context) async {
@@ -3316,11 +3398,17 @@ class _MyPetPreviewScreen extends StatelessWidget {
         (data['petProfilePhoto'] as String?) ??
         (data['profilePhoto'] as String?) ??
         '';
-    final images = _imageListFromAny(
-      data['additionalImages'] ??
-          data['additionalPhotos'] ??
-          data['additionalPhotoUrls'] ??
-          data['morePhotos'],
+    final images = PetMediaValidation.uniqueAdditionalUrls(
+      _imageListFromAny(
+        data['additionalImages'] ??
+            data['additionalPhotos'] ??
+            data['additionalPhotoUrls'] ??
+            data['morePhotos'],
+      ),
+      exclude: photoUrl,
+    );
+    final videos = _imageListFromAny(
+      data['additionalVideos'] ?? data['additionalVideoUrls'],
     );
     final records = (data['healthRecords'] as List?) ?? const [];
     final adoption = data['adoptionDetails'] as Map<String, dynamic>?;
@@ -3439,6 +3527,17 @@ class _MyPetPreviewScreen extends StatelessWidget {
                         child: BreedrNetworkImage(imageUrl: images[index]),
                       ),
                     ),
+                  ),
+                ),
+              ],
+              if (videos.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                _PreviewSectionTitle('VIDEOS OF ${name.toUpperCase()}'),
+                const SizedBox(height: 12),
+                ...videos.map(
+                  (url) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: BreedrVideoCard(url: url),
                   ),
                 ),
               ],
@@ -3581,7 +3680,11 @@ class _PreviewHealthRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final type = record['type'] as String? ?? 'Record';
+    final rawType = record['type'] as String? ?? 'Record';
+    final otherType = record['otherType']?.toString().trim() ?? '';
+    final type = rawType == 'Other' && otherType.isNotEmpty
+        ? otherType
+        : rawType;
     final file = record['fileName'] as String? ?? '';
     final fileUrl = record['fileUrl'] as String? ?? '';
     final dateIssued = record['dateIssued'] as String? ?? '';

@@ -3,13 +3,14 @@ import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/breed_options.dart';
 import '../../services/breeding_match_service.dart';
+import '../../services/pet_media_validation_service.dart';
 import '../../services/user_session_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/breedr_network_image.dart';
+import '../../widgets/breedr_video_card.dart';
 import '../chat/chats_screen.dart';
 import '../adoption/owner_profile_screen.dart';
 import '../adoption/pet_adoption_profile_screen.dart';
@@ -188,9 +189,8 @@ class _BreedingScreenState extends State<BreedingScreen> {
               ),
               stream: selectedPet == null
                   ? null
-                  : BreedingMatchService.instance.watchSwipedPetIds(
-                      selectedPet.id,
-                    ),
+                  : BreedingMatchService.instance
+                        .watchUnavailableCandidatePetIds(selectedPet.id),
               builder: (context, swipeSnapshot) {
                 final swipeHistoryLoading =
                     selectedPet != null &&
@@ -339,6 +339,21 @@ class _BreedingScreenState extends State<BreedingScreen> {
       if (!result.matched) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${targetPet.name} was added to your likes.')),
+        );
+        return;
+      }
+
+      if (result.existingMatch) {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ChatConversationScreen(
+              matchId: result.matchId!,
+              otherPetName: targetPet.name,
+              otherPetPhoto: targetPet.photoUrl,
+              otherOwnerId: targetPet.ownerId,
+            ),
+          ),
         );
         return;
       }
@@ -584,7 +599,7 @@ class _BreedingPet {
           .whereType<Map>()
           .map((record) => Map<String, dynamic>.from(record))
           .toList(),
-      vetVerified: data['vetVerified'] as bool? ?? rawRecords.isNotEmpty,
+      vetVerified: data['vetVerified'] == true,
       status: data['status'] as String? ?? '',
       isActive: data['isActive'] as bool? ?? true,
       purpose:
@@ -636,6 +651,12 @@ class _BreedingPet {
       return true;
     }).toList();
   }
+
+  List<String> get additionalGalleryImages =>
+      PetMediaValidation.uniqueAdditionalUrls(
+        additionalImages,
+        exclude: photoUrl,
+      );
 
   bool get isAvailableForBreeding {
     final normalizedPurpose = purpose.trim().toLowerCase();
@@ -1344,7 +1365,7 @@ class _ExpandedPetProfile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final galleryImages = pet.galleryImages;
+    final galleryImages = pet.additionalGalleryImages;
 
     return SingleChildScrollView(
       child: Column(
@@ -1423,14 +1444,10 @@ class _ExpandedPetProfile extends StatelessWidget {
                   const SizedBox(height: 10),
                   ...pet.additionalVideos.indexed.map(
                     (entry) => Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: OutlinedButton.icon(
-                        onPressed: () => launchUrl(
-                          Uri.parse(entry.$2),
-                          mode: LaunchMode.externalApplication,
-                        ),
-                        icon: const Icon(Icons.play_circle_outline),
-                        label: Text('Play video ${entry.$1 + 1}'),
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: BreedrVideoCard(
+                        key: ValueKey('breeding-video-${entry.$1}'),
+                        url: entry.$2,
                       ),
                     ),
                   ),
@@ -2388,7 +2405,11 @@ class _HealthRecordRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final type = record['type'] as String? ?? 'Record';
+    final rawType = record['type'] as String? ?? 'Record';
+    final otherType = record['otherType']?.toString().trim() ?? '';
+    final type = rawType == 'Other' && otherType.isNotEmpty
+        ? otherType
+        : rawType;
     final fileName = record['fileName'] as String? ?? '';
     final fileUrl = record['fileUrl'] as String? ?? '';
     final dateIssued = record['dateIssued'] as String? ?? '';

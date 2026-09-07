@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import '../admin/admin_dashboard_screen.dart';
+import '../veterinary/veterinary_dashboard_screen.dart';
 import '../home_screen.dart';
 import '../signup/create_account.dart';
 import '../../services/location_service.dart';
@@ -9,6 +10,7 @@ import '../../services/user_session_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'forgot_password_screen.dart';
 import 'cabuyao_access_gate_screen.dart';
+import 'location_permission_screen.dart';
 import 'moderation_gate_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -90,10 +92,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (!mounted) return;
 
+      final isVetAdmin = await UserSessionService.instance
+          .isCurrentUserVeterinaryAdmin();
       final isAdmin = await UserSessionService.instance.isCurrentUserAdmin();
       Widget destination = const CabuyaoAccessGate(child: HomeScreen());
 
-      if (isAdmin) {
+      if (isVetAdmin) {
+        destination = const VeterinaryDashboardScreen();
+      } else if (isAdmin) {
         destination = const AdminDashboardScreen();
       } else {
         final moderation = await ModerationService.instance
@@ -194,10 +200,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (!mounted) return;
 
+      final isVetAdmin = await UserSessionService.instance
+          .isCurrentUserVeterinaryAdmin();
       final isAdmin = await UserSessionService.instance.isCurrentUserAdmin();
       Widget destination = const CabuyaoAccessGate(child: HomeScreen());
 
-      if (isAdmin) {
+      if (isVetAdmin) {
+        destination = const VeterinaryDashboardScreen();
+      } else if (isAdmin) {
         destination = const AdminDashboardScreen();
       } else {
         final moderation = await ModerationService.instance
@@ -227,6 +237,14 @@ class _LoginScreenState extends State<LoginScreen> {
         });
       }
     }
+  }
+
+  void _openSignUp() {
+    final destination = LocationService.instance.hasVerifiedLocation
+        ? const Step1AboutYou()
+        : const LocationPermissionScreen(destination: Step1AboutYou());
+
+    Navigator.push(context, MaterialPageRoute(builder: (_) => destination));
   }
 
   String _loginErrorMessage(Object error) {
@@ -479,13 +497,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     // Don't have account
                     Center(
                       child: GestureDetector(
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                const CabuyaoAccessGate(child: Step1AboutYou()),
-                          ),
-                        ),
+                        onTap: _openSignUp,
                         child: RichText(
                           text: const TextSpan(
                             text: "Don't have an account? ",

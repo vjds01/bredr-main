@@ -20,6 +20,7 @@ class _CabuyaoAccessGateState extends State<CabuyaoAccessGate>
     with WidgetsBindingObserver {
   CabuyaoAccessResult? _result;
   bool _checking = true;
+  bool _checkInProgress = false;
   bool _isAdmin = false;
 
   @override
@@ -37,38 +38,49 @@ class _CabuyaoAccessGateState extends State<CabuyaoAccessGate>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && !_checking && !_isAdmin) {
-      _checkAccess(requestPermission: false);
+    if (state == AppLifecycleState.resumed && !_checkInProgress && !_isAdmin) {
+      _checkAccess(requestPermission: false, showLoading: false);
     }
   }
 
-  Future<void> _checkAccess({bool requestPermission = true}) async {
-    if (mounted) setState(() => _checking = true);
+  Future<void> _checkAccess({
+    bool requestPermission = true,
+    bool showLoading = true,
+  }) async {
+    if (_checkInProgress) return;
+    _checkInProgress = true;
 
-    var isAdmin = false;
+    if (showLoading && mounted) setState(() => _checking = true);
+
     try {
-      isAdmin = await UserSessionService.instance.isCurrentUserAdmin();
-    } catch (error) {
-      // A profile lookup should never prevent a regular user from completing
-      // the local service-area check during a temporary Firestore failure.
-      debugPrint('Unable to check admin role for location gate: $error');
-    }
-    final result = isAdmin
-        ? const CabuyaoAccessResult(CabuyaoAccessStatus.allowed)
-        : await CabuyaoAccessService.instance.checkAccess(
-            requestPermission: requestPermission,
-          );
+      var isAdmin = false;
+      try {
+        isAdmin = await UserSessionService.instance.isCurrentUserAdmin();
+      } catch (error) {
+        // A profile lookup should never prevent a regular user from completing
+        // the local service-area check during a temporary Firestore failure.
+        debugPrint('Unable to check admin role for location gate: $error');
+      }
+      final result = isAdmin
+          ? const CabuyaoAccessResult(CabuyaoAccessStatus.allowed)
+          : await CabuyaoAccessService.instance.checkAccess(
+              requestPermission: requestPermission,
+            );
 
-    if (!mounted) return;
-    if (result.isAllowed && result.position != null) {
-      LocationService.instance.latitude = result.position!.latitude;
-      LocationService.instance.longitude = result.position!.longitude;
+      if (!mounted) return;
+      if (result.isAllowed && result.position != null) {
+        LocationService.instance.latitude = result.position!.latitude;
+        LocationService.instance.longitude = result.position!.longitude;
+        LocationService.instance.accuracyMeters = result.position!.accuracy;
+      }
+      setState(() {
+        _isAdmin = isAdmin;
+        _result = result;
+        _checking = false;
+      });
+    } finally {
+      _checkInProgress = false;
     }
-    setState(() {
-      _isAdmin = isAdmin;
-      _result = result;
-      _checking = false;
-    });
   }
 
   Future<void> _openSettings() async {

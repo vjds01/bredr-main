@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../models/onboarding_data.dart';
 import '../services/moderation_service.dart';
 import '../services/user_session_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/breedr_logo.dart';
 import 'admin/admin_dashboard_screen.dart';
+import 'veterinary/veterinary_dashboard_screen.dart';
 import 'auth/get_started_screen.dart';
 import 'auth/cabuyao_access_gate_screen.dart';
 import 'auth/moderation_gate_screen.dart';
+import 'auth/welcome_screen.dart';
 import 'home_screen.dart';
 
 class LoadingScreen extends StatefulWidget {
@@ -42,15 +46,48 @@ class _LoadingScreenState extends State<LoadingScreen>
       final canAutoLogin = await UserSessionService.instance.shouldAutoLogin();
 
       if (canAutoLogin) {
+        final isVetAdmin = await UserSessionService.instance
+            .isCurrentUserVeterinaryAdmin();
         final isAdmin = await UserSessionService.instance.isCurrentUserAdmin();
-        if (isAdmin) {
+        if (isVetAdmin) {
+          nextScreen = const VeterinaryDashboardScreen();
+        } else if (isAdmin) {
           nextScreen = const AdminDashboardScreen();
         } else {
-          final moderation =
-              await ModerationService.instance.getCurrentUserModeration();
+          final moderation = await ModerationService.instance
+              .getCurrentUserModeration();
           nextScreen = moderation?.isBlocked == true
               ? ModerationGateScreen(state: moderation!)
               : const CabuyaoAccessGate(child: HomeScreen());
+        }
+      } else {
+        final user = FirebaseAuth.instance.currentUser;
+        final isIncompleteGoogleSignup =
+            user != null &&
+            user.providerData.any(
+              (provider) => provider.providerId == 'google.com',
+            ) &&
+            !await UserSessionService.instance.hasBreedrProfile();
+
+        if (isIncompleteGoogleSignup) {
+          final email = user.email ?? '';
+          final emailName = email.split('@').first.toLowerCase();
+          final username = emailName.replaceAll(RegExp(r'[^a-z0-9_]'), '_');
+          final onboardingData = OnboardingData(
+            authProvider: 'google',
+            fullName: user.displayName ?? 'Breedr User',
+            userName: username.isEmpty ? 'breedr_user' : username,
+            email: email,
+            password: '',
+            profilePhoto: user.photoURL,
+          );
+
+          nextScreen = CabuyaoAccessGate(
+            child: WelcomeScreen(
+              onboardingData: onboardingData,
+              photoUrl: onboardingData.profilePhoto,
+            ),
+          );
         }
       }
     } catch (e) {
