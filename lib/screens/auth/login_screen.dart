@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
+import '../../models/onboarding_data.dart';
 import '../admin/admin_dashboard_screen.dart';
 import '../veterinary/veterinary_dashboard_screen.dart';
 import '../home_screen.dart';
 import '../signup/create_account.dart';
+import 'welcome_screen.dart';
 import '../../services/location_service.dart';
 import '../../services/moderation_service.dart';
 import '../../services/user_session_service.dart';
@@ -177,6 +179,22 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  OnboardingData _googleOnboardingData(User user) {
+    final email = user.email?.trim() ?? '';
+    final emailName = email.split('@').first.toLowerCase();
+    final username = emailName.replaceAll(RegExp(r'[^a-z0-9_]'), '_');
+    return OnboardingData(
+      authProvider: 'google',
+      fullName: user.displayName?.trim().isNotEmpty == true
+          ? user.displayName!.trim()
+          : 'Breedr User',
+      userName: username.isEmpty ? 'breedr_user' : username,
+      email: email,
+      password: '',
+      profilePhoto: user.photoURL,
+    );
+  }
+
   Future<void> _loginWithGoogle() async {
     setState(() {
       _isGoogleLoading = true;
@@ -194,8 +212,21 @@ class _LoginScreenState extends State<LoginScreen> {
       final hasProfile = await UserSessionService.instance.hasBreedrProfile();
 
       if (!hasProfile) {
-        await UserSessionService.instance.signOut();
-        throw Exception('No Breedr account found. Please sign up first.');
+        if (!mounted) return;
+        final onboardingData = _googleOnboardingData(user);
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(
+            builder: (_) => CabuyaoAccessGate(
+              child: WelcomeScreen(
+                onboardingData: onboardingData,
+                photoUrl: onboardingData.profilePhoto,
+              ),
+            ),
+          ),
+          (_) => false,
+        );
+        return;
       }
 
       if (!mounted) return;

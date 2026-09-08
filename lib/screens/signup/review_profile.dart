@@ -135,7 +135,7 @@ class _Step3WelcomeState extends State<Step3Welcome> {
         final goToLogin = await showExistingAccountDialog(
           context,
           message:
-              'The email ${widget.onboardingData.email} is already in use. Please log in or use a different email address.',
+              'The email ${widget.onboardingData.email} is already in use. If it was registered with Google, return to login and choose Continue with Google; otherwise use the original sign-in method.',
         );
         if (!mounted || !goToLogin) return;
 

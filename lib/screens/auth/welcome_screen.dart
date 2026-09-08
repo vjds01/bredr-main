@@ -12,11 +12,7 @@ class WelcomeScreen extends StatefulWidget {
   final OnboardingData onboardingData;
   final String? photoUrl;
 
-  const WelcomeScreen({
-    super.key,
-    required this.onboardingData,
-    this.photoUrl,
-  });
+  const WelcomeScreen({super.key, required this.onboardingData, this.photoUrl});
 
   @override
   State<WelcomeScreen> createState() => _WelcomeScreenState();
@@ -24,22 +20,21 @@ class WelcomeScreen extends StatefulWidget {
 
 class _WelcomeScreenState extends State<WelcomeScreen>
     with SingleTickerProviderStateMixin {
-  
   // _WelcomeStep _step = _WelcomeStep.greeting;
   _WelcomeStep _step = _WelcomeStep.withPhoto;
-  
+
   late final AnimationController _spinCtrl;
 
   String get _signInMethod {
-  switch (widget.onboardingData.authProvider.toLowerCase()) {
-    case 'google':
-      return 'Google';
-    case 'email':
-      return 'Email';
-    default:
-      return 'Breedr';
+    switch (widget.onboardingData.authProvider.toLowerCase()) {
+      case 'google':
+        return 'Google';
+      case 'email':
+        return 'Email';
+      default:
+        return 'Breedr';
+    }
   }
-}
 
   @override
   void initState() {
@@ -65,9 +60,10 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     if (!mounted) return;
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (_) =>  Step2ReviewProfile(
-        onboardingData: widget.onboardingData,
-      )),
+      MaterialPageRoute(
+        builder: (_) =>
+            Step2ReviewProfile(onboardingData: widget.onboardingData),
+      ),
     );
   }
 
@@ -121,7 +117,6 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 class _BgShell extends StatelessWidget {
   final Widget child;
   const _BgShell({required this.child});
-
 
   @override
   Widget build(BuildContext context) {
@@ -300,16 +295,14 @@ class _WithPhotoScreen extends StatelessWidget {
 
             Text(
               email,
-              style: const TextStyle(
-                  fontSize: 13, color: Color(0xFF888888)),
+              style: const TextStyle(fontSize: 13, color: Color(0xFF888888)),
             ),
 
             const SizedBox(height: 24),
 
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 20, vertical: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(16),
@@ -321,8 +314,10 @@ class _WithPhotoScreen extends StatelessWidget {
                   ),
                 ],
               ),
-              child:  Text(
-                "Success! You're now signed in with $signInMethod. Now let's proceed to the next step — Breedr wants to know more about you!",
+              child: Text(
+                authProvider.toLowerCase() == 'email'
+                    ? "Your email details are ready. Let's continue setting up your Breedr account."
+                    : "Success! You're now signed in with $signInMethod. Now let's proceed to the next step — Breedr wants to know more about you!",
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 14,
@@ -344,12 +339,12 @@ class _WithPhotoScreen extends StatelessWidget {
                   foregroundColor: Colors.white,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
                 child: const Text(
                   'Continue to next step →',
-                  style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.bold),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ),
             ),
@@ -406,25 +401,34 @@ class _LoadingScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  Text(email,
-                      style: const TextStyle(
-                          fontSize: 13, color: Color(0xFF888888))),
+                  Text(
+                    email,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF888888),
+                    ),
+                  ),
                   const SizedBox(height: 24),
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 20),
+                      horizontal: 20,
+                      vertical: 20,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    child:  Text(
-                      "Success! You're now signed in with $signInMethod. Now let's proceed to the next step — Breedr wants to know more about you!",
+                    child: Text(
+                      authProvider.toLowerCase() == 'email'
+                          ? "Your email details are ready. Let's continue setting up your Breedr account."
+                          : "Success! You're now signed in with $signInMethod. Now let's proceed to the next step — Breedr wants to know more about you!",
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF555555),
-                          height: 1.7),
+                        fontSize: 14,
+                        color: Color(0xFF555555),
+                        height: 1.7,
+                      ),
                     ),
                   ),
                   const Spacer(flex: 3),
@@ -439,9 +443,10 @@ class _LoadingScreen extends StatelessWidget {
                       child: Text(
                         'Continue to next step →',
                         style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white),
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),
@@ -469,8 +474,7 @@ class _LoadingScreen extends StatelessWidget {
                     ),
                   ],
                 ),
-                child: const Icon(Icons.pets,
-                    color: Colors.white, size: 36),
+                child: const Icon(Icons.pets, color: Colors.white, size: 36),
               ),
             ),
           ),
@@ -500,7 +504,8 @@ class _StarburstAvatar extends StatelessWidget {
           CustomPaint(
             size: const Size(size, size),
             painter: _StarburstPainter(
-                color: AppColors.primary.withValues(alpha: 0.85)),
+              color: AppColors.primary.withValues(alpha: 0.85),
+            ),
           ),
           // Circular photo
           ClipOval(
@@ -517,10 +522,7 @@ class _StarburstAvatar extends StatelessWidget {
                         fit: BoxFit.cover,
                       ),
                     )
-                  : Image.asset(
-                      'assets/images/profile.png',
-                      fit: BoxFit.cover,
-                    ),
+                  : Image.asset('assets/images/profile.png', fit: BoxFit.cover),
             ),
           ),
           // Blue verified badge
@@ -535,8 +537,7 @@ class _StarburstAvatar extends StatelessWidget {
                 color: const Color(0xFF1DA1F2),
                 border: Border.all(color: Colors.white, width: 2),
               ),
-              child:
-                  const Icon(Icons.check, color: Colors.white, size: 17),
+              child: const Icon(Icons.check, color: Colors.white, size: 17),
             ),
           ),
         ],
