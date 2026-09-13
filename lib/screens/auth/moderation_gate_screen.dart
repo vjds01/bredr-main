@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../services/moderation_service.dart';
 import '../../services/user_session_service.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/authenticated_exit_scope.dart';
 import 'get_started_screen.dart';
 
 class ModerationGateScreen extends StatefulWidget {
@@ -34,8 +35,7 @@ class _ModerationGateScreenState extends State<ModerationGateScreen> {
         ? Icons.block_rounded
         : Icons.lock_clock_rounded;
 
-    return PopScope(
-      canPop: false,
+    return AuthenticatedExitScope(
       child: Scaffold(
         backgroundColor: const Color(0xFFFFF4F8),
         body: SafeArea(
@@ -176,8 +176,8 @@ class AccountStatusScreen extends StatelessWidget {
     final action = state.action.isNotEmpty
         ? state.action
         : state.isPermanent
-            ? 'Permanent account disable'
-            : 'Temporary suspension';
+        ? 'Permanent account disable'
+        : 'Temporary suspension';
 
     return Scaffold(
       backgroundColor: const Color(0xFFFFF4F8),

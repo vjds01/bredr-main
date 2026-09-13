@@ -5,6 +5,7 @@ import '../../services/cabuyao_access_service.dart';
 import '../../services/user_session_service.dart';
 import '../../services/location_service.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/authenticated_exit_scope.dart';
 import 'get_started_screen.dart';
 
 class CabuyaoAccessGate extends StatefulWidget {
@@ -115,8 +116,7 @@ class _CabuyaoAccessGateState extends State<CabuyaoAccessGate>
 
     if (_result?.isAllowed == true) return widget.child;
 
-    return PopScope(
-      canPop: false,
+    return AuthenticatedExitScope(
       child: Scaffold(
         backgroundColor: AppColors.background,
         body: SafeArea(

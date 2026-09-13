@@ -55,9 +55,6 @@ class _PetReviewScreenState extends State<PetReviewScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Publish pet profile?'),
-        content: const Text(
-          "Once uploaded, this pet's registration information cannot be edited.",
-        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -147,6 +144,9 @@ class _PetReviewScreenState extends State<PetReviewScreen> {
     }
     if (pet.isAdoption && pet.adoptionType == 'FOR SALE' && pet.price <= 0) {
       return 'Please enter a valid selling price.';
+    }
+    if (!pet.hasValidSaleAcknowledgement) {
+      return 'Please review and confirm the requirements for selling a pet.';
     }
     return null;
   }
@@ -790,11 +790,15 @@ class _PetProfileCard extends StatelessWidget {
                               color: _orange,
                             ),
                             const SizedBox(width: 4),
-                            Text(
-                              petData.locationName,
-                              style: const TextStyle(
-                                color: Colors.white70,
-                                fontSize: 12,
+                            Expanded(
+                              child: Text(
+                                petData.locationName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                ),
                               ),
                             ),
                           ],

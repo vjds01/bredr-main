@@ -41,6 +41,18 @@ service cloud.firestore {
         );
     }
 
+    function hasValidBreedingPartnerGender(petData) {
+      return petData.get('purpose', '') != 'breeding' ||
+        (
+          petData.gender == 'Male' &&
+          petData.breedingPreferences.preferredGender == 'Female'
+        ) ||
+        (
+          petData.gender == 'Female' &&
+          petData.breedingPreferences.preferredGender == 'Male'
+        );
+    }
+
     match /users/{userId} {
       allow read: if signedIn();
       allow create: if isOwner(userId) &&
@@ -107,10 +119,29 @@ service cloud.firestore {
         request.resource.data.veterinaryAdminId == request.auth.uid;
     }
 
+    match /clinicVerificationRequests/{requestId} {
+      allow read: if signedIn() &&
+        (resource.data.ownerId == request.auth.uid || isVeterinaryAdmin());
+      // Requests are created only by the Apps Script service after verifying
+      // the caller's Firebase ID token and pet ownership.
+      allow create: if false;
+      allow update: if isVeterinaryAdmin();
+      allow delete: if false;
+    }
+
     match /pets/{petId} {
       allow read: if signedIn();
       allow create: if signedIn() &&
-        request.resource.data.ownerId == request.auth.uid;
+        request.resource.data.ownerId == request.auth.uid &&
+        hasValidBreedingPartnerGender(request.resource.data) &&
+        (
+          request.resource.data.get('purpose', '') != 'adoption' ||
+          request.resource.data.adoptionDetails.get('adoptionType', 'FREE') != 'FOR SALE' ||
+          (
+            request.resource.data.get('saleRequirementsAcknowledged', false) == true &&
+            request.resource.data.saleRequirementsAcknowledgedAt is timestamp
+          )
+        );
       allow update, delete: if isAdmin();
       allow update: if isVeterinaryAdmin() &&
         request.resource.data.diff(resource.data).affectedKeys()
@@ -122,6 +153,18 @@ service cloud.firestore {
           ]);
       allow update: if signedIn() &&
         resource.data.ownerId == request.auth.uid &&
+        hasValidBreedingPartnerGender(request.resource.data) &&
+        request.resource.data.ownerId == resource.data.ownerId &&
+        request.resource.data.get('purpose', '') ==
+          resource.data.get('purpose', '') &&
+        request.resource.data.get('normalizedPurpose', '') ==
+          resource.data.get('normalizedPurpose', '') &&
+        request.resource.data.get('createdAt', null) ==
+          resource.data.get('createdAt', null) &&
+        request.resource.data.get('adminRemoved', false) ==
+          resource.data.get('adminRemoved', false) &&
+        request.resource.data.get('adminListingStatus', '') ==
+          resource.data.get('adminListingStatus', '') &&
         (
           request.resource.data.get('vetVerified', false) ==
             resource.data.get('vetVerified', false) ||
@@ -181,6 +224,8 @@ service cloud.firestore {
       allow update: if signedIn() &&
         resource.data.ownerId == request.auth.uid &&
         request.resource.data.ownerId == request.auth.uid;
+      allow delete: if signedIn() &&
+        resource.data.ownerId == request.auth.uid;
     }
 
     match /swipes/{swipeId} {

@@ -112,9 +112,10 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       if (!mounted) return;
-      Navigator.pushReplacement(
+      Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => destination),
+        (_) => false,
       );
     } on FirebaseAuthException catch (e) {
       debugPrint('Firebase login error: ${e.code}');
@@ -249,9 +250,10 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       if (!mounted) return;
-      Navigator.pushReplacement(
+      Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => destination),
+        (_) => false,
       );
     } catch (e) {
       if (!mounted) return;

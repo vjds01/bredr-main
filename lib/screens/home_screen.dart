@@ -21,6 +21,7 @@ import '../services/user_session_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/breedr_network_image.dart';
 import '../widgets/breedr_video_card.dart';
+import '../widgets/authenticated_exit_scope.dart';
 import '../widgets/main_app_guide_overlay.dart';
 import '../widgets/cabuyao_barangay_picker.dart';
 import 'adoption/adoption_browse_screen.dart';
@@ -39,6 +40,7 @@ import 'settings/reviews_given_screen.dart';
 import 'settings/breeding_history_screen.dart';
 import 'settings/returned_pets_screen.dart';
 import 'pet/pet_registration_screen.dart';
+import 'pet/edit_pet_listing_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -510,37 +512,44 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFFFF0F5),
-      body: Stack(
-        children: [
-          Column(
-            children: [
-              Expanded(
-                child: IndexedStack(index: _selectedIndex, children: _tabs),
-              ),
-              ValueListenableBuilder<int>(
-                valueListenable:
-                    RealtimeNotificationService.instance.unreadCount,
-                builder: (context, unreadCount, _) => _HomeBottomNav(
-                  selectedIndex: _selectedIndex,
-                  unreadCount: unreadCount,
-                  onTap: _handleTabNavigation,
+    return AuthenticatedExitScope(
+      beforeExit: () async {
+        if (!_showGuide) return true;
+        await _finishGuide();
+        return false;
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFFFF0F5),
+        body: Stack(
+          children: [
+            Column(
+              children: [
+                Expanded(
+                  child: IndexedStack(index: _selectedIndex, children: _tabs),
                 ),
-              ),
-            ],
-          ),
-          if (_showGuide)
-            MainAppGuideOverlay(
-              steps: _guideSteps,
-              currentIndex: _guideIndex,
-              onSkip: _finishGuide,
-              onBack: () => _goToGuideStep(_guideIndex - 1),
-              onNext: _guideIndex == _guideSteps.length - 1
-                  ? _finishGuide
-                  : () => _goToGuideStep(_guideIndex + 1),
+                ValueListenableBuilder<int>(
+                  valueListenable:
+                      RealtimeNotificationService.instance.unreadCount,
+                  builder: (context, unreadCount, _) => _HomeBottomNav(
+                    selectedIndex: _selectedIndex,
+                    unreadCount: unreadCount,
+                    onTap: _handleTabNavigation,
+                  ),
+                ),
+              ],
             ),
-        ],
+            if (_showGuide)
+              MainAppGuideOverlay(
+                steps: _guideSteps,
+                currentIndex: _guideIndex,
+                onSkip: _finishGuide,
+                onBack: () => _goToGuideStep(_guideIndex - 1),
+                onNext: _guideIndex == _guideSteps.length - 1
+                    ? _finishGuide
+                    : () => _goToGuideStep(_guideIndex + 1),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -3099,7 +3108,13 @@ class _MyPetCard extends StatelessWidget {
               alignment: Alignment.centerRight,
               child: PopupMenuButton<String>(
                 icon: Icon(Icons.more_vert, color: Colors.grey.shade700),
-                onSelected: (value) => _confirmStatusChange(context, value),
+                onSelected: (value) {
+                  if (value == 'edit') {
+                    _openEditor(context);
+                  } else {
+                    _confirmStatusChange(context, value);
+                  }
+                },
                 itemBuilder: (context) {
                   if (status == 'adopted') {
                     return const [];
@@ -3107,6 +3122,10 @@ class _MyPetCard extends StatelessWidget {
 
                   if (purpose == 'breeding') {
                     return [
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: Text('Edit listing'),
+                      ),
                       PopupMenuItem(
                         value: isBreedingOffline
                             ? 'resume_breeding'
@@ -3122,6 +3141,7 @@ class _MyPetCard extends StatelessWidget {
 
                   if (isReturned) {
                     return const [
+                      PopupMenuItem(value: 'edit', child: Text('Edit listing')),
                       PopupMenuItem(
                         value: 'relist_adoption',
                         child: Text('Publish for Adoption'),
@@ -3130,6 +3150,7 @@ class _MyPetCard extends StatelessWidget {
                   }
 
                   return const [
+                    PopupMenuItem(value: 'edit', child: Text('Edit listing')),
                     PopupMenuItem(
                       value: 'adopted',
                       child: Text('Mark as adopted'),
@@ -3180,6 +3201,15 @@ class _MyPetCard extends StatelessWidget {
             _PurposePill(label: displayStatus),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<void> _openEditor(BuildContext context) async {
+    await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EditPetListingScreen(petId: petId, petData: data),
       ),
     );
   }

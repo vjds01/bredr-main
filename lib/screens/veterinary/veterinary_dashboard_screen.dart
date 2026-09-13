@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/user_session_service.dart';
 import '../../widgets/breedr_network_image.dart';
+import '../../widgets/authenticated_exit_scope.dart';
 import '../auth/get_started_screen.dart';
 
 class VeterinaryDashboardScreen extends StatefulWidget {
@@ -47,6 +48,15 @@ class _VeterinaryDashboardScreenState extends State<VeterinaryDashboardScreen> {
 
     setState(() => _saving = true);
     try {
+      final requestSnapshots = await FirebaseFirestore.instance
+          .collection('clinicVerificationRequests')
+          .where('petId', isEqualTo: item.petId)
+          .get();
+      final openRequests = requestSnapshots.docs.where((document) {
+        final data = document.data();
+        return data['recordId'] == item.recordId &&
+            data['status'] == 'awaiting_clinic_confirmation';
+      }).toList();
       final petReference = FirebaseFirestore.instance
           .collection('pets')
           .doc(item.petId);
@@ -68,6 +78,7 @@ class _VeterinaryDashboardScreenState extends State<VeterinaryDashboardScreen> {
           ...records[index],
           'verificationStatus': status,
           'verificationNote': note,
+          'verificationSource': 'vet_admin_override',
           'verifiedBy': user.uid,
           'verifiedByName': user.displayName ?? 'Veterinary Reviewer',
           // Server timestamp sentinels cannot be nested inside an array value.
@@ -114,9 +125,21 @@ class _VeterinaryDashboardScreenState extends State<VeterinaryDashboardScreen> {
           'petId': item.petId,
           'recordId': item.recordId,
           'action': status,
+          'source': 'vet_admin_override',
           'note': note,
           'createdAt': FieldValue.serverTimestamp(),
         });
+
+        for (final request in openRequests) {
+          transaction.update(request.reference, {
+            'status': 'processed_by_vet_admin_override',
+            'response': status,
+            'source': 'vet_admin_override',
+            'processedBy': user.uid,
+            'processedAt': Timestamp.now(),
+            'tokenDigest': '',
+          });
+        }
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -166,129 +189,134 @@ class _VeterinaryDashboardScreenState extends State<VeterinaryDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFFFF4F7),
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        backgroundColor: Colors.white,
-        title: const Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Health Verifications'),
-            Text(
-              'Veterinary Reviewer',
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.normal),
+    return AuthenticatedExitScope(
+      child: Scaffold(
+        backgroundColor: const Color(0xFFFFF4F7),
+        appBar: AppBar(
+          automaticallyImplyLeading: false,
+          backgroundColor: Colors.white,
+          title: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Health Verifications'),
+              Text(
+                'Veterinary Reviewer',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.normal),
+              ),
+            ],
+          ),
+          actions: [
+            IconButton(
+              tooltip: 'Log out',
+              onPressed: _signOut,
+              icon: const Icon(Icons.logout),
             ),
           ],
         ),
-        actions: [
-          IconButton(
-            tooltip: 'Log out',
-            onPressed: _signOut,
-            icon: const Icon(Icons.logout),
-          ),
-        ],
-      ),
-      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance.collection('pets').snapshots(),
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final query = _searchController.text.trim().toLowerCase();
-          final items =
-              snapshot.data!.docs
-                  .expand(_VerificationItem.fromPet)
-                  .where((item) => _filter == 'all' || item.status == _filter)
-                  .where((item) => query.isEmpty || item.matches(query))
-                  .toList()
-                ..sort((a, b) => a.submittedAt.compareTo(b.submittedAt));
-          return Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
-                child: TextField(
-                  controller: _searchController,
-                  textInputAction: TextInputAction.search,
-                  onChanged: (_) => setState(() {}),
-                  decoration: InputDecoration(
-                    hintText: 'Search pet, record, veterinarian, or clinic',
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: query.isEmpty
-                        ? null
-                        : IconButton(
-                            tooltip: 'Clear search',
-                            onPressed: () {
-                              _searchController.clear();
-                              setState(() {});
-                            },
-                            icon: const Icon(Icons.close),
-                          ),
-                    filled: true,
-                    fillColor: Colors.white,
-                    isDense: true,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                child: SegmentedButton<String>(
-                  expandedInsets: EdgeInsets.zero,
-                  segments: const [
-                    ButtonSegment(
-                      value: 'pending',
-                      label: FittedBox(child: Text('Pending')),
-                    ),
-                    ButtonSegment(
-                      value: 'verified',
-                      label: FittedBox(child: Text('Verified')),
-                    ),
-                    ButtonSegment(
-                      value: 'rejected',
-                      label: FittedBox(child: Text('Rejected')),
-                    ),
-                    ButtonSegment(
-                      value: 'all',
-                      label: FittedBox(child: Text('All')),
-                    ),
-                  ],
-                  style: const ButtonStyle(
-                    textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 12)),
-                    padding: WidgetStatePropertyAll(
-                      EdgeInsets.symmetric(horizontal: 8),
-                    ),
-                  ),
-                  selected: {_filter},
-                  onSelectionChanged: (value) =>
-                      setState(() => _filter = value.first),
-                ),
-              ),
-              Expanded(
-                child: items.isEmpty
-                    ? Center(
-                        child: Text(
-                          query.isEmpty
-                              ? 'No health records here.'
-                              : 'No health records match your search.',
-                        ),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                        itemCount: items.length,
-                        itemBuilder: (_, index) => _VerificationCard(
-                          item: items[index],
-                          enabled: !_saving,
-                          onDecision: (status) => _decide(items[index], status),
-                        ),
+        body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance.collection('pets').snapshots(),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            final query = _searchController.text.trim().toLowerCase();
+            final items =
+                snapshot.data!.docs
+                    .expand(_VerificationItem.fromPet)
+                    .where((item) => _filter == 'all' || item.status == _filter)
+                    .where((item) => query.isEmpty || item.matches(query))
+                    .toList()
+                  ..sort((a, b) => a.submittedAt.compareTo(b.submittedAt));
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+                  child: TextField(
+                    controller: _searchController,
+                    textInputAction: TextInputAction.search,
+                    onChanged: (_) => setState(() {}),
+                    decoration: InputDecoration(
+                      hintText: 'Search pet, record, veterinarian, or clinic',
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: query.isEmpty
+                          ? null
+                          : IconButton(
+                              tooltip: 'Clear search',
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() {});
+                              },
+                              icon: const Icon(Icons.close),
+                            ),
+                      filled: true,
+                      fillColor: Colors.white,
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
                       ),
-              ),
-            ],
-          );
-        },
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: SegmentedButton<String>(
+                    expandedInsets: EdgeInsets.zero,
+                    segments: const [
+                      ButtonSegment(
+                        value: 'pending',
+                        label: FittedBox(child: Text('Pending')),
+                      ),
+                      ButtonSegment(
+                        value: 'verified',
+                        label: FittedBox(child: Text('Verified')),
+                      ),
+                      ButtonSegment(
+                        value: 'rejected',
+                        label: FittedBox(child: Text('Rejected')),
+                      ),
+                      ButtonSegment(
+                        value: 'all',
+                        label: FittedBox(child: Text('All')),
+                      ),
+                    ],
+                    style: const ButtonStyle(
+                      textStyle: WidgetStatePropertyAll(
+                        TextStyle(fontSize: 12),
+                      ),
+                      padding: WidgetStatePropertyAll(
+                        EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                    ),
+                    selected: {_filter},
+                    onSelectionChanged: (value) =>
+                        setState(() => _filter = value.first),
+                  ),
+                ),
+                Expanded(
+                  child: items.isEmpty
+                      ? Center(
+                          child: Text(
+                            query.isEmpty
+                                ? 'No health records here.'
+                                : 'No health records match your search.',
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                          itemCount: items.length,
+                          itemBuilder: (_, index) => _VerificationCard(
+                            item: items[index],
+                            enabled: !_saving,
+                            onDecision: (status) =>
+                                _decide(items[index], status),
+                          ),
+                        ),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -329,19 +357,29 @@ class _VerificationDecisionDialogState
             ? 'Reject health record?'
             : 'Request replacement?',
       ),
-      content: TextField(
-        controller: _noteController,
-        maxLines: 3,
-        decoration: InputDecoration(
-          labelText: widget.requiresNote
-              ? 'Explanation (required)'
-              : 'Veterinary note (optional)',
-          errorText: _showError ? 'Please enter an explanation.' : null,
-          border: const OutlineInputBorder(),
-        ),
-        onChanged: (_) {
-          if (_showError) setState(() => _showError = false);
-        },
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Vet admin override: this decision bypasses clinic email confirmation and will be recorded in the audit trail.',
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _noteController,
+            maxLines: 3,
+            decoration: InputDecoration(
+              labelText: widget.requiresNote
+                  ? 'Explanation (required)'
+                  : 'Veterinary note (optional)',
+              errorText: _showError ? 'Please enter an explanation.' : null,
+              border: const OutlineInputBorder(),
+            ),
+            onChanged: (_) {
+              if (_showError) setState(() => _showError = false);
+            },
+          ),
+        ],
       ),
       actions: [
         TextButton(
@@ -448,6 +486,17 @@ class _VerificationCard extends StatelessWidget {
             ),
             Text('${item.displayType} · ${item.dateIssued}'),
             Text('${item.veterinarian} · ${item.clinic}'),
+            const SizedBox(height: 6),
+            Text(
+              item.status == 'pending'
+                  ? 'Awaiting clinic confirmation · Vet override available'
+                  : item.verificationSource == 'clinic_email'
+                  ? 'Decision source: Veterinary clinic email'
+                  : item.verificationSource == 'vet_admin_override'
+                  ? 'Decision source: Vet admin override'
+                  : 'Decision source: Legacy verification',
+              style: const TextStyle(fontSize: 12, color: Colors.black54),
+            ),
             const SizedBox(height: 10),
             Semantics(
               button: true,
@@ -530,6 +579,7 @@ class _VerificationItem {
   final String veterinarian;
   final String clinic;
   final String status;
+  final String verificationSource;
   final DateTime submittedAt;
 
   const _VerificationItem({
@@ -544,6 +594,7 @@ class _VerificationItem {
     required this.veterinarian,
     required this.clinic,
     required this.status,
+    required this.verificationSource,
     required this.submittedAt,
   });
 
@@ -579,7 +630,11 @@ class _VerificationItem {
         dateIssued: record['dateIssued']?.toString() ?? '',
         veterinarian: record['veterinarian']?.toString() ?? '',
         clinic: record['clinic']?.toString() ?? '',
-        status: record['verificationStatus']?.toString() ?? 'pending',
+        status: record['verificationStatus'] == 'awaiting_clinic_confirmation'
+            ? 'pending'
+            : record['verificationStatus']?.toString() ?? 'pending',
+        verificationSource:
+            record['verificationSource']?.toString() ?? 'legacy',
         submittedAt: timestamp?.toDate() ?? DateTime(2000, 1, 1),
       );
     });

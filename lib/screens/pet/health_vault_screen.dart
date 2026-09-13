@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../services/cloudinary_service.dart';
 import '../../services/user_session_service.dart';
+import '../../services/health_verification_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/breedr_network_image.dart';
 
@@ -90,7 +91,9 @@ class _HealthVaultScreenState extends State<HealthVaultScreen> {
         'nextUpdate': result.nextUpdate,
         'veterinarian': result.veterinarian,
         'clinic': result.clinic,
-        'verificationStatus': 'pending',
+        'clinicConsentGranted': result.clinicConsentGranted,
+        'verificationStatus': 'awaiting_clinic_confirmation',
+        'verificationSource': 'clinic_email',
         'updatedAt': Timestamp.now(),
       };
 
@@ -118,10 +121,24 @@ class _HealthVaultScreenState extends State<HealthVaultScreen> {
         });
       });
 
+      try {
+        await HealthVerificationService.instance.requestClinicConfirmation(
+          petId: pet.id,
+          petName: petData['name']?.toString() ?? 'Pet',
+          record: updatedRecord,
+        );
+      } catch (error) {
+        debugPrint('Clinic verification email dispatch failed: $error');
+      }
+
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Health record saved.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Health record saved and awaiting clinic confirmation.',
+          ),
+        ),
+      );
     } catch (error) {
       debugPrint('Health record save failed: $error');
       if (!mounted) return;
@@ -542,6 +559,8 @@ class _HealthVaultRecordCard extends StatelessWidget {
                     ? 'Rejected'
                     : verificationStatus == 'replacement_requested'
                     ? 'Replace'
+                    : verificationStatus == 'awaiting_clinic_confirmation'
+                    ? 'Awaiting Clinic'
                     : 'Pending',
                 dueSoon: dueSoon || verificationStatus != 'verified',
               ),
@@ -832,6 +851,7 @@ class _HealthRecordEditResult {
   final String nextUpdate;
   final String veterinarian;
   final String clinic;
+  final bool clinicConsentGranted;
 
   const _HealthRecordEditResult({
     required this.type,
@@ -842,6 +862,7 @@ class _HealthRecordEditResult {
     required this.nextUpdate,
     required this.veterinarian,
     required this.clinic,
+    required this.clinicConsentGranted,
   });
 }
 
@@ -865,6 +886,7 @@ class _HealthRecordEditorDialogState extends State<_HealthRecordEditorDialog> {
   String _fileName = '';
   File? _file;
   bool _validationAttempted = false;
+  bool _clinicConsentGranted = false;
 
   static const _types = [
     'Vaccination',
@@ -892,6 +914,7 @@ class _HealthRecordEditorDialogState extends State<_HealthRecordEditorDialog> {
     _nextUpdateController.text = _recordNextUpdate(record);
     _vetController.text = record['veterinarian'] as String? ?? '';
     _clinicController.text = record['clinic'] as String? ?? '';
+    _clinicConsentGranted = record['clinicConsentGranted'] == true;
   }
 
   @override
@@ -985,6 +1008,7 @@ class _HealthRecordEditorDialogState extends State<_HealthRecordEditorDialog> {
         _nextUpdateController.text.trim().isEmpty ||
         _vetController.text.trim().isEmpty ||
         _clinicController.text.trim().isEmpty ||
+        !_clinicConsentGranted ||
         (_type == 'Other' && _otherTypeController.text.trim().isEmpty)) {
       return;
     }
@@ -1007,6 +1031,7 @@ class _HealthRecordEditorDialogState extends State<_HealthRecordEditorDialog> {
           nextUpdate: _nextUpdateController.text.trim(),
           veterinarian: _vetController.text.trim(),
           clinic: _clinicController.text.trim(),
+          clinicConsentGranted: _clinicConsentGranted,
         ),
       );
     });
@@ -1061,16 +1086,32 @@ class _HealthRecordEditorDialogState extends State<_HealthRecordEditorDialog> {
                         final selected = _type == type;
                         return ChoiceChip(
                           label: Text(type),
+                          avatar: selected
+                              ? const Icon(
+                                  Icons.check_rounded,
+                                  size: 15,
+                                  color: Colors.white,
+                                )
+                              : null,
                           selected: selected,
-                          selectedColor: const Color(0xFFD8EAFF),
+                          selectedColor: const Color(0xFF0050B4),
                           backgroundColor: const Color(0xFFEAF3FF),
-                          labelStyle: const TextStyle(
-                            color: Color(0xFF0050B4),
+                          labelStyle: TextStyle(
+                            color: selected
+                                ? Colors.white
+                                : const Color(0xFF0050B4),
                             fontSize: 10,
                             fontWeight: FontWeight.w800,
                           ),
                           showCheckmark: false,
-                          side: BorderSide.none,
+                          side: BorderSide(
+                            color: selected
+                                ? const Color(0xFF003F91)
+                                : const Color(0xFFCFE2FA),
+                            width: selected ? 1.5 : 1,
+                          ),
+                          elevation: selected ? 2 : 0,
+                          pressElevation: 0,
                           onSelected: (_) => setState(() => _type = type),
                         );
                       }).toList(),
@@ -1177,12 +1218,31 @@ class _HealthRecordEditorDialogState extends State<_HealthRecordEditorDialog> {
                           ? 'Veterinary clinic is required.'
                           : null,
                     ),
+                    const SizedBox(height: 12),
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      value: _clinicConsentGranted,
+                      onChanged: (value) =>
+                          setState(() => _clinicConsentGranted = value == true),
+                      title: const Text(
+                        'I consent to Breedr sending this document and its record details to the selected veterinary clinic for confirmation.',
+                        style: TextStyle(fontSize: 11, height: 1.35),
+                      ),
+                      subtitle: _validationAttempted && !_clinicConsentGranted
+                          ? const Text(
+                              'Consent is required to request clinic confirmation.',
+                              style: TextStyle(color: Colors.red, fontSize: 10),
+                            )
+                          : null,
+                    ),
                     if (_validationAttempted &&
                         (_fileName.isEmpty ||
                             _dateController.text.trim().isEmpty ||
                             _nextUpdateController.text.trim().isEmpty ||
                             _vetController.text.trim().isEmpty ||
                             _clinicController.text.trim().isEmpty ||
+                            !_clinicConsentGranted ||
                             (_type == 'Other' &&
                                 _otherTypeController.text.trim().isEmpty))) ...[
                       const SizedBox(height: 12),

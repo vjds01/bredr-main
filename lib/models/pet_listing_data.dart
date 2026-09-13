@@ -35,6 +35,8 @@ class PetListingData {
   final double price;
   final bool noOtherPets;
   final bool priceNegotiable;
+  final bool saleRequirementsAcknowledged;
+  final DateTime? saleRequirementsAcknowledgedAt;
 
   final List<PetInterviewQuestion> interviewQuestions;
   final List<PetHealthRecordData> healthRecords;
@@ -68,6 +70,8 @@ class PetListingData {
     this.price = 0,
     this.noOtherPets = true,
     this.priceNegotiable = true,
+    this.saleRequirementsAcknowledged = false,
+    this.saleRequirementsAcknowledgedAt,
     this.interviewQuestions = const [],
     this.healthRecords = const [],
   });
@@ -76,6 +80,10 @@ class PetListingData {
   bool get isBreeding => purpose?.toLowerCase() == 'breeding';
   bool get hasProfilePhoto => profilePhotoFile != null;
   bool get hasHealthRecords => healthRecords.isNotEmpty;
+  bool get isForSale => isAdoption && adoptionType == 'FOR SALE';
+  bool get hasValidSaleAcknowledgement =>
+      !isForSale ||
+      (saleRequirementsAcknowledged && saleRequirementsAcknowledgedAt != null);
 
   Map<String, dynamic> toDraftJson() {
     return {
@@ -111,6 +119,9 @@ class PetListingData {
       'price': price,
       'noOtherPets': noOtherPets,
       'priceNegotiable': priceNegotiable,
+      'saleRequirementsAcknowledged': saleRequirementsAcknowledged,
+      'saleRequirementsAcknowledgedAt': saleRequirementsAcknowledgedAt
+          ?.toIso8601String(),
       'interviewQuestions': interviewQuestions
           .map((question) => question.toDraftJson())
           .toList(),
@@ -165,6 +176,11 @@ class PetListingData {
       price: (json['price'] as num?)?.toDouble() ?? 0,
       noOtherPets: json['noOtherPets'] as bool? ?? true,
       priceNegotiable: json['priceNegotiable'] as bool? ?? true,
+      saleRequirementsAcknowledged:
+          json['saleRequirementsAcknowledged'] as bool? ?? false,
+      saleRequirementsAcknowledgedAt: DateTime.tryParse(
+        json['saleRequirementsAcknowledgedAt'] as String? ?? '',
+      ),
       interviewQuestions: (json['interviewQuestions'] as List<dynamic>? ?? [])
           .whereType<Map<String, dynamic>>()
           .map(PetInterviewQuestion.fromDraftJson)
@@ -212,6 +228,8 @@ class PetListingData {
     double? price,
     bool? noOtherPets,
     bool? priceNegotiable,
+    bool? saleRequirementsAcknowledged,
+    DateTime? saleRequirementsAcknowledgedAt,
     List<PetInterviewQuestion>? interviewQuestions,
     List<PetHealthRecordData>? healthRecords,
   }) {
@@ -245,6 +263,10 @@ class PetListingData {
       price: price ?? this.price,
       noOtherPets: noOtherPets ?? this.noOtherPets,
       priceNegotiable: priceNegotiable ?? this.priceNegotiable,
+      saleRequirementsAcknowledged:
+          saleRequirementsAcknowledged ?? this.saleRequirementsAcknowledged,
+      saleRequirementsAcknowledgedAt:
+          saleRequirementsAcknowledgedAt ?? this.saleRequirementsAcknowledgedAt,
       interviewQuestions: interviewQuestions ?? this.interviewQuestions,
       healthRecords: healthRecords ?? this.healthRecords,
     );
@@ -305,6 +327,11 @@ class PetListingData {
             }
           : null,
       'adoptionStatus': isAdoption ? 'active' : null,
+      'saleRequirementsAcknowledged': isForSale && saleRequirementsAcknowledged,
+      'saleRequirementsAcknowledgedAt':
+          isForSale && saleRequirementsAcknowledgedAt != null
+          ? Timestamp.fromDate(saleRequirementsAcknowledgedAt!)
+          : null,
       'reservedFor': null,
       'approvedRequestId': null,
       'interviewQuestions': interviewQuestions
@@ -379,6 +406,7 @@ class PetHealthRecordData {
   final String nextUpdate;
   final String veterinarian;
   final String clinic;
+  final bool clinicConsentGranted;
 
   const PetHealthRecordData({
     this.recordId = '',
@@ -392,6 +420,7 @@ class PetHealthRecordData {
     this.nextUpdate = '',
     this.veterinarian = '',
     this.clinic = '',
+    this.clinicConsentGranted = false,
   });
 
   String get displayType =>
@@ -409,6 +438,8 @@ class PetHealthRecordData {
       'nextUpdate': nextUpdate,
       'veterinarian': veterinarian,
       'clinic': clinic,
+      'clinicConsentGranted': clinicConsentGranted,
+      'verificationSource': 'clinic_email',
     };
   }
 
@@ -433,6 +464,7 @@ class PetHealthRecordData {
           json['nextUpdate'] as String? ?? json['nextDue'] as String? ?? '',
       veterinarian: json['veterinarian'] as String? ?? '',
       clinic: json['clinic'] as String? ?? '',
+      clinicConsentGranted: json['clinicConsentGranted'] as bool? ?? false,
     );
   }
 
@@ -448,6 +480,7 @@ class PetHealthRecordData {
     String? nextUpdate,
     String? veterinarian,
     String? clinic,
+    bool? clinicConsentGranted,
   }) {
     return PetHealthRecordData(
       recordId: recordId ?? this.recordId,
@@ -461,6 +494,7 @@ class PetHealthRecordData {
       nextUpdate: nextUpdate ?? this.nextUpdate,
       veterinarian: veterinarian ?? this.veterinarian,
       clinic: clinic ?? this.clinic,
+      clinicConsentGranted: clinicConsentGranted ?? this.clinicConsentGranted,
     );
   }
 }

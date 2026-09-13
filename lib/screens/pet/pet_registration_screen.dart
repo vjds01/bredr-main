@@ -195,6 +195,7 @@ class _PetRegistrationScreenState extends State<PetRegistrationScreen> {
     final acceptedVideos = <File>[];
     var hasCoverPhoto = _additionalPhotos.isNotEmpty;
     var rejectedLargeVideo = false;
+    var rejectedLargeImage = false;
     var rejectedVideoCover = false;
     for (final file in selected) {
       final isVideo = PetMediaValidation.isMp4Path(file.path);
@@ -209,6 +210,10 @@ class _PetRegistrationScreenState extends State<PetRegistrationScreen> {
         }
         acceptedVideos.add(file);
       } else {
+        if (!PetMediaValidation.isImageSizeAllowed(file.lengthSync())) {
+          rejectedLargeImage = true;
+          continue;
+        }
         acceptedPhotos.add(file);
         hasCoverPhoto = true;
       }
@@ -229,6 +234,10 @@ class _PetRegistrationScreenState extends State<PetRegistrationScreen> {
     } else if (rejectedLargeVideo) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Videos must be 50 MB or smaller.')),
+      );
+    } else if (rejectedLargeImage) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Images must be 5 MB or smaller.')),
       );
     }
 
@@ -773,7 +782,19 @@ Future<File?> _pickImageFile(BuildContext context) async {
     );
     final path = result?.files.single.path;
     if (path == null || path.isEmpty) return null;
-    return File(path);
+    final file = File(path);
+    if (!PetMediaValidation.isImagePath(path) ||
+        !PetMediaValidation.isImageSizeAllowed(await file.length())) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Choose a JPG or PNG image no larger than 5 MB.'),
+          ),
+        );
+      }
+      return null;
+    }
+    return file;
   } catch (_) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1287,96 +1308,99 @@ class _PetPhotoUploadState extends State<_PetPhotoUpload> {
           padding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
           child: Column(
             children: [
-            if (_image != null)
-              ClipOval(
-                child: Image.file(
-                  _image!,
+              if (_image != null)
+                ClipOval(
+                  child: Image.file(
+                    _image!,
+                    width: 80,
+                    height: 80,
+                    fit: BoxFit.cover,
+                  ),
+                )
+              else
+                Container(
                   width: 80,
                   height: 80,
-                  fit: BoxFit.cover,
-                ),
-              )
-            else
-              Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFFF8A9A), Color(0xFFFF4D6D)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: const [
-                    Center(
-                      child: Icon(Icons.pets, color: Colors.white, size: 42),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFFF8A9A), Color(0xFFFF4D6D)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
-                    Positioned(
-                      bottom: 8,
-                      right: 8,
-                      child: Icon(
-                        Icons.camera_alt,
-                        color: Colors.white,
-                        size: 22,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: const [
+                      Center(
+                        child: Icon(Icons.pets, color: Colors.white, size: 42),
                       ),
+                      Positioned(
+                        bottom: 8,
+                        right: 8,
+                        child: Icon(
+                          Icons.camera_alt,
+                          color: Colors.white,
+                          size: 22,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: 200,
+                height: 44,
+                child: ElevatedButton(
+                  onPressed: _pickFile,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                  ],
-                ),
-              ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: 200,
-              height: 44,
-              child: ElevatedButton(
-                onPressed: _pickFile,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
                   ),
-                ),
-                child: const Text(
-                  'UPLOAD A PHOTO',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              width: 200,
-              height: 44,
-              child: OutlinedButton(
-                onPressed: _pickCamera,
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: AppColors.primary, width: 1.5),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                child: const Text(
-                  'TAKE A PHOTO',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.bold,
+                  child: const Text(
+                    'UPLOAD A PHOTO',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'Add in .png & .jpg format only — max 5 mb',
-              style: TextStyle(
-                fontSize: 11,
-                color: Color(0xFF888888),
-                fontWeight: FontWeight.w500,
+              const SizedBox(height: 10),
+              SizedBox(
+                width: 200,
+                height: 44,
+                child: OutlinedButton(
+                  onPressed: _pickCamera,
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(
+                      color: AppColors.primary,
+                      width: 1.5,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text(
+                    'TAKE A PHOTO',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(height: 12),
+              const Text(
+                'Add in .png & .jpg format only — max 5 mb',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Color(0xFF888888),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ],
           ),
         ),

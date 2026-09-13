@@ -25,6 +25,7 @@ class HealthRecord {
   final String nextUpdate;
   final String veterinarian;
   final String clinic;
+  final bool clinicConsentGranted;
 
   HealthRecord({
     this.recordId = '',
@@ -36,6 +37,7 @@ class HealthRecord {
     this.nextUpdate = '',
     this.veterinarian = '',
     this.clinic = '',
+    this.clinicConsentGranted = false,
   });
 
   String get displayType =>
@@ -114,6 +116,8 @@ class _PetHealthRecordScreenState extends State<PetHealthRecordScreen> {
             nextUpdate: record.nextUpdate,
             veterinarian: record.veterinarian,
             clinic: record.clinic,
+            clinicConsentGranted: record.clinicConsentGranted,
+            verificationStatus: 'awaiting_clinic_confirmation',
           ),
         )
         .toList();
@@ -130,6 +134,7 @@ class _PetHealthRecordScreenState extends State<PetHealthRecordScreen> {
       nextUpdate: record.nextUpdate,
       veterinarian: record.veterinarian,
       clinic: record.clinic,
+      clinicConsentGranted: record.clinicConsentGranted,
     );
   }
 
@@ -614,6 +619,7 @@ class _AddHealthRecordSheetState extends State<_AddHealthRecordSheet> {
   final _otherTypeCtrl = TextEditingController();
   bool _showVerifyDialog = false;
   bool _validationAttempted = false;
+  bool _clinicConsentGranted = false;
 
   final _docTypes = [
     'Vaccination',
@@ -637,6 +643,7 @@ class _AddHealthRecordSheetState extends State<_AddHealthRecordSheet> {
     _nextUpdateCtrl.text = initial.nextUpdate;
     _vetCtrl.text = initial.veterinarian;
     _clinicCtrl.text = initial.clinic;
+    _clinicConsentGranted = initial.clinicConsentGranted;
   }
 
   @override
@@ -656,6 +663,7 @@ class _AddHealthRecordSheetState extends State<_AddHealthRecordSheet> {
         _nextUpdateCtrl.text.trim().isEmpty ||
         _vetCtrl.text.trim().isEmpty ||
         _clinicCtrl.text.trim().isEmpty ||
+        !_clinicConsentGranted ||
         (_docType == 'Other' && _otherTypeCtrl.text.trim().isEmpty)) {
       return;
     }
@@ -677,6 +685,7 @@ class _AddHealthRecordSheetState extends State<_AddHealthRecordSheet> {
         nextUpdate: _nextUpdateCtrl.text.trim(),
         veterinarian: _vetCtrl.text.trim(),
         clinic: _clinicCtrl.text.trim(),
+        clinicConsentGranted: _clinicConsentGranted,
       ),
     );
     Navigator.pop(context);
@@ -835,24 +844,48 @@ class _AddHealthRecordSheetState extends State<_AddHealthRecordSheet> {
                                 vertical: 8,
                               ),
                               decoration: BoxDecoration(
-                                color: sel
-                                    ? _blue.withValues(alpha: 0.1)
-                                    : Colors.white,
+                                color: sel ? _blue : const Color(0xFFEAF3FF),
                                 borderRadius: BorderRadius.circular(20),
                                 border: Border.all(
-                                  color: sel ? _blue : const Color(0xFFDDDDDD),
+                                  color: sel
+                                      ? const Color(0xFF003F91)
+                                      : const Color(0xFFCFE2FA),
                                   width: sel ? 2 : 1,
                                 ),
+                                boxShadow: sel
+                                    ? const [
+                                        BoxShadow(
+                                          color: Color(0x330050B4),
+                                          blurRadius: 5,
+                                          offset: Offset(0, 2),
+                                        ),
+                                      ]
+                                    : null,
                               ),
-                              child: Text(
-                                t,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: sel ? _blue : const Color(0xFF555555),
-                                  fontWeight: sel
-                                      ? FontWeight.bold
-                                      : FontWeight.normal,
-                                ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (sel) ...[
+                                    const Icon(
+                                      Icons.check_rounded,
+                                      size: 15,
+                                      color: Colors.white,
+                                    ),
+                                    const SizedBox(width: 5),
+                                  ],
+                                  Text(
+                                    t,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: sel
+                                          ? Colors.white
+                                          : const Color(0xFF0050B4),
+                                      fontWeight: sel
+                                          ? FontWeight.bold
+                                          : FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           );
@@ -974,12 +1007,35 @@ class _AddHealthRecordSheetState extends State<_AddHealthRecordSheet> {
                             ? 'Veterinary clinic is required.'
                             : null,
                       ),
+                      const SizedBox(height: 14),
+                      CheckboxListTile(
+                        contentPadding: EdgeInsets.zero,
+                        controlAffinity: ListTileControlAffinity.leading,
+                        value: _clinicConsentGranted,
+                        onChanged: (value) => setState(
+                          () => _clinicConsentGranted = value == true,
+                        ),
+                        title: const Text(
+                          'I consent to Breedr sending this health document and its record details to the selected veterinary clinic for confirmation.',
+                          style: TextStyle(fontSize: 12, height: 1.35),
+                        ),
+                        subtitle: _validationAttempted && !_clinicConsentGranted
+                            ? const Text(
+                                'Consent is required before this record can be submitted.',
+                                style: TextStyle(
+                                  color: Colors.red,
+                                  fontSize: 11,
+                                ),
+                              )
+                            : null,
+                      ),
                       if (_validationAttempted &&
                           (_file == null ||
                               _dateCtrl.text.trim().isEmpty ||
                               _nextUpdateCtrl.text.trim().isEmpty ||
                               _vetCtrl.text.trim().isEmpty ||
                               _clinicCtrl.text.trim().isEmpty ||
+                              !_clinicConsentGranted ||
                               (_docType == 'Other' &&
                                   _otherTypeCtrl.text.trim().isEmpty))) ...[
                         const SizedBox(height: 14),

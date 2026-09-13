@@ -1,11 +1,14 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/pet_listing_data.dart';
 import 'cloudinary_service.dart';
 import 'pet_media_validation_service.dart';
+import 'pet_eligibility_policy.dart';
 import 'user_session_service.dart';
+import 'health_verification_service.dart';
 
 class PetService {
   PetService._();
@@ -95,6 +98,24 @@ class PetService {
     }
 
     final purpose = _normalizeText(pet.purpose ?? '');
+    final age = PetAgeValue.tryParse(pet.age);
+    if (age == null) {
+      throw const PetListingUpdateException('Please select a valid pet age.');
+    }
+    final eligibility = PetEligibilityPolicy.validate(
+      purpose: purpose,
+      age: age,
+      gender: pet.gender,
+      breedSize: pet.breedSize,
+      petName: pet.name,
+    );
+    if (eligibility != null) {
+      throw PetListingUpdateException(eligibility.message);
+    }
+    final questionError = PetEligibilityPolicy.validateInterviewQuestions(
+      pet.interviewQuestions.map((question) => question.toMap()).toList(),
+    );
+    if (questionError != null) throw PetListingUpdateException(questionError);
     final duplicateKey = _duplicateKey(
       ownerId: user.uid,
       purpose: purpose,
@@ -115,18 +136,26 @@ class PetService {
     String profilePhotoUrl = '';
 
     if (pet.profilePhotoFile != null) {
-      profilePhotoUrl =
-          await _cloudinary.uploadImage(pet.profilePhotoFile!) ?? '';
+      final photo = pet.profilePhotoFile!;
+      if (!PetMediaValidation.isImagePath(photo.path) ||
+          !PetMediaValidation.isImageSizeAllowed(await photo.length())) {
+        throw const CloudinaryUploadException(
+          'The profile photo must be a JPG or PNG image no larger than 5 MB.',
+        );
+      }
+      profilePhotoUrl = await _cloudinary.uploadImageOrThrow(photo);
     }
 
     final additionalImageUrls = <String>[];
 
     for (final photo in pet.additionalPhotoFiles) {
-      final url = await _cloudinary.uploadImage(photo);
-
-      if (url != null) {
-        additionalImageUrls.add(url);
+      if (!PetMediaValidation.isImagePath(photo.path) ||
+          !PetMediaValidation.isImageSizeAllowed(await photo.length())) {
+        throw const CloudinaryUploadException(
+          'Each additional photo must be a JPG or PNG image no larger than 5 MB.',
+        );
       }
+      additionalImageUrls.add(await _cloudinary.uploadImageOrThrow(photo));
     }
 
     final additionalVideoUrls = <String>[];
@@ -149,6 +178,7 @@ class PetService {
       ownerName: userData?['fullName'] as String? ?? user.displayName ?? '',
       ownerPhoto: userData?['profilePhoto'] as String? ?? user.photoURL ?? '',
       healthRecords: await _uploadHealthRecords(pet.healthRecords),
+      breedingPreferredGender: PetEligibilityPolicy.oppositeGender(pet.gender),
     );
 
     final petData = petWithOwner.toFirestore(
@@ -192,6 +222,14 @@ class PetService {
       });
     });
 
+    await HealthVerificationService.instance.requestForPublishedPet(
+      petId: document.id,
+      petName: pet.name,
+      records: (petData['healthRecords'] as List? ?? const [])
+          .map((value) => Map<String, dynamic>.from(value as Map))
+          .toList(),
+    );
+
     return PetPublishResult(
       document: document,
       profilePhotoUrl: profilePhotoUrl,
@@ -200,11 +238,244 @@ class PetService {
     );
   }
 
+  Future<void> updatePetListing({
+    required String petId,
+    required Map<String, dynamic> editableFields,
+    required String originalPurpose,
+    File? newProfilePhoto,
+    required String existingProfilePhotoUrl,
+    required List<String> existingImageUrls,
+    required List<String> existingVideoUrls,
+    List<File> newImageFiles = const [],
+    List<File> newVideoFiles = const [],
+  }) async {
+    final user = UserSessionService.instance.currentUser;
+    if (user == null) throw StateError('You must be logged in first.');
+
+    final purpose = _normalizeText(originalPurpose);
+    final gender = (editableFields['gender'] ?? '').toString();
+    final age = PetAgeValue.tryParse((editableFields['age'] ?? '').toString());
+    if (age == null) {
+      throw const PetListingUpdateException('Please select a valid pet age.');
+    }
+    final eligibility = PetEligibilityPolicy.validate(
+      purpose: purpose,
+      age: age,
+      gender: gender,
+      breedSize: (editableFields['breedSize'] ?? '').toString(),
+      petName: (editableFields['name'] ?? 'This pet').toString(),
+    );
+    if (eligibility != null) {
+      throw PetListingUpdateException(eligibility.message);
+    }
+    if (purpose == 'breeding') {
+      final preferences = Map<String, dynamic>.from(
+        editableFields['breedingPreferences'] as Map? ?? const {},
+      );
+      preferences['preferredGender'] = PetEligibilityPolicy.oppositeGender(
+        gender,
+      );
+      editableFields['breedingPreferences'] = preferences;
+    }
+    final questions =
+        (editableFields['interviewQuestions'] as List? ?? const [])
+            .whereType<Map>()
+            .map((question) => Map<String, dynamic>.from(question))
+            .toList();
+    final questionError = PetEligibilityPolicy.validateInterviewQuestions(
+      questions,
+    );
+    if (questionError != null) throw PetListingUpdateException(questionError);
+    final name = (editableFields['name'] ?? '').toString().trim();
+    final species = (editableFields['species'] ?? '').toString().trim();
+    if (name.isEmpty || species.isEmpty || purpose.isEmpty) {
+      throw const PetListingUpdateException(
+        'The pet name, species, and listing purpose are required.',
+      );
+    }
+
+    final allImages = <File>[?newProfilePhoto, ...newImageFiles];
+    for (final image in allImages) {
+      if (!PetMediaValidation.isImagePath(image.path)) {
+        throw const PetListingUpdateException(
+          'Only JPG, JPEG, and PNG images can be uploaded.',
+        );
+      }
+      if (!PetMediaValidation.isImageSizeAllowed(await image.length())) {
+        throw const PetListingUpdateException(
+          'Each image must be 5 MB or smaller.',
+        );
+      }
+    }
+    for (final video in newVideoFiles) {
+      if (!PetMediaValidation.isMp4Path(video.path)) {
+        throw const PetListingUpdateException(
+          'Only MP4 videos can be uploaded.',
+        );
+      }
+      if (!PetMediaValidation.isVideoSizeAllowed(await video.length())) {
+        throw const PetListingUpdateException(
+          'Videos must be 50 MB or smaller.',
+        );
+      }
+    }
+
+    final imageCount = existingImageUrls.length + newImageFiles.length;
+    final videoCount = existingVideoUrls.length + newVideoFiles.length;
+    if (imageCount + videoCount > 10) {
+      throw const PetListingUpdateException(
+        'You can upload up to 10 additional photos or videos.',
+      );
+    }
+    if (videoCount > 0 && imageCount == 0) {
+      throw const PetListingUpdateException(
+        'Add a cover photo before adding pet videos.',
+      );
+    }
+
+    final petReference = _firestore.collection('pets').doc(petId);
+    final initialSnapshot = await petReference.get();
+    final initialData = initialSnapshot.data();
+    if (initialData == null) {
+      throw const PetListingUpdateException(
+        'This pet profile could not be found.',
+      );
+    }
+    _validateEditableListing(initialData, user.uid, purpose);
+
+    await _ensureNoDuplicateActiveListing(
+      ownerId: user.uid,
+      purpose: purpose,
+      species: species,
+      name: name,
+      excludePetId: petId,
+    );
+
+    var profilePhotoUrl = existingProfilePhotoUrl.trim();
+    if (newProfilePhoto != null) {
+      profilePhotoUrl = await _cloudinary.uploadImageOrThrow(newProfilePhoto);
+    }
+    final imageUrls = <String>[...existingImageUrls];
+    for (final image in newImageFiles) {
+      imageUrls.add(await _cloudinary.uploadImageOrThrow(image));
+    }
+    final videoUrls = <String>[...existingVideoUrls];
+    for (final video in newVideoFiles) {
+      videoUrls.add(await _cloudinary.uploadVideoOrThrow(video));
+    }
+
+    final cleanImages = PetMediaValidation.uniqueAdditionalUrls(
+      imageUrls,
+      exclude: profilePhotoUrl,
+    );
+    final cleanVideos = PetMediaValidation.uniqueAdditionalUrls(videoUrls);
+    final duplicateKey = _duplicateKey(
+      ownerId: user.uid,
+      purpose: purpose,
+      species: species,
+      name: name,
+    );
+    final newPublicationKey = _firestore
+        .collection('petPublicationKeys')
+        .doc(_publicationKeyId(duplicateKey));
+
+    await _firestore.runTransaction((transaction) async {
+      final currentSnapshot = await transaction.get(petReference);
+      final currentData = currentSnapshot.data();
+      if (currentData == null) {
+        throw const PetListingUpdateException(
+          'This pet profile could not be found.',
+        );
+      }
+      _validateEditableListing(currentData, user.uid, purpose);
+
+      final keySnapshot = await transaction.get(newPublicationKey);
+      final claimedPetId = keySnapshot.data()?['petId'] as String?;
+      if (claimedPetId != null && claimedPetId != petId) {
+        final claimedPet = await transaction.get(
+          _firestore.collection('pets').doc(claimedPetId),
+        );
+        final claimedStatus = _normalizeText(
+          (claimedPet.data()?['status'] ?? '').toString(),
+        );
+        if (claimedPet.exists && !_isTerminalPetStatus(claimedStatus)) {
+          throw DuplicatePetListingException(name);
+        }
+      }
+
+      final oldDuplicateKey = _textValue(currentData['duplicateKey']);
+      DocumentReference<Map<String, dynamic>>? oldPublicationKey;
+      DocumentSnapshot<Map<String, dynamic>>? oldKeySnapshot;
+      if (oldDuplicateKey.isNotEmpty && oldDuplicateKey != duplicateKey) {
+        oldPublicationKey = _firestore
+            .collection('petPublicationKeys')
+            .doc(_publicationKeyId(oldDuplicateKey));
+        oldKeySnapshot = await transaction.get(oldPublicationKey);
+      }
+
+      transaction.update(petReference, {
+        ...editableFields,
+        'normalizedName': _normalizeText(name),
+        'normalizedSpecies': _normalizeText(species),
+        'duplicateKey': duplicateKey,
+        'petProfilePhoto': profilePhotoUrl,
+        'additionalImages': cleanImages,
+        'additionalVideos': cleanVideos,
+        'hasProfilePhoto': profilePhotoUrl.isNotEmpty,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      if (oldPublicationKey != null &&
+          oldKeySnapshot?.data()?['petId'] == petId) {
+        transaction.delete(oldPublicationKey);
+      }
+      transaction.set(newPublicationKey, {
+        'ownerId': user.uid,
+        'petId': petId,
+        'duplicateKey': duplicateKey,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    });
+  }
+
+  void _validateEditableListing(
+    Map<String, dynamic> data,
+    String userId,
+    String originalPurpose,
+  ) {
+    if (data['ownerId'] != userId) {
+      throw const PetListingUpdateException(
+        'Only the pet owner can edit this listing.',
+      );
+    }
+    if (data['adminRemoved'] == true ||
+        _normalizeText((data['adminListingStatus'] ?? '').toString()) ==
+            'removed') {
+      throw const PetListingUpdateException(
+        'A listing removed by an administrator cannot be edited.',
+      );
+    }
+    final status = _normalizeText((data['status'] ?? '').toString());
+    if (status == 'adopted' || status == 'removed' || status == 'deleted') {
+      throw const PetListingUpdateException(
+        'This pet listing can no longer be edited.',
+      );
+    }
+    final currentPurpose = _normalizeText(
+      (data['normalizedPurpose'] ?? data['purpose'] ?? '').toString(),
+    );
+    if (currentPurpose != originalPurpose) {
+      throw const PetListingUpdateException(
+        'The listing purpose changed while you were editing. Please reopen it.',
+      );
+    }
+  }
+
   Future<void> _ensureNoDuplicateActiveListing({
     required String ownerId,
     required String purpose,
     required String species,
     required String name,
+    String? excludePetId,
   }) async {
     final normalizedName = _normalizeText(name);
     final normalizedSpecies = _normalizeText(species);
@@ -217,6 +488,7 @@ class PetService {
         .get();
 
     for (final document in existingPets.docs) {
+      if (document.id == excludePetId) continue;
       final data = document.data();
       final existingName = _normalizeText(
         (data['normalizedName'] ?? data['name'] ?? '').toString(),
@@ -271,6 +543,8 @@ class PetService {
     return value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
   }
 
+  String _textValue(dynamic value) => value?.toString().trim() ?? '';
+
   String _publicationKeyId(String duplicateKey) {
     return base64Url.encode(utf8.encode(duplicateKey)).replaceAll('=', '');
   }
@@ -302,6 +576,15 @@ class DuplicatePetListingException implements Exception {
 
   @override
   String toString() => 'Duplicate active pet listing: $petName';
+}
+
+class PetListingUpdateException implements Exception {
+  final String message;
+
+  const PetListingUpdateException(this.message);
+
+  @override
+  String toString() => message;
 }
 
 class PetPublishResult {

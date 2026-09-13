@@ -43,31 +43,25 @@ class _LoadingScreenState extends State<LoadingScreen>
     Widget nextScreen = const GetStartedScreen();
 
     try {
-      final canAutoLogin = await UserSessionService.instance.shouldAutoLogin();
+      final restoration = await UserSessionService.instance.restoreSession();
 
-      if (canAutoLogin) {
-        final isVetAdmin = await UserSessionService.instance
-            .isCurrentUserVeterinaryAdmin();
-        final isAdmin = await UserSessionService.instance.isCurrentUserAdmin();
-        if (isVetAdmin) {
-          nextScreen = const VeterinaryDashboardScreen();
-        } else if (isAdmin) {
-          nextScreen = const AdminDashboardScreen();
-        } else {
-          final moderation = await ModerationService.instance
-              .getCurrentUserModeration();
-          nextScreen = moderation?.isBlocked == true
-              ? ModerationGateScreen(state: moderation!)
-              : const CabuyaoAccessGate(child: HomeScreen());
+      if (restoration.shouldRetry) {
+        nextScreen = const _SessionRecoveryScreen();
+      } else if (restoration.isAuthenticated) {
+        var hasProfile = true;
+        try {
+          hasProfile = await UserSessionService.instance.hasBreedrProfile();
+        } catch (_) {
+          // A temporary Firestore error must not invalidate a restored login.
         }
-      } else {
+
         final user = FirebaseAuth.instance.currentUser;
         final isIncompleteGoogleSignup =
+            !hasProfile &&
             user != null &&
             user.providerData.any(
               (provider) => provider.providerId == 'google.com',
-            ) &&
-            !await UserSessionService.instance.hasBreedrProfile();
+            );
 
         if (isIncompleteGoogleSignup) {
           final email = user.email ?? '';
@@ -88,6 +82,22 @@ class _LoadingScreenState extends State<LoadingScreen>
               photoUrl: onboardingData.profilePhoto,
             ),
           );
+        } else if (hasProfile) {
+          final isVetAdmin = await UserSessionService.instance
+              .isCurrentUserVeterinaryAdmin();
+          final isAdmin = await UserSessionService.instance
+              .isCurrentUserAdmin();
+          if (isVetAdmin) {
+            nextScreen = const VeterinaryDashboardScreen();
+          } else if (isAdmin) {
+            nextScreen = const AdminDashboardScreen();
+          } else {
+            final moderation = await ModerationService.instance
+                .getCurrentUserModeration();
+            nextScreen = moderation?.isBlocked == true
+                ? ModerationGateScreen(state: moderation!)
+                : const CabuyaoAccessGate(child: HomeScreen());
+          }
         }
       }
     } catch (e) {
@@ -194,6 +204,91 @@ class _LoadingScreenState extends State<LoadingScreen>
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SessionRecoveryScreen extends StatefulWidget {
+  const _SessionRecoveryScreen();
+
+  @override
+  State<_SessionRecoveryScreen> createState() => _SessionRecoveryScreenState();
+}
+
+class _SessionRecoveryScreenState extends State<_SessionRecoveryScreen> {
+  bool _clearingSession = false;
+
+  Future<void> _retry() async {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const LoadingScreen()),
+    );
+  }
+
+  Future<void> _useAnotherAccount() async {
+    if (_clearingSession) return;
+    setState(() => _clearingSession = true);
+    await UserSessionService.instance.signOut();
+    if (!mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const GetStartedScreen()),
+      (_) => false,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFFFF7FC),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.cloud_off_outlined,
+                size: 64,
+                color: AppColors.primary,
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'We could not restore your session',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Your account has not been logged out. Check your internet connection, then try again.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Color(0xFF666666), height: 1.4),
+              ),
+              const SizedBox(height: 26),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: _clearingSession ? null : _retry,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                  ),
+                  child: const Text('Try Again'),
+                ),
+              ),
+              TextButton(
+                onPressed: _clearingSession ? null : _useAnotherAccount,
+                child: _clearingSession
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Use another account'),
+              ),
+            ],
+          ),
         ),
       ),
     );

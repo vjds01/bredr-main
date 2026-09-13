@@ -4,6 +4,7 @@ import '../../models/pet_listing_data.dart';
 import '../../services/pet_registration_draft_service.dart';
 import 'adoption_interview_screen.dart';
 import 'pet_health_record_screen.dart';
+import 'selling_pet_information_screen.dart';
 
 class PetPurposeScreen extends StatefulWidget {
   final PetListingData petData;
@@ -26,6 +27,7 @@ class _PetPurposeScreenState extends State<PetPurposeScreen> {
   String _adoptionType = 'FREE';
   bool _noOtherPets = true;
   bool _priceNegotiable = true;
+  bool _saleAcknowledgementValid = false;
   final _priceCtrl = TextEditingController(text: '0.0');
 
   @override
@@ -38,6 +40,8 @@ class _PetPurposeScreenState extends State<PetPurposeScreen> {
     _adoptionType = widget.petData.adoptionType;
     _noOtherPets = widget.petData.noOtherPets;
     _priceNegotiable = widget.petData.priceNegotiable;
+    _saleAcknowledgementValid =
+        widget.petData.hasValidSaleAcknowledgement && widget.petData.isForSale;
     _priceCtrl.text = widget.petData.price.toStringAsFixed(0);
     _priceCtrl.addListener(_saveDraft);
   }
@@ -72,6 +76,8 @@ class _PetPurposeScreenState extends State<PetPurposeScreen> {
       price: _adoptionType == 'FOR SALE' ? parsedPrice : 0,
       noOtherPets: _noOtherPets,
       priceNegotiable: _priceNegotiable,
+      saleRequirementsAcknowledged:
+          _adoptionType == 'FOR SALE' && _saleAcknowledgementValid,
     );
   }
 
@@ -108,6 +114,8 @@ class _PetPurposeScreenState extends State<PetPurposeScreen> {
     PetRegistrationDraftService.instance.saveDraft(updatedData);
     final nextScreen = _selected == 'Breeding'
         ? PetHealthRecordScreen(petData: updatedData)
+        : _adoptionType == 'FOR SALE'
+        ? SellingPetInformationScreen(petData: updatedData)
         : AdoptionInterviewScreen(petData: updatedData);
 
     Navigator.push(context, MaterialPageRoute(builder: (_) => nextScreen));
@@ -326,6 +334,9 @@ class _PetPurposeScreenState extends State<PetPurposeScreen> {
                       isSelected: _selected == 'Breeding',
                       onTap: () {
                         setState(() {
+                          if (_selected != 'Breeding') {
+                            _saleAcknowledgementValid = false;
+                          }
                           _selected = 'Breeding';
                           _breedingGender = _requiredPartnerGender;
                         });
@@ -367,7 +378,12 @@ class _PetPurposeScreenState extends State<PetPurposeScreen> {
                               priceNegotiable: _priceNegotiable,
                               priceCtrl: _priceCtrl,
                               onTypeChanged: (v) {
-                                setState(() => _adoptionType = v);
+                                setState(() {
+                                  if (_adoptionType != v) {
+                                    _saleAcknowledgementValid = false;
+                                  }
+                                  _adoptionType = v;
+                                });
                                 _saveDraft();
                               },
                               onNoOtherPetsChanged: (v) {

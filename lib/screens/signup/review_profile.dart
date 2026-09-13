@@ -487,12 +487,18 @@ class _Step3WelcomeState extends State<Step3Welcome> {
                                           color: AppColors.primary,
                                         ),
                                         const SizedBox(width: 4),
-                                        Text(
-                                          widget.onboardingData.locationName ??
-                                              'No location',
-                                          style: const TextStyle(
-                                            fontSize: 12,
-                                            color: Color(0xFF666666),
+                                        Expanded(
+                                          child: Text(
+                                            widget
+                                                    .onboardingData
+                                                    .locationName ??
+                                                'No location',
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: Color(0xFF666666),
+                                            ),
                                           ),
                                         ),
                                       ],
@@ -877,19 +883,27 @@ class _InfoRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
+          SizedBox(
+            width: 92,
             child: Text(
               label,
               style: const TextStyle(fontSize: 13, color: Color(0xFF888888)),
             ),
           ),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF333333),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              value,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF333333),
+              ),
             ),
           ),
         ],

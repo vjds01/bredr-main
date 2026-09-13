@@ -607,6 +607,9 @@ class _LocationField extends StatelessWidget {
     return TextField(
       controller: controller,
       readOnly: true,
+      minLines: 1,
+      maxLines: 2,
+      style: const TextStyle(fontSize: 13, height: 1.25),
       onTap: isDetecting ? null : onSelectBarangay,
       decoration: InputDecoration(
         filled: true,

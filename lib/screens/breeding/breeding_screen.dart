@@ -35,6 +35,7 @@ class _BreedingScreenState extends State<BreedingScreen> {
   int _locationSearchRun = 0;
   String? _selectedSpecies;
   String? _filterPetId;
+  String? _filterPetSignature;
   _BreedingFilter _filter = const _BreedingFilter();
 
   @override
@@ -84,6 +85,7 @@ class _BreedingScreenState extends State<BreedingScreen> {
     _selectedMyPetIndex = index;
     _candidateIndex = 0;
     _filterPetId = pet.id;
+    _filterPetSignature = pet.filterSignature;
     _filter = _BreedingFilter.fromPetPreferences(pet);
     _showDetails = false;
     _showLocationSearch = false;
@@ -156,7 +158,9 @@ class _BreedingScreenState extends State<BreedingScreen> {
             final selectedPet = myPets.isEmpty
                 ? null
                 : myPets[_selectedMyPetIndex];
-            if (selectedPet != null && _filterPetId != selectedPet.id) {
+            if (selectedPet != null &&
+                (_filterPetId != selectedPet.id ||
+                    _filterPetSignature != selectedPet.filterSignature)) {
               _selectBreedingPet(selectedPet, _selectedMyPetIndex);
             }
             if (_pendingInitialLocationSearch && selectedPet != null) {
@@ -538,6 +542,14 @@ class _BreedingPet {
     required this.moderationHiddenUntil,
     required this.moderationSourceAction,
   });
+
+  String get filterSignature => [
+    gender.trim().toLowerCase(),
+    preferredGender.trim().toLowerCase(),
+    sameBreedOnly,
+    preferenceVetVerifiedOnly,
+    breed.trim().toLowerCase(),
+  ].join('|');
 
   factory _BreedingPet.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data() ?? {};

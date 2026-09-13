@@ -36,8 +36,11 @@ class PetPublishedScreen extends StatelessWidget {
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: IconButton(
-                      icon: const Icon(Icons.arrow_back_ios,
-                          color: AppColors.primary, size: 20),
+                      icon: const Icon(
+                        Icons.arrow_back_ios,
+                        color: AppColors.primary,
+                        size: 20,
+                      ),
                       onPressed: () => Navigator.pop(context),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
@@ -59,11 +62,12 @@ class PetPublishedScreen extends StatelessWidget {
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             border: Border.all(
-                                color: AppColors.primary, width: 3),
+                              color: AppColors.primary,
+                              width: 3,
+                            ),
                             boxShadow: [
                               BoxShadow(
-                                color: AppColors.primary
-                                    .withValues(alpha: 0.2),
+                                color: AppColors.primary.withValues(alpha: 0.2),
                                 blurRadius: 16,
                                 spreadRadius: 2,
                               ),
@@ -78,11 +82,11 @@ class PetPublishedScreen extends StatelessWidget {
                                     fallback: const _PublishedPetPlaceholder(),
                                   )
                                 : petData.profilePhotoFile != null
-                                    ? Image.file(
-                                        petData.profilePhotoFile!,
-                                        fit: BoxFit.cover,
-                                      )
-                                    : const _PublishedPetPlaceholder(),
+                                ? Image.file(
+                                    petData.profilePhotoFile!,
+                                    fit: BoxFit.cover,
+                                  )
+                                : const _PublishedPetPlaceholder(),
                           ),
                         ),
 
@@ -128,80 +132,119 @@ class PetPublishedScreen extends StatelessWidget {
                             color: const Color(0xFFFFF0F5),
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(
-                                color: const Color(0xFFFFCDD5), width: 1.5),
+                              color: const Color(0xFFFFCDD5),
+                              width: 1.5,
+                            ),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Row(children: [
-                                Text(petData.name,
+                              Row(
+                                children: [
+                                  Text(
+                                    petData.name,
                                     style: const TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                        color: AppColors.primary)),
-                                const SizedBox(width: 8),
-                                if (isAdoption)
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  if (isAdoption)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFF43845),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Text(
+                                        'FOR SALE',
+                                        style: TextStyle(
+                                          fontSize: 9,
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  if (isAdoption) const SizedBox(width: 6),
+                                  // LIVE badge
                                   Container(
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFF43845),
-                                      borderRadius: BorderRadius.circular(8),
+                                      horizontal: 8,
+                                      vertical: 3,
                                     ),
-                                    child: const Text('FOR SALE',
-                                        style: TextStyle(
-                                            fontSize: 9,
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.bold)),
-                                  ),
-                                if (isAdoption) const SizedBox(width: 6),
-                                // LIVE badge
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                        color: const Color(0xFF56C14A)),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: const [
-                                      Icon(Icons.circle,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: const Color(0xFF56C14A),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: const [
+                                        Icon(
+                                          Icons.circle,
                                           size: 7,
-                                          color: Color(0xFF56C14A)),
-                                      SizedBox(width: 4),
-                                      Text('LIVE',
+                                          color: Color(0xFF56C14A),
+                                        ),
+                                        SizedBox(width: 4),
+                                        Text(
+                                          'LIVE',
                                           style: TextStyle(
-                                              fontSize: 9,
-                                              color: Color(0xFF56C14A),
-                                              fontWeight: FontWeight.bold)),
-                                    ],
+                                            fontSize: 9,
+                                            color: Color(0xFF56C14A),
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              ]),
+                                ],
+                              ),
                               const SizedBox(height: 6),
-                              Row(children: [
-                                const Icon(Icons.pets,
-                                    size: 13, color: Color(0xFF888888)),
-                                const SizedBox(width: 4),
-                                Text(
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.pets,
+                                    size: 13,
+                                    color: Color(0xFF888888),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
                                     '${petData.breed}  |  ${petData.gender}  |  ${petData.age}',
                                     style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Color(0xFF666666))),
-                              ]),
+                                      fontSize: 12,
+                                      color: Color(0xFF666666),
+                                    ),
+                                  ),
+                                ],
+                              ),
                               const SizedBox(height: 4),
-                              Row(children: [
-                                const Icon(Icons.location_on,
-                                    size: 13, color: AppColors.primary),
-                                const SizedBox(width: 4),
-                                Text(petData.locationName,
-                                    style: const TextStyle(
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.location_on,
+                                    size: 13,
+                                    color: AppColors.primary,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      petData.locationName,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
                                         fontSize: 12,
-                                        color: Color(0xFF666666))),
-                              ]),
+                                        color: Color(0xFF666666),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ],
                           ),
                         ),
@@ -216,26 +259,29 @@ class PetPublishedScreen extends StatelessWidget {
                             color: const Color(0xFFFFF0F5),
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(
-                                color: const Color(0xFFFFCDD5), width: 1.5),
+                              color: const Color(0xFFFFCDD5),
+                              width: 1.5,
+                            ),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('What happens next?',
-                                  style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.bold,
-                                      color: AppColors.primary)),
+                              const Text(
+                                'What happens next?',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.primary,
+                                ),
+                              ),
                               const SizedBox(height: 14),
                               ...(isAdoption
                                       ? _adoptionSteps(petData.name)
                                       : _breedingSteps(petData.name))
                                   .map(
-                                (s) => _NextStep(
-                                  icon: s.icon,
-                                  text: s.text,
-                                ),
-                              ),
+                                    (s) =>
+                                        _NextStep(icon: s.icon, text: s.text),
+                                  ),
                             ],
                           ),
                         ),
@@ -258,7 +304,9 @@ class PetPublishedScreen extends StatelessWidget {
                           onPressed: () => Navigator.pushAndRemoveUntil(
                             context,
                             MaterialPageRoute(
-                                builder: (_) => const CabuyaoAccessGate(child: HomeScreen())),
+                              builder: (_) =>
+                                  const CabuyaoAccessGate(child: HomeScreen()),
+                            ),
                             (route) => false,
                           ),
                           style: ElevatedButton.styleFrom(
@@ -266,13 +314,16 @@ class PetPublishedScreen extends StatelessWidget {
                             foregroundColor: Colors.white,
                             elevation: 0,
                             shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12)),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
                           child: Text(
-                              isAdoption ? 'View Adoption' : 'Explore Breeding',
-                              style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600)),
+                            isAdoption ? 'View Adoption' : 'Explore Breeding',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 10),
@@ -283,21 +334,27 @@ class PetPublishedScreen extends StatelessWidget {
                           onPressed: () => Navigator.pushAndRemoveUntil(
                             context,
                             MaterialPageRoute(
-                                builder: (_) =>
-                                    const PetRegistrationScreen()),
+                              builder: (_) => const PetRegistrationScreen(),
+                            ),
                             (route) => false,
                           ),
                           style: OutlinedButton.styleFrom(
                             side: const BorderSide(
-                                color: AppColors.primary, width: 1.5),
+                              color: AppColors.primary,
+                              width: 1.5,
+                            ),
                             shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12)),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
-                          child: const Text('Register Another Pet',
-                              style: TextStyle(
-                                  fontSize: 16,
-                                  color: AppColors.primary,
-                                  fontWeight: FontWeight.w600)),
+                          child: const Text(
+                            'Register Another Pet',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -328,38 +385,50 @@ class _PublishedPetPlaceholder extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: const Color(0xFFFFCDD5),
-      child: const Icon(
-        Icons.pets,
-        color: AppColors.primary,
-        size: 56,
-      ),
+      child: const Icon(Icons.pets, color: AppColors.primary, size: 56),
     );
   }
 }
 
 List<_StepData> _breedingSteps(String petName) {
   return [
-    _StepData(Icons.favorite,
-        '$petName will appear in the Breeding tab for compatible pets nearby.'),
-    _StepData(Icons.notifications_outlined,
-        "When another owner likes $petName, you'll be notified."),
-    const _StepData(Icons.favorite_border,
-        'Like them back to create a Match - a chat opens automatically to arrange the meetup.'),
-    _StepData(Icons.share_outlined,
-        "Share $petName's health documents in chat to build trust with the other owner."),
+    _StepData(
+      Icons.favorite,
+      '$petName will appear in the Breeding tab for compatible pets nearby.',
+    ),
+    _StepData(
+      Icons.notifications_outlined,
+      "When another owner likes $petName, you'll be notified.",
+    ),
+    const _StepData(
+      Icons.favorite_border,
+      'Like them back to create a Match - a chat opens automatically to arrange the meetup.',
+    ),
+    _StepData(
+      Icons.share_outlined,
+      "Share $petName's health documents in chat to build trust with the other owner.",
+    ),
   ];
 }
 
 List<_StepData> _adoptionSteps(String petName) {
   return [
-    _StepData(Icons.notifications_outlined,
-        "You'll be notified when someone answers your interview questions and requests to adopt $petName."),
-    const _StepData(Icons.assignment_outlined,
-        'Review their answers in My Listings and approve or decline.'),
-    const _StepData(Icons.chat_bubble_outline,
-        'Once approved, a chat opens to negotiate and arrange the meetup.'),
-    _StepData(Icons.pets,
-        'After handover, mark $petName as Adopted to close the listing.'),
+    _StepData(
+      Icons.notifications_outlined,
+      "You'll be notified when someone answers your interview questions and requests to adopt $petName.",
+    ),
+    const _StepData(
+      Icons.assignment_outlined,
+      'Review their answers in My Listings and approve or decline.',
+    ),
+    const _StepData(
+      Icons.chat_bubble_outline,
+      'Once approved, a chat opens to negotiate and arrange the meetup.',
+    ),
+    _StepData(
+      Icons.pets,
+      'After handover, mark $petName as Adopted to close the listing.',
+    ),
   ];
 }
 // ── Next Step Row ─────────────────────────────────────────────────
@@ -389,11 +458,14 @@ class _NextStep extends StatelessWidget {
           Expanded(
             child: Padding(
               padding: const EdgeInsets.only(top: 6),
-              child: Text(text,
-                  style: const TextStyle(
-                      fontSize: 13,
-                      color: Color(0xFF555555),
-                      height: 1.5)),
+              child: Text(
+                text,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF555555),
+                  height: 1.5,
+                ),
+              ),
             ),
           ),
         ],

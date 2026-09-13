@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 const String googleServerClientId =
     '727589976733-8t902lckvith5f1dp5sk2omn5q8d7bcm.apps.googleusercontent.com';
@@ -15,6 +16,7 @@ class UserSessionService {
   final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
 
   bool _googleInitialized = false;
+  static const _sessionHintKey = 'breedr_had_authenticated_session';
 
   User? get currentUser => _auth.currentUser;
 
@@ -59,7 +61,8 @@ class UserSessionService {
   }
 
   Future<bool> shouldAutoLogin() async {
-    final user = await _restoredUser();
+    final result = await restoreSession();
+    final user = result.user;
 
     if (user == null) {
       return false;
@@ -82,25 +85,45 @@ class UserSessionService {
     return await _restoredUser() != null;
   }
 
+  Future<SessionRestoreResult> restoreSession() async {
+    try {
+      final restoredUser = await _restoreFirebaseUser();
+      if (restoredUser == null) return _restoreFailureResult();
+      await _rememberAuthenticatedSession();
+      return SessionRestoreResult.authenticated(restoredUser);
+    } catch (error) {
+      return _restoreFailureResult(error: error);
+    }
+  }
+
   /// Firebase can emit a temporary null auth state while Android restores its
   /// persisted credentials after a cold start. Waiting for the first non-null
   /// event prevents the splash screen from treating that brief state as a
   /// logout. A genuinely signed-out user simply reaches the timeout.
   Future<User?> _restoredUser() async {
+    return (await restoreSession()).user;
+  }
+
+  Future<User?> _restoreFirebaseUser() async {
     final existingUser = currentUser;
     if (existingUser != null) return existingUser;
 
     return _auth
         .authStateChanges()
         .firstWhere((user) => user != null)
-        .timeout(const Duration(seconds: 4), onTimeout: () => null);
+        .timeout(const Duration(seconds: 3), onTimeout: () => null);
   }
 
   Future<UserCredential> signInWithEmail({
     required String email,
     required String password,
-  }) {
-    return _auth.signInWithEmailAndPassword(email: email, password: password);
+  }) async {
+    final credential = await _auth.signInWithEmailAndPassword(
+      email: email,
+      password: password,
+    );
+    await _rememberAuthenticatedSession();
+    return credential;
   }
 
   Future<UserCredential> signInWithGoogle() async {
@@ -121,7 +144,9 @@ class UserSessionService {
       idToken: googleAuth.idToken,
     );
 
-    return _auth.signInWithCredential(credential);
+    final firebaseCredential = await _auth.signInWithCredential(credential);
+    await _rememberAuthenticatedSession();
+    return firebaseCredential;
   }
 
   Future<void> signOut() async {
@@ -133,5 +158,45 @@ class UserSessionService {
     }
 
     await _auth.signOut();
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.remove(_sessionHintKey);
   }
+
+  Future<void> _rememberAuthenticatedSession() async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool(_sessionHintKey, true);
+  }
+
+  Future<SessionRestoreResult> _restoreFailureResult({Object? error}) async {
+    final preferences = await SharedPreferences.getInstance();
+    final hadSession = preferences.getBool(_sessionHintKey) == true;
+    return hadSession
+        ? SessionRestoreResult.retryableFailure(error)
+        : const SessionRestoreResult.signedOut();
+  }
+}
+
+enum SessionRestoreStatus { authenticated, signedOut, retryableFailure }
+
+class SessionRestoreResult {
+  final SessionRestoreStatus status;
+  final User? user;
+  final Object? error;
+
+  const SessionRestoreResult._(this.status, {this.user, this.error});
+
+  const SessionRestoreResult.signedOut()
+    : this._(SessionRestoreStatus.signedOut);
+
+  factory SessionRestoreResult.authenticated(User user) =>
+      SessionRestoreResult._(SessionRestoreStatus.authenticated, user: user);
+
+  factory SessionRestoreResult.retryableFailure([Object? error]) =>
+      SessionRestoreResult._(
+        SessionRestoreStatus.retryableFailure,
+        error: error,
+      );
+
+  bool get isAuthenticated => status == SessionRestoreStatus.authenticated;
+  bool get shouldRetry => status == SessionRestoreStatus.retryableFailure;
 }

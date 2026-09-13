@@ -7,6 +7,7 @@ import '../../services/user_session_service.dart';
 import '../../services/adoption_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/breedr_network_image.dart';
+import '../../widgets/authenticated_exit_scope.dart';
 import '../auth/forgot_password_screen.dart';
 import '../auth/get_started_screen.dart';
 
@@ -46,8 +47,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final user = UserSessionService.instance.currentUser;
     final mediaQuery = MediaQuery.of(context);
     final currentScale = MediaQuery.textScalerOf(context).scale(1);
-    return PopScope(
-      canPop: false,
+    return AuthenticatedExitScope(
       child: MediaQuery(
         data: mediaQuery.copyWith(
           textScaler: TextScaler.linear(currentScale * 1.08),
