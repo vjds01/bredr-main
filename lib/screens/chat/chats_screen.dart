@@ -2822,7 +2822,7 @@ class _AdoptionProcessPanelState extends State<_AdoptionProcessPanel> {
       bothSigned: bothSigned,
       handoverConfirmedByMe: handoverConfirmedByMe,
       status: status,
-      protectionEndsAt: process['protectionEndsAt'] as Timestamp?,
+      protectionEndsAt: _effectiveProtectionTimestamp(process),
     );
 
     if (widget.compactBeforeInitiated && !initiated && isOwner) {
@@ -3050,7 +3050,7 @@ class _AdoptionProcessPanelState extends State<_AdoptionProcessPanel> {
     }
     if (status == 'protection_active') {
       final remaining = protectionEndsAt?.toDate().difference(_now);
-      return 'The protection window is active. Test mode remaining: ${_durationLabel(remaining)}.';
+      return 'The 30-day protection window is active. ${_durationLabel(remaining)} remaining.';
     }
     if (status == 'handover_pending') {
       return handoverConfirmedByMe
@@ -3137,10 +3137,7 @@ class _AdoptionProcessPanelState extends State<_AdoptionProcessPanel> {
       widget.data['adoptionProcess'] as Map? ?? const {},
     );
     if (process['status'] != 'protection_active') return;
-    final protectionEndsAt = process['protectionEndsAt'] as Timestamp?;
-    if (protectionEndsAt == null || _now.isBefore(protectionEndsAt.toDate())) {
-      return;
-    }
+    if (!_protectionNeedsProcessing(process, _now)) return;
 
     _processingDeadline = true;
     try {
@@ -3381,19 +3378,44 @@ String _durationLabel(Duration? duration) {
   return '${duration.inSeconds}s';
 }
 
-bool get _adoptionProtectionIsTestMode =>
-    AdoptionService.protectionWindowDuration != const Duration(days: 30);
+String _adoptionProtectionTitle() => '30-Day Protection Window';
 
-String _adoptionProtectionTitle() {
-  return _adoptionProtectionIsTestMode
-      ? '${_durationLabel(AdoptionService.protectionWindowDuration)} Protection Window (Test Mode)'
-      : '30-Day Protection Window';
+String _adoptionProtectionGuideMessage() =>
+    'The protection window starts after handover.';
+
+Timestamp? _effectiveProtectionTimestamp(Map<String, dynamic> process) {
+  final startedAt =
+      (process['protectionStartedAt'] ?? process['handoverCompletedAt'])
+          as Timestamp?;
+  final storedEndsAt = process['protectionEndsAt'] as Timestamp?;
+  final effective = AdoptionService.effectiveProtectionEnd(
+    startedAt: startedAt?.toDate(),
+    storedEndsAt: storedEndsAt?.toDate(),
+  );
+  return effective == null ? null : Timestamp.fromDate(effective);
 }
 
-String _adoptionProtectionGuideMessage() {
-  return _adoptionProtectionIsTestMode
-      ? 'For testing, the protection window is shortened to ${_durationLabel(AdoptionService.protectionWindowDuration)}.'
-      : 'The protection window starts after handover.';
+bool _protectionNeedsProcessing(Map<String, dynamic> process, DateTime now) {
+  final stored = process['protectionEndsAt'] as Timestamp?;
+  final effective = _effectiveProtectionTimestamp(process);
+  if (effective == null) return false;
+  if (stored == null || stored.toDate().toUtc().isBefore(effective.toDate())) {
+    return true;
+  }
+  final remaining = effective.toDate().difference(now.toUtc());
+  if (!remaining.isNegative && remaining > Duration.zero) {
+    final reminders = Map<String, dynamic>.from(
+      process['protectionRemindersSent'] as Map? ?? const {},
+    );
+    if (remaining <= const Duration(days: 1)) {
+      return reminders['oneDay'] != true;
+    }
+    if (remaining <= const Duration(days: 7)) {
+      return reminders['sevenDay'] != true;
+    }
+    return false;
+  }
+  return true;
 }
 
 class _AdoptionStepTracker extends StatelessWidget {
@@ -3406,12 +3428,7 @@ class _AdoptionStepTracker extends StatelessWidget {
   Widget build(BuildContext context) {
     final labels = returnFlow
         ? const ['Contract', 'Handover', 'Return']
-        : [
-            'Contract',
-            'Handover',
-            _adoptionProtectionIsTestMode ? 'Protect' : '30 Days',
-            'Done',
-          ];
+        : ['Contract', 'Handover', '30 Days', 'Done'];
     return SizedBox(
       height: 54,
       child: LayoutBuilder(
@@ -3723,7 +3740,7 @@ class _AdoptionProcessScreenState extends State<_AdoptionProcessScreen> {
                             : status == 'returned'
                             ? 'Both parties confirmed the return handover.'
                             : status == 'protection_active'
-                            ? 'Test mode remaining: ${_durationLabel((process['protectionEndsAt'] as Timestamp?)?.toDate().difference(_now))}.'
+                            ? '${_durationLabel(_effectiveProtectionTimestamp(process)?.toDate().difference(_now))} remaining.'
                             : status == 'ready_to_complete' ||
                                   status == 'completed'
                             ? 'Completed the protection window.'
@@ -3741,7 +3758,7 @@ class _AdoptionProcessScreenState extends State<_AdoptionProcessScreen> {
                         dateLabel: _shortDateTime(
                           (process['protectionCompletedAt'] as Timestamp?) ??
                               (status == 'completed'
-                                  ? process['protectionEndsAt'] as Timestamp?
+                                  ? _effectiveProtectionTimestamp(process)
                                   : null),
                         ),
                         onTap:
@@ -3781,8 +3798,9 @@ class _AdoptionProcessScreenState extends State<_AdoptionProcessScreen> {
                         _ProtectionActionPanel(
                           isOwner: isOwner,
                           petName: petName,
-                          protectionEndsAt:
-                              process['protectionEndsAt'] as Timestamp?,
+                          protectionEndsAt: _effectiveProtectionTimestamp(
+                            process,
+                          ),
                           onViewDetails: () =>
                               _openProtectionDetails(data, process, petName),
                           onRequestUpdate: isOwner
@@ -4095,7 +4113,7 @@ class _AdoptionProcessScreenState extends State<_AdoptionProcessScreen> {
           isOwner: isOwner,
           returnRequested: process['returnStatus'] == 'requested',
           protectionStartedAt: process['protectionStartedAt'] as Timestamp?,
-          protectionEndsAt: process['protectionEndsAt'] as Timestamp?,
+          protectionEndsAt: _effectiveProtectionTimestamp(process),
           onRequestUpdate: isOwner ? () => _requestUpdate(petName) : null,
           onFileReturn: isOwner ? null : () => _fileReturnRequest(),
         ),
@@ -4105,10 +4123,7 @@ class _AdoptionProcessScreenState extends State<_AdoptionProcessScreen> {
 
   Future<void> _processProtectionDeadline(Map<String, dynamic> process) async {
     if (_processingDeadline || process['status'] != 'protection_active') return;
-    final protectionEndsAt = process['protectionEndsAt'] as Timestamp?;
-    if (protectionEndsAt == null || _now.isBefore(protectionEndsAt.toDate())) {
-      return;
-    }
+    if (!_protectionNeedsProcessing(process, _now)) return;
 
     _processingDeadline = true;
     try {
@@ -4838,9 +4853,7 @@ class _ProtectionWindowScreen extends StatelessWidget {
         foregroundColor: AppColors.primary,
         elevation: 0,
         title: Text(
-          _adoptionProtectionIsTestMode
-              ? '${_durationLabel(AdoptionService.protectionWindowDuration)} Window'
-              : '30-Day Window',
+          '30-Day Window',
           style: const TextStyle(
             color: Color(0xFF111111),
             fontWeight: FontWeight.w900,
@@ -5991,7 +6004,7 @@ class _AdoptionHandoverScreenState extends State<_AdoptionHandoverScreen> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'After you both confirm, the adopter has ${_adoptionProtectionIsTestMode ? _durationLabel(AdoptionService.protectionWindowDuration) : '30 days'} to report valid issues. You can still chat during this period.',
+                            'After you both confirm, the adopter has 30 days to report valid issues. You can still chat during this period.',
                             style: const TextStyle(
                               color: Color(0xFF555555),
                               fontSize: 12,

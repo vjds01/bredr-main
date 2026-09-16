@@ -48,7 +48,21 @@ class AdoptionService {
   AdoptionService._();
 
   static final AdoptionService instance = AdoptionService._();
-  static const Duration protectionWindowDuration = Duration(days: 7);
+  static const Duration protectionWindowDuration = Duration(days: 30);
+  static const int protectionPolicyDays = 30;
+  static const String protectionPolicyVersion = '30_day_v1';
+
+  static DateTime? effectiveProtectionEnd({
+    required DateTime? startedAt,
+    required DateTime? storedEndsAt,
+  }) {
+    if (startedAt == null) return storedEndsAt;
+    final policyEnd = startedAt.toUtc().add(protectionWindowDuration);
+    if (storedEndsAt == null || storedEndsAt.toUtc().isBefore(policyEnd)) {
+      return policyEnd;
+    }
+    return storedEndsAt.toUtc();
+  }
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
@@ -1089,6 +1103,8 @@ class AdoptionService {
         process['handoverCompletedAt'] = FieldValue.serverTimestamp();
         process['protectionStartedAt'] = FieldValue.serverTimestamp();
         process['protectionEndsAt'] = Timestamp.fromDate(protectionEndsAt);
+        process['protectionPolicyDays'] = protectionPolicyDays;
+        process['protectionPolicyVersion'] = protectionPolicyVersion;
       }
 
       transaction.update(reference, {
@@ -1158,9 +1174,71 @@ class AdoptionService {
       if (process['status'] != 'protection_active') return;
       if (process['returnStatus'] == 'requested') return;
 
-      final protectionEndsAt = process['protectionEndsAt'] as Timestamp?;
-      if (protectionEndsAt == null ||
-          DateTime.now().toUtc().isBefore(protectionEndsAt.toDate())) {
+      final storedEndsAt = process['protectionEndsAt'] as Timestamp?;
+      final startedAt =
+          (process['protectionStartedAt'] ?? process['handoverCompletedAt'])
+              as Timestamp?;
+      final effectiveEndsAt = effectiveProtectionEnd(
+        startedAt: startedAt?.toDate(),
+        storedEndsAt: storedEndsAt?.toDate(),
+      );
+      if (effectiveEndsAt == null) return;
+
+      final needsPolicyCorrection =
+          storedEndsAt == null ||
+          storedEndsAt.toDate().toUtc().isBefore(effectiveEndsAt);
+      if (needsPolicyCorrection) {
+        process['protectionEndsAt'] = Timestamp.fromDate(effectiveEndsAt);
+        process['protectionPolicyDays'] = protectionPolicyDays;
+        process['protectionPolicyVersion'] = protectionPolicyVersion;
+      }
+
+      final now = DateTime.now().toUtc();
+      if (now.isBefore(effectiveEndsAt)) {
+        var reminderCreated = false;
+        final remaining = effectiveEndsAt.difference(now);
+        final reminderKey = remaining > const Duration(days: 1)
+            ? 'sevenDay'
+            : 'oneDay';
+        final reminderThreshold = reminderKey == 'sevenDay'
+            ? const Duration(days: 7)
+            : const Duration(days: 1);
+        final reminders = Map<String, dynamic>.from(
+          process['protectionRemindersSent'] as Map? ?? const {},
+        );
+        if (remaining <= reminderThreshold && reminders[reminderKey] != true) {
+          reminderCreated = true;
+          reminders[reminderKey] = true;
+          process['protectionRemindersSent'] = reminders;
+          final petNames = Map<String, dynamic>.from(
+            data['petNames'] as Map? ?? const {},
+          );
+          final petName = petNames.values.firstOrNull?.toString() ?? 'this pet';
+          final label = reminderKey == 'sevenDay' ? 'seven days' : 'one day';
+          for (final participantId in participantIds) {
+            final notification = _firestore.collection('notifications').doc();
+            transaction.set(notification, {
+              'notificationId': notification.id,
+              'recipientId': participantId,
+              'type': 'adoption_protection_reminder',
+              'title': 'Protection window reminder',
+              'message':
+                  'The 30-day protection window for $petName ends in approximately $label.',
+              'matchId': conversationId,
+              'conversationId': conversationId,
+              'requestId': data['requestId'],
+              'isRead': false,
+              'createdAt': FieldValue.serverTimestamp(),
+            });
+          }
+        }
+
+        if (needsPolicyCorrection || reminderCreated) {
+          transaction.update(reference, {
+            'adoptionProcess': process,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
         return;
       }
 

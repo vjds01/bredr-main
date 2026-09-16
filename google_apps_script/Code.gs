@@ -1,4 +1,19 @@
 const REQUESTS = 'clinicVerificationRequests';
+const CLINIC_DIRECTORY = {
+  breedr_demo: {
+    name: 'Breedr Demo Veterinary Clinic',
+    emailProperty: 'CLINIC_EMAIL_BREEDR_DEMO',
+    demo: true,
+  },
+  cabuyao_animal_clinic: {
+    name: 'Cabuyao Animal Clinic',
+    emailProperty: 'CLINIC_EMAIL_CABUYAO_ANIMAL_CLINIC',
+  },
+  sitio_beterinaryo_cabuyao: {
+    name: 'Sitio Beterinaryo',
+    emailProperty: 'CLINIC_EMAIL_SITIO_BETERINARYO',
+  },
+};
 
 // Run this once from the Apps Script editor after copying the manifest or
 // changing the linked Google Cloud project. It prompts the deploying account
@@ -34,23 +49,45 @@ function createAndDispatch_(body) {
   const pet = readDoc_('pets', petId);
   if (pet.data.ownerId !== uid) throw new Error('Only the pet owner can request confirmation.');
   const records = Array.isArray(pet.data.healthRecords) ? pet.data.healthRecords : [];
-  const record = records.find(item => String(item.recordId || '') === recordId);
+  const recordIndex = records.findIndex(item => String(item.recordId || '') === recordId);
+  const record = recordIndex < 0 ? null : records[recordIndex];
   if (!record) throw new Error('The selected health record no longer exists.');
   if (record.clinicConsentGranted !== true) throw new Error('Clinic consent was not granted.');
   if (record.verificationStatus === 'verified') throw new Error('This record is already verified.');
 
+  const clinic = resolveClinic_(record);
+  if (!clinic) throw new Error('The selected clinic does not have email verification configured.');
+  const recipient = requiredProperty_(clinic.emailProperty);
+
+  // A mobile client may lose the redirected Apps Script response after this
+  // request has already completed. Reusing the current request makes retries
+  // safe and prevents duplicate clinic emails.
+  const existingRequestId = String(record.verificationRequestId || '');
+  if (record.verificationStatus === 'awaiting_clinic_confirmation' && existingRequestId) {
+    const existing = readDoc_(REQUESTS, cleanId_(existingRequestId));
+    const sameRecord = existing.data.ownerId === uid &&
+      String(existing.data.petId || '') === petId &&
+      String(existing.data.recordId || '') === recordId;
+    if (sameRecord && existing.data.status === 'awaiting_clinic_confirmation') {
+      if (existing.data.dispatchStatus !== 'sent') {
+        dispatch_({requestId: existingRequestId, idToken: body.idToken});
+      }
+      return {ok: true, requestId: existingRequestId, reused: true};
+    }
+  }
+
   const requestId = Utilities.getUuid().replace(/-/g, '');
-  const recipient = PropertiesService.getScriptProperties().getProperty('TEST_RECIPIENT') || '';
   patchDoc_(REQUESTS, requestId, {
     requestId: requestId,
     petId: petId,
     petName: pet.data.name || 'Pet',
     recordId: recordId,
     ownerId: uid,
-    clinicName: record.clinic || '',
-    clinicEmail: '',
+    clinicId: clinic.id,
+    clinicName: clinic.name,
+    clinicEmail: recipient,
     deliveryEmail: recipient,
-    testMode: true,
+    testMode: clinic.demo === true,
     status: 'awaiting_clinic_confirmation',
     dispatchStatus: 'queued',
     recordSnapshot: record,
@@ -58,6 +95,15 @@ function createAndDispatch_(body) {
     consentGrantedAt: new Date(),
     createdAt: new Date(),
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+  });
+  records[recordIndex] = Object.assign({}, record, {
+    verificationRequestId: requestId,
+    verificationStatus: 'awaiting_clinic_confirmation',
+    verificationRequestedAt: new Date(),
+  });
+  patchDoc_('pets', petId, {
+    healthRecords: records,
+    updatedAt: new Date(),
   });
   dispatch_({requestId: requestId, idToken: body.idToken});
   return {ok: true, requestId: requestId};
@@ -107,15 +153,55 @@ function dispatch_(body) {
     sentAt: new Date(),
   });
 
-  const recipient = PropertiesService.getScriptProperties().getProperty('TEST_RECIPIENT') || request.data.deliveryEmail;
+  const recipient = String(request.data.deliveryEmail || '');
   if (!recipient) throw new Error('No verification email recipient configured.');
-  const url = `${ScriptApp.getService().getUrl()}?request=${encodeURIComponent(requestId)}&token=${encodeURIComponent(rawToken)}`;
+  const url = `${publicWebAppUrl_()}?request=${encodeURIComponent(requestId)}&token=${encodeURIComponent(rawToken)}`;
   MailApp.sendEmail({
     to: recipient,
+    name: 'Breedr Health Verification',
     subject: `Breedr clinic confirmation: ${request.data.petName}`,
-    htmlBody: `<p>A Breedr owner submitted a health record naming <strong>${escape_(request.data.clinicName)}</strong>.</p><p><a href="${url}">Open the secure review page</a></p><p>This single-use link expires in seven days. Opening it alone will not approve the record.</p>`,
+    htmlBody: `
+      <p>A Breedr owner submitted a health record naming <strong>${escape_(request.data.clinicName)}</strong>.</p>
+      <p><a href="${url}">Open the secure review page</a></p>
+      <div style="margin:16px 0;padding:12px 14px;background:#fff4e5;border:1px solid #e7a23b;border-radius:8px;color:#5f4300;">
+        <strong>Using multiple Google accounts?</strong><br>
+        Google Apps Script may not open correctly when several Google accounts are signed in. If the page says the file cannot be opened, copy this link and open it in an Incognito or private-browsing window.
+      </div>
+      <p style="word-break:break-all;font-size:12px;color:#555;">${escape_(url)}</p>
+      <p>This single-use link expires in seven days. Opening it alone will not approve the record.</p>
+    `,
   });
   return {ok: true};
+}
+
+function publicWebAppUrl_() {
+  const configured = PropertiesService.getScriptProperties()
+    .getProperty('PUBLIC_WEB_APP_URL');
+  const serviceUrl = String(configured || ScriptApp.getService().getUrl() || '')
+    .trim();
+  if (!serviceUrl) throw new Error('The public web-app URL is not configured.');
+
+  // A URL copied while several Google accounts are signed in can contain an
+  // account-slot segment such as /macros/u/3/s/. Clinic review links are
+  // public, so they must use the account-independent /macros/s/ route.
+  return serviceUrl
+    .replace(/\/macros\/u\/\d+\/s\//, '/macros/s/')
+    .replace(/\/$/, '');
+}
+
+function resolveClinic_(record) {
+  const requestedId = String(record.clinicId || '').trim();
+  let id = requestedId;
+  if (!id) {
+    const legacyName = String(record.clinic || '').trim().toLowerCase();
+    if (legacyName === 'breedr demo veterinary clinic') id = 'breedr_demo';
+    if (legacyName === 'cabuyao animal clinic') id = 'cabuyao_animal_clinic';
+    if (legacyName === 'sitio beterinaryo' || legacyName === 'sitio beterinaryo cabuyao' || legacyName === 'silo veterinary cabuyao') {
+      id = 'sitio_beterinaryo_cabuyao';
+    }
+  }
+  const clinic = CLINIC_DIRECTORY[id];
+  return clinic ? Object.assign({id: id}, clinic) : null;
 }
 
 function decision_(body) {
@@ -131,6 +217,20 @@ function decision_(body) {
   const records = Array.isArray(pet.data.healthRecords) ? pet.data.healthRecords : [];
   const index = records.findIndex(r => String(r.recordId || '') === String(request.data.recordId || ''));
   if (index < 0) throw new Error('The selected health record no longer exists.');
+  const currentRecord = records[index];
+  const snapshot = request.data.recordSnapshot || {};
+  const latestRequestId = String(currentRecord.verificationRequestId || '');
+  const recordChanged = ['type', 'otherType', 'dateIssued', 'fileUrl', 'veterinarian', 'clinic']
+    .some(key => String(currentRecord[key] || '') !== String(snapshot[key] || ''));
+  if ((latestRequestId && latestRequestId !== requestId) || recordChanged) {
+    patchDoc_(REQUESTS, requestId, {
+      status: 'superseded',
+      response: 'superseded',
+      processedAt: new Date(),
+      tokenDigest: '',
+    }, request.updateTime);
+    return page_('Request replaced', '<h1>This request is no longer current</h1><p>The owner edited this health record and a new clinic confirmation is required.</p>');
+  }
   records[index] = Object.assign({}, records[index], {
     verificationStatus: decision === 'confirmed' ? 'verified' : 'rejected',
     verificationSource: 'clinic_email',
@@ -255,7 +355,7 @@ function json_(value) { return ContentService.createTextOutput(JSON.stringify(va
 function escape_(value) { return String(value || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function escapeAttribute_(value) { return escape_(value); }
 function decisionForm_(requestId, token, decision, label, css) {
-  const actionUrl = escapeAttribute_(ScriptApp.getService().getUrl());
+  const actionUrl = escapeAttribute_(publicWebAppUrl_());
   return `<form method="post" action="${actionUrl}" target="_top" onsubmit="document.getElementById('ua-${decision}').value=navigator.userAgent;return confirm('Submit this decision? It cannot be changed.');"><input type="hidden" name="action" value="decision"><input type="hidden" name="requestId" value="${escapeAttribute_(requestId)}"><input type="hidden" name="token" value="${escapeAttribute_(token)}"><input type="hidden" name="decision" value="${decision}"><input type="hidden" name="userAgent" id="ua-${decision}"><button type="submit" class="${css}">${label}</button></form>`;
 }
 function page_(title, body) { return HtmlService.createHtmlOutput(`<!doctype html><meta name="viewport" content="width=device-width"><title>${escape_(title)}</title><style>body{font:16px Arial;max-width:680px;margin:40px auto;padding:24px;color:#24202a}h1{color:#ff5067}.notice{background:#fff0f5;padding:14px;border-radius:10px}button{width:100%;padding:14px;margin:7px 0;border:0;border-radius:10px;font-weight:bold;cursor:pointer}.confirm{background:#0756b5;color:white}.decline{background:#ffe2e7;color:#a3293c}a{color:#0756b5}</style>${body}`); }

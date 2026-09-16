@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../theme/app_colors.dart';
 import '../../models/pet_listing_data.dart';
+import '../../models/veterinary_clinic.dart';
+import '../../services/health_record_date_policy.dart';
 import '../../services/pet_registration_draft_service.dart';
 import 'pet_review_screen.dart';
 
@@ -24,7 +26,9 @@ class HealthRecord {
   final String dateIssued;
   final String nextUpdate;
   final String veterinarian;
+  final String clinicId;
   final String clinic;
+  final bool clinicEmailVerificationAvailable;
   final bool clinicConsentGranted;
 
   HealthRecord({
@@ -36,7 +40,9 @@ class HealthRecord {
     this.dateIssued = '',
     this.nextUpdate = '',
     this.veterinarian = '',
+    this.clinicId = '',
     this.clinic = '',
+    this.clinicEmailVerificationAvailable = false,
     this.clinicConsentGranted = false,
   });
 
@@ -115,9 +121,14 @@ class _PetHealthRecordScreenState extends State<PetHealthRecordScreen> {
             dateIssued: record.dateIssued,
             nextUpdate: record.nextUpdate,
             veterinarian: record.veterinarian,
+            clinicId: record.clinicId,
             clinic: record.clinic,
+            clinicEmailVerificationAvailable:
+                record.clinicEmailVerificationAvailable,
             clinicConsentGranted: record.clinicConsentGranted,
-            verificationStatus: 'awaiting_clinic_confirmation',
+            verificationStatus: record.clinicEmailVerificationAvailable
+                ? 'awaiting_clinic_confirmation'
+                : 'pending_vet_admin_review',
           ),
         )
         .toList();
@@ -133,7 +144,9 @@ class _PetHealthRecordScreenState extends State<PetHealthRecordScreen> {
       dateIssued: record.dateIssued,
       nextUpdate: record.nextUpdate,
       veterinarian: record.veterinarian,
+      clinicId: record.clinicId,
       clinic: record.clinic,
+      clinicEmailVerificationAvailable: record.clinicEmailVerificationAvailable,
       clinicConsentGranted: record.clinicConsentGranted,
     );
   }
@@ -620,6 +633,8 @@ class _AddHealthRecordSheetState extends State<_AddHealthRecordSheet> {
   bool _showVerifyDialog = false;
   bool _validationAttempted = false;
   bool _clinicConsentGranted = false;
+  VeterinaryClinic? _selectedClinic;
+  String? _dateValidationError;
 
   final _docTypes = [
     'Vaccination',
@@ -643,7 +658,12 @@ class _AddHealthRecordSheetState extends State<_AddHealthRecordSheet> {
     _nextUpdateCtrl.text = initial.nextUpdate;
     _vetCtrl.text = initial.veterinarian;
     _clinicCtrl.text = initial.clinic;
+    _selectedClinic = VeterinaryClinicDirectory.resolve(
+      id: initial.clinicId,
+      name: initial.clinic,
+    );
     _clinicConsentGranted = initial.clinicConsentGranted;
+    _applyTypeDatePolicy(clearDeworming: false);
   }
 
   @override
@@ -658,9 +678,18 @@ class _AddHealthRecordSheetState extends State<_AddHealthRecordSheet> {
 
   void _save() {
     setState(() => _validationAttempted = true);
+    _applyTypeDatePolicy(clearDeworming: false);
+    final dateError = HealthRecordDatePolicy.validate(
+      type: _docType ?? '',
+      dateIssued: HealthRecordDatePolicy.parse(_dateCtrl.text),
+      nextUpdate: HealthRecordDatePolicy.parse(_nextUpdateCtrl.text),
+    );
+    setState(() => _dateValidationError = dateError);
     if (_file == null ||
         _dateCtrl.text.trim().isEmpty ||
-        _nextUpdateCtrl.text.trim().isEmpty ||
+        (HealthRecordDatePolicy.requiresNextUpdate(_docType ?? '') &&
+            _nextUpdateCtrl.text.trim().isEmpty) ||
+        dateError != null ||
         _vetCtrl.text.trim().isEmpty ||
         _clinicCtrl.text.trim().isEmpty ||
         !_clinicConsentGranted ||
@@ -684,7 +713,10 @@ class _AddHealthRecordSheetState extends State<_AddHealthRecordSheet> {
         dateIssued: _dateCtrl.text.trim(),
         nextUpdate: _nextUpdateCtrl.text.trim(),
         veterinarian: _vetCtrl.text.trim(),
+        clinicId: _selectedClinic?.id ?? '',
         clinic: _clinicCtrl.text.trim(),
+        clinicEmailVerificationAvailable:
+            _selectedClinic?.supportsEmailVerification == true,
         clinicConsentGranted: _clinicConsentGranted,
       ),
     );
@@ -743,30 +775,69 @@ class _AddHealthRecordSheetState extends State<_AddHealthRecordSheet> {
     if (picked == null) return;
 
     setState(() {
-      _dateCtrl.text =
-          '${picked.month.toString().padLeft(2, '0')}/${picked.day.toString().padLeft(2, '0')}/${picked.year}';
-      _nextUpdateCtrl.text =
-          '${picked.month.toString().padLeft(2, '0')}/${picked.day.toString().padLeft(2, '0')}/${picked.year + 1}';
+      _dateCtrl.text = HealthRecordDatePolicy.formatNumeric(picked);
+      _dateValidationError = null;
+      _applyTypeDatePolicy(clearDeworming: false);
     });
   }
 
   Future<void> _pickNextUpdate() async {
+    if (!HealthRecordDatePolicy.canEditNextUpdate(_docType ?? '')) return;
     final now = DateTime.now();
-    final parts = _nextUpdateCtrl.text.split('/');
-    final initial = parts.length == 3
-        ? DateTime.tryParse('${parts[2]}-${parts[0]}-${parts[1]}')
-        : null;
+    final issued = HealthRecordDatePolicy.parse(_dateCtrl.text);
+    if (issued == null) {
+      setState(() {
+        _validationAttempted = true;
+        _dateValidationError = 'Select Date Issued first.';
+      });
+      return;
+    }
+    final tomorrow = HealthRecordDatePolicy.dateOnly(
+      now,
+    ).add(const Duration(days: 1));
+    final afterIssue = HealthRecordDatePolicy.dateOnly(
+      issued,
+    ).add(const Duration(days: 1));
+    final firstAllowed = afterIssue.isAfter(tomorrow) ? afterIssue : tomorrow;
+    final stored = HealthRecordDatePolicy.parse(_nextUpdateCtrl.text);
+    final initial = stored != null && !stored.isBefore(firstAllowed)
+        ? stored
+        : firstAllowed;
     final picked = await showDatePicker(
       context: context,
-      initialDate: initial ?? now.add(const Duration(days: 365)),
-      firstDate: now,
+      initialDate: initial,
+      firstDate: firstAllowed,
       lastDate: DateTime(now.year + 20),
     );
     if (picked == null) return;
     setState(() {
-      _nextUpdateCtrl.text =
-          '${picked.month.toString().padLeft(2, '0')}/${picked.day.toString().padLeft(2, '0')}/${picked.year}';
+      _nextUpdateCtrl.text = HealthRecordDatePolicy.formatNumeric(picked);
+      _dateValidationError = null;
     });
+  }
+
+  void _selectDocumentType(String type) {
+    setState(() {
+      _docType = type;
+      _dateValidationError = null;
+      _applyTypeDatePolicy(clearDeworming: true);
+    });
+  }
+
+  void _applyTypeDatePolicy({required bool clearDeworming}) {
+    final type = _docType ?? '';
+    final issued = HealthRecordDatePolicy.parse(_dateCtrl.text);
+    if (HealthRecordDatePolicy.isVaccination(type)) {
+      _nextUpdateCtrl.text = issued == null
+          ? ''
+          : HealthRecordDatePolicy.formatNumeric(
+              HealthRecordDatePolicy.vaccinationNextUpdate(issued),
+            );
+    } else if (HealthRecordDatePolicy.isDeworming(type)) {
+      if (clearDeworming) _nextUpdateCtrl.clear();
+    } else {
+      _nextUpdateCtrl.clear();
+    }
   }
 
   @override
@@ -837,7 +908,7 @@ class _AddHealthRecordSheetState extends State<_AddHealthRecordSheet> {
                         children: _docTypes.map((t) {
                           final sel = _docType == t;
                           return GestureDetector(
-                            onTap: () => setState(() => _docType = t),
+                            onTap: () => _selectDocumentType(t),
                             child: Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 14,
@@ -938,28 +1009,80 @@ class _AddHealthRecordSheetState extends State<_AddHealthRecordSheet> {
                         ),
                         errorText:
                             _validationAttempted &&
-                                _dateCtrl.text.trim().isEmpty
-                            ? 'Date Issued is required.'
+                                (_dateCtrl.text.trim().isEmpty ||
+                                    _dateValidationError?.startsWith(
+                                          'Date Issued',
+                                        ) ==
+                                        true ||
+                                    _dateValidationError ==
+                                        'Select Date Issued first.')
+                            ? _dateValidationError ?? 'Date Issued is required.'
                             : null,
                       ),
                       const SizedBox(height: 20),
                       const _SheetLabel('NEXT UPDATE'),
                       const SizedBox(height: 10),
                       _BlueTextField(
-                        hint: 'mm/dd/yyyy',
+                        hint:
+                            HealthRecordDatePolicy.requiresNextUpdate(
+                              _docType ?? '',
+                            )
+                            ? 'mm/dd/yyyy'
+                            : 'Not applicable',
                         controller: _nextUpdateCtrl,
                         readOnly: true,
-                        onTap: _pickNextUpdate,
-                        suffixIcon: const Icon(
-                          Icons.event_repeat_outlined,
-                          color: _blue,
-                          size: 20,
+                        enabled: HealthRecordDatePolicy.canEditNextUpdate(
+                          _docType ?? '',
                         ),
+                        onTap:
+                            HealthRecordDatePolicy.canEditNextUpdate(
+                              _docType ?? '',
+                            )
+                            ? _pickNextUpdate
+                            : null,
+                        suffixIcon:
+                            HealthRecordDatePolicy.canEditNextUpdate(
+                              _docType ?? '',
+                            )
+                            ? const Icon(
+                                Icons.event_repeat_outlined,
+                                color: _blue,
+                                size: 20,
+                              )
+                            : HealthRecordDatePolicy.isVaccination(
+                                _docType ?? '',
+                              )
+                            ? const Icon(
+                                Icons.lock_outline,
+                                color: Color(0xFF777777),
+                                size: 18,
+                              )
+                            : null,
                         errorText:
                             _validationAttempted &&
-                                _nextUpdateCtrl.text.trim().isEmpty
-                            ? 'Next Update is required.'
+                                (_dateValidationError?.startsWith(
+                                          'Next Update',
+                                        ) ==
+                                        true ||
+                                    _dateValidationError?.startsWith(
+                                          'Vaccination Next Update',
+                                        ) ==
+                                        true)
+                            ? _dateValidationError
                             : null,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        HealthRecordDatePolicy.isVaccination(_docType ?? '')
+                            ? 'Automatically scheduled one year after Date Issued.'
+                            : HealthRecordDatePolicy.isDeworming(_docType ?? '')
+                            ? 'Deworming is commonly scheduled every 3–6 months. Follow your veterinarian’s recommendation.'
+                            : 'Next Update is not required for this document type.',
+                        style: const TextStyle(
+                          color: Color(0xFF777777),
+                          fontSize: 10,
+                          height: 1.3,
+                        ),
                       ),
                       const SizedBox(height: 20),
                       // ISSUED BY
@@ -1007,6 +1130,21 @@ class _AddHealthRecordSheetState extends State<_AddHealthRecordSheet> {
                             ? 'Veterinary clinic is required.'
                             : null,
                       ),
+                      if (_selectedClinic != null) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          _selectedClinic!.supportsEmailVerification
+                              ? 'A secure confirmation email will be sent directly to this clinic.'
+                              : 'This clinic has no confirmation email configured yet. The record will remain available for Veterinary Admin review.',
+                          style: TextStyle(
+                            color: _selectedClinic!.supportsEmailVerification
+                                ? const Color(0xFF16823B)
+                                : const Color(0xFF8A6200),
+                            fontSize: 10,
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 14),
                       CheckboxListTile(
                         contentPadding: EdgeInsets.zero,
@@ -1015,9 +1153,11 @@ class _AddHealthRecordSheetState extends State<_AddHealthRecordSheet> {
                         onChanged: (value) => setState(
                           () => _clinicConsentGranted = value == true,
                         ),
-                        title: const Text(
-                          'I consent to Breedr sending this health document and its record details to the selected veterinary clinic for confirmation.',
-                          style: TextStyle(fontSize: 12, height: 1.35),
+                        title: Text(
+                          _selectedClinic?.supportsEmailVerification == true
+                              ? 'I consent to Breedr sending this health document and its record details to the selected veterinary clinic for confirmation.'
+                              : 'I consent to Breedr submitting this document and its record details for Veterinary Admin review.',
+                          style: const TextStyle(fontSize: 12, height: 1.35),
                         ),
                         subtitle: _validationAttempted && !_clinicConsentGranted
                             ? const Text(
@@ -1032,7 +1172,11 @@ class _AddHealthRecordSheetState extends State<_AddHealthRecordSheet> {
                       if (_validationAttempted &&
                           (_file == null ||
                               _dateCtrl.text.trim().isEmpty ||
-                              _nextUpdateCtrl.text.trim().isEmpty ||
+                              (HealthRecordDatePolicy.requiresNextUpdate(
+                                    _docType ?? '',
+                                  ) &&
+                                  _nextUpdateCtrl.text.trim().isEmpty) ||
+                              _dateValidationError != null ||
                               _vetCtrl.text.trim().isEmpty ||
                               _clinicCtrl.text.trim().isEmpty ||
                               !_clinicConsentGranted ||
@@ -1046,10 +1190,12 @@ class _AddHealthRecordSheetState extends State<_AddHealthRecordSheet> {
                         width: double.infinity,
                         height: 52,
                         child: ElevatedButton(
-                          onPressed: _save,
+                          onPressed: _clinicConsentGranted ? _save : null,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: _blue,
+                            disabledBackgroundColor: const Color(0xFFD5D9DE),
                             foregroundColor: Colors.white,
+                            disabledForegroundColor: const Color(0xFF7A8088),
                             elevation: 0,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
@@ -1095,7 +1241,10 @@ class _AddHealthRecordSheetState extends State<_AddHealthRecordSheet> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _ClinicPickerSheet(
-        onSelect: (clinic) => setState(() => _clinicCtrl.text = clinic),
+        onSelect: (clinic) => setState(() {
+          _selectedClinic = clinic;
+          _clinicCtrl.text = clinic.name;
+        }),
       ),
     );
   }
@@ -1128,6 +1277,7 @@ class _BlueTextField extends StatelessWidget {
   final VoidCallback? onTap;
   final ValueChanged<String>? onChanged;
   final String? errorText;
+  final bool enabled;
   const _BlueTextField({
     required this.hint,
     this.controller,
@@ -1136,11 +1286,13 @@ class _BlueTextField extends StatelessWidget {
     this.onTap,
     this.onChanged,
     this.errorText,
+    this.enabled = true,
   });
 
   @override
   Widget build(BuildContext context) {
     return TextField(
+      enabled: enabled,
       controller: controller,
       readOnly: readOnly,
       onTap: onTap,
@@ -1152,7 +1304,7 @@ class _BlueTextField extends StatelessWidget {
         suffixIcon: suffixIcon,
         errorText: errorText,
         filled: true,
-        fillColor: Colors.white,
+        fillColor: enabled ? Colors.white : const Color(0xFFF1F1F1),
         contentPadding: const EdgeInsets.symmetric(
           vertical: 14,
           horizontal: 16,
@@ -1600,7 +1752,7 @@ class _VerifyDialog extends StatelessWidget {
 // ── Clinic Picker Sheet ───────────────────────────────────────────
 
 class _ClinicPickerSheet extends StatefulWidget {
-  final ValueChanged<String> onSelect;
+  final ValueChanged<VeterinaryClinic> onSelect;
   const _ClinicPickerSheet({required this.onSelect});
   @override
   State<_ClinicPickerSheet> createState() => _ClinicPickerSheetState();
@@ -1609,24 +1761,11 @@ class _ClinicPickerSheet extends StatefulWidget {
 class _ClinicPickerSheetState extends State<_ClinicPickerSheet> {
   final _searchCtrl = TextEditingController();
   String _query = '';
-  String? _selected;
+  VeterinaryClinic? _selected;
 
-  static const _clinics = [
-    _ClinicItem('Cabuyao Animal Clinic', 'Cabuyao City, Laguna'),
-    _ClinicItem(
-      'Sitio Beterinaryo Cabuyao',
-      'Centennial Plaza Building National Highway, not full listed Barangay, Cabuyao City',
-    ),
-    _ClinicItem('ABC Advance Care Animal Bite Clinic', 'Sala Cabuyao City'),
-    _ClinicItem(
-      'Hayop Kalinga Veterinary Clinic',
-      'Corner Suki No. 2127 2nd Street, Cabuyao, Laguna',
-    ),
-  ];
-
-  List<_ClinicItem> get _filtered => _query.isEmpty
-      ? _clinics
-      : _clinics
+  List<VeterinaryClinic> get _filtered => _query.isEmpty
+      ? VeterinaryClinicDirectory.clinics
+      : VeterinaryClinicDirectory.clinics
             .where((c) => c.name.toLowerCase().contains(_query.toLowerCase()))
             .toList();
 
@@ -1717,7 +1856,7 @@ class _ClinicPickerSheetState extends State<_ClinicPickerSheet> {
                     const Divider(height: 1, color: Color(0xFFEEEEEE)),
                 itemBuilder: (_, i) {
                   final c = _filtered[i];
-                  final isSel = _selected == c.name;
+                  final isSel = _selected?.id == c.id;
                   return ListTile(
                     leading: CircleAvatar(
                       backgroundColor: const Color(0xFFE3F0FF),
@@ -1735,12 +1874,31 @@ class _ClinicPickerSheetState extends State<_ClinicPickerSheet> {
                         color: Color(0xFF333333),
                       ),
                     ),
-                    subtitle: Text(
-                      c.address,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: Color(0xFF888888),
-                      ),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          c.address,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF888888),
+                          ),
+                        ),
+                        Text(
+                          c.supportsEmailVerification
+                              ? c.isDemo
+                                    ? 'Demo email verification'
+                                    : 'Clinic email verification available'
+                              : 'Vet-admin review only',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: c.supportsEmailVerification
+                                ? const Color(0xFF16823B)
+                                : const Color(0xFF8A6200),
+                          ),
+                        ),
+                      ],
                     ),
                     trailing: isSel
                         ? Container(
@@ -1767,7 +1925,7 @@ class _ClinicPickerSheetState extends State<_ClinicPickerSheet> {
                               ),
                             ),
                           ),
-                    onTap: () => setState(() => _selected = c.name),
+                    onTap: () => setState(() => _selected = c),
                   );
                 },
               ),
@@ -1778,12 +1936,6 @@ class _ClinicPickerSheetState extends State<_ClinicPickerSheet> {
       ),
     );
   }
-}
-
-class _ClinicItem {
-  final String name;
-  final String address;
-  const _ClinicItem(this.name, this.address);
 }
 
 // ── Shared Widgets ────────────────────────────────────────────────

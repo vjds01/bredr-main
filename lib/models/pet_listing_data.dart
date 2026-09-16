@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'breed_options.dart';
+import '../services/health_record_date_policy.dart';
 
 class PetListingData {
   final String? ownerId;
@@ -405,7 +406,9 @@ class PetHealthRecordData {
   final String dateIssued;
   final String nextUpdate;
   final String veterinarian;
+  final String clinicId;
   final String clinic;
+  final bool clinicEmailVerificationAvailable;
   final bool clinicConsentGranted;
 
   const PetHealthRecordData({
@@ -419,7 +422,9 @@ class PetHealthRecordData {
     this.dateIssued = '',
     this.nextUpdate = '',
     this.veterinarian = '',
+    this.clinicId = '',
     this.clinic = '',
+    this.clinicEmailVerificationAvailable = false,
     this.clinicConsentGranted = false,
   });
 
@@ -427,6 +432,16 @@ class PetHealthRecordData {
       type == 'Other' && otherType.trim().isNotEmpty ? otherType.trim() : type;
 
   Map<String, dynamic> toMap() {
+    final issuedAt = HealthRecordDatePolicy.parse(dateIssued);
+    final nextAt =
+        HealthRecordDatePolicy.isVaccination(type) && issuedAt != null
+        ? HealthRecordDatePolicy.vaccinationNextUpdate(issuedAt)
+        : HealthRecordDatePolicy.isDeworming(type)
+        ? HealthRecordDatePolicy.parse(nextUpdate)
+        : null;
+    final storedNextUpdate = nextAt == null
+        ? ''
+        : HealthRecordDatePolicy.formatNumeric(nextAt);
     return {
       'recordId': recordId,
       'type': type,
@@ -435,17 +450,35 @@ class PetHealthRecordData {
       'fileName': fileName,
       'fileUrl': fileUrl,
       'dateIssued': dateIssued,
-      'nextUpdate': nextUpdate,
+      'nextUpdate': storedNextUpdate,
+      'dateIssuedAt': issuedAt == null ? null : Timestamp.fromDate(issuedAt),
+      'nextUpdateAt': nextAt == null ? null : Timestamp.fromDate(nextAt),
       'veterinarian': veterinarian,
+      'clinicId': clinicId,
       'clinic': clinic,
+      'clinicEmailVerificationAvailable': clinicEmailVerificationAvailable,
       'clinicConsentGranted': clinicConsentGranted,
       'verificationSource': 'clinic_email',
     };
   }
 
-  Map<String, dynamic> toDraftJson() {
-    return {...toMap(), 'filePath': file?.path};
-  }
+  Map<String, dynamic> toDraftJson() => {
+    'recordId': recordId,
+    'type': type,
+    'otherType': otherType,
+    'verificationStatus': verificationStatus,
+    'fileName': fileName,
+    'fileUrl': fileUrl,
+    'dateIssued': dateIssued,
+    'nextUpdate': nextUpdate,
+    'veterinarian': veterinarian,
+    'clinicId': clinicId,
+    'clinic': clinic,
+    'clinicEmailVerificationAvailable': clinicEmailVerificationAvailable,
+    'clinicConsentGranted': clinicConsentGranted,
+    'verificationSource': 'clinic_email',
+    'filePath': file?.path,
+  };
 
   factory PetHealthRecordData.fromDraftJson(Map<String, dynamic> json) {
     final filePath = json['filePath'] as String?;
@@ -463,7 +496,10 @@ class PetHealthRecordData {
       nextUpdate:
           json['nextUpdate'] as String? ?? json['nextDue'] as String? ?? '',
       veterinarian: json['veterinarian'] as String? ?? '',
+      clinicId: json['clinicId'] as String? ?? '',
       clinic: json['clinic'] as String? ?? '',
+      clinicEmailVerificationAvailable:
+          json['clinicEmailVerificationAvailable'] as bool? ?? false,
       clinicConsentGranted: json['clinicConsentGranted'] as bool? ?? false,
     );
   }
@@ -479,7 +515,9 @@ class PetHealthRecordData {
     String? dateIssued,
     String? nextUpdate,
     String? veterinarian,
+    String? clinicId,
     String? clinic,
+    bool? clinicEmailVerificationAvailable,
     bool? clinicConsentGranted,
   }) {
     return PetHealthRecordData(
@@ -493,7 +531,11 @@ class PetHealthRecordData {
       dateIssued: dateIssued ?? this.dateIssued,
       nextUpdate: nextUpdate ?? this.nextUpdate,
       veterinarian: veterinarian ?? this.veterinarian,
+      clinicId: clinicId ?? this.clinicId,
       clinic: clinic ?? this.clinic,
+      clinicEmailVerificationAvailable:
+          clinicEmailVerificationAvailable ??
+          this.clinicEmailVerificationAvailable,
       clinicConsentGranted: clinicConsentGranted ?? this.clinicConsentGranted,
     );
   }

@@ -24,4 +24,19 @@ void main() {
     expect(restoreBody, isNot(contains('authenticate(')));
     expect(restoreBody, isNot(contains('attemptLightweightAuthentication')));
   });
+
+  test('known sessions receive a cold-start restoration grace period', () {
+    final source = File(
+      'lib/services/user_session_service.dart',
+    ).readAsStringSync();
+
+    expect(
+      source,
+      contains(
+        'static const _knownSessionRestoreTimeout = Duration(seconds: 15)',
+      ),
+    );
+    expect(source, contains('.idTokenChanges()'));
+    expect(source, contains('restoredUser ?? currentUser'));
+  });
 }

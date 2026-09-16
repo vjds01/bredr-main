@@ -17,6 +17,8 @@ class UserSessionService {
 
   bool _googleInitialized = false;
   static const _sessionHintKey = 'breedr_had_authenticated_session';
+  static const _newSessionRestoreTimeout = Duration(seconds: 3);
+  static const _knownSessionRestoreTimeout = Duration(seconds: 15);
 
   User? get currentUser => _auth.currentUser;
 
@@ -86,13 +88,26 @@ class UserSessionService {
   }
 
   Future<SessionRestoreResult> restoreSession() async {
+    final preferences = await SharedPreferences.getInstance();
+    final hadSession = preferences.getBool(_sessionHintKey) == true;
+
     try {
-      final restoredUser = await _restoreFirebaseUser();
-      if (restoredUser == null) return _restoreFailureResult();
+      final restoredUser = await _restoreFirebaseUser(
+        timeout: hadSession
+            ? _knownSessionRestoreTimeout
+            : _newSessionRestoreTimeout,
+      );
+      if (restoredUser == null) {
+        return hadSession
+            ? SessionRestoreResult.retryableFailure()
+            : const SessionRestoreResult.signedOut();
+      }
       await _rememberAuthenticatedSession();
       return SessionRestoreResult.authenticated(restoredUser);
     } catch (error) {
-      return _restoreFailureResult(error: error);
+      return hadSession
+          ? SessionRestoreResult.retryableFailure(error)
+          : const SessionRestoreResult.signedOut();
     }
   }
 
@@ -104,14 +119,19 @@ class UserSessionService {
     return (await restoreSession()).user;
   }
 
-  Future<User?> _restoreFirebaseUser() async {
+  Future<User?> _restoreFirebaseUser({required Duration timeout}) async {
     final existingUser = currentUser;
     if (existingUser != null) return existingUser;
 
-    return _auth
-        .authStateChanges()
+    // On some Android devices Firebase finishes restoring its encrypted auth
+    // state several seconds after a cold process start. idTokenChanges emits
+    // when that persisted credential becomes usable; importantly, this never
+    // launches Google's interactive account chooser.
+    final restoredUser = await _auth
+        .idTokenChanges()
         .firstWhere((user) => user != null)
-        .timeout(const Duration(seconds: 3), onTimeout: () => null);
+        .timeout(timeout, onTimeout: () => null);
+    return restoredUser ?? currentUser;
   }
 
   Future<UserCredential> signInWithEmail({
@@ -165,14 +185,6 @@ class UserSessionService {
   Future<void> _rememberAuthenticatedSession() async {
     final preferences = await SharedPreferences.getInstance();
     await preferences.setBool(_sessionHintKey, true);
-  }
-
-  Future<SessionRestoreResult> _restoreFailureResult({Object? error}) async {
-    final preferences = await SharedPreferences.getInstance();
-    final hadSession = preferences.getBool(_sessionHintKey) == true;
-    return hadSession
-        ? SessionRestoreResult.retryableFailure(error)
-        : const SessionRestoreResult.signedOut();
   }
 }
 

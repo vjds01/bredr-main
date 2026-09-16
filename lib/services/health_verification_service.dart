@@ -12,8 +12,6 @@ class HealthVerificationService {
   static const endpoint = String.fromEnvironment(
     'HEALTH_VERIFICATION_ENDPOINT',
   );
-  static const testingRecipient = 'breedr0123@gmail.com';
-
   Future<String> requestClinicConfirmation({
     required String petId,
     required String petName,
@@ -23,6 +21,11 @@ class HealthVerificationService {
     if (user == null) throw StateError('You must be logged in first.');
     if (record['clinicConsentGranted'] != true) {
       throw StateError('Clinic verification consent is required.');
+    }
+    if (record['clinicEmailVerificationAvailable'] != true) {
+      throw StateError(
+        'The selected clinic currently uses Veterinary Admin review.',
+      );
     }
 
     final recordId = record['recordId']?.toString().trim() ?? '';
@@ -79,22 +82,24 @@ class HealthVerificationService {
         ..body = body;
       final streamed = await client
           .send(request)
-          .timeout(const Duration(seconds: 20));
+          .timeout(const Duration(seconds: 60));
       var response = await http.Response.fromStream(streamed);
 
-      if (response.statusCode == 301 ||
-          response.statusCode == 302 ||
-          response.statusCode == 303 ||
-          response.statusCode == 307 ||
-          response.statusCode == 308) {
+      var redirectCount = 0;
+      while (_isRedirect(response.statusCode) && redirectCount < 5) {
         final location = response.headers['location'];
         if (location == null || location.trim().isEmpty) {
           throw StateError('Email service redirect had no destination.');
         }
         final redirectUri = endpointUri.resolve(location);
-        response = await http
+        // Keep the same client for Google's script.google.com ->
+        // googleusercontent.com handoff. A separate client can lose response
+        // context and turn an otherwise successful Apps Script result into a
+        // misleading 404.
+        response = await client
             .get(redirectUri)
-            .timeout(const Duration(seconds: 20));
+            .timeout(const Duration(seconds: 60));
+        redirectCount++;
       }
 
       return response;
@@ -103,6 +108,13 @@ class HealthVerificationService {
     }
   }
 
+  bool _isRedirect(int statusCode) =>
+      statusCode == 301 ||
+      statusCode == 302 ||
+      statusCode == 303 ||
+      statusCode == 307 ||
+      statusCode == 308;
+
   Future<void> requestForPublishedPet({
     required String petId,
     required String petName,
@@ -110,6 +122,7 @@ class HealthVerificationService {
   }) async {
     for (final record in records) {
       if (record['clinicConsentGranted'] == true &&
+          record['clinicEmailVerificationAvailable'] == true &&
           record['verificationStatus'] != 'verified') {
         try {
           await requestClinicConfirmation(
