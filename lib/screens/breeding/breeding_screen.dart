@@ -1880,7 +1880,13 @@ class _ActionButtons extends StatelessWidget {
                 ),
               ],
             ),
-            child: const Icon(Icons.favorite, color: Colors.white, size: 36),
+            child: Padding(
+              padding: const EdgeInsets.all(7),
+              child: Image.asset(
+                'assets/images/like_interested.png',
+                fit: BoxFit.contain,
+              ),
+            ),
           ),
         ),
       ],

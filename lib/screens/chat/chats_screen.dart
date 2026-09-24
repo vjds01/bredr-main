@@ -2743,7 +2743,7 @@ class _AdoptionProcessPanelState extends State<_AdoptionProcessPanel> {
   void initState() {
     super.initState();
     _processProtectionDeadline();
-    _timer = Timer.periodic(const Duration(seconds: 10), (_) {
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       setState(() => _now = DateTime.now().toUtc());
       _processProtectionDeadline();
@@ -3050,7 +3050,7 @@ class _AdoptionProcessPanelState extends State<_AdoptionProcessPanel> {
     }
     if (status == 'protection_active') {
       final remaining = protectionEndsAt?.toDate().difference(_now);
-      return 'The 30-day protection window is active. ${_durationLabel(remaining)} remaining.';
+      return 'The 1-minute protection window is active. ${_durationLabel(remaining)} remaining.';
     }
     if (status == 'handover_pending') {
       return handoverConfirmedByMe
@@ -3378,7 +3378,7 @@ String _durationLabel(Duration? duration) {
   return '${duration.inSeconds}s';
 }
 
-String _adoptionProtectionTitle() => '30-Day Protection Window';
+String _adoptionProtectionTitle() => '1-Minute Protection Window';
 
 String _adoptionProtectionGuideMessage() =>
     'The protection window starts after handover.';
@@ -3407,11 +3407,8 @@ bool _protectionNeedsProcessing(Map<String, dynamic> process, DateTime now) {
     final reminders = Map<String, dynamic>.from(
       process['protectionRemindersSent'] as Map? ?? const {},
     );
-    if (remaining <= const Duration(days: 1)) {
-      return reminders['oneDay'] != true;
-    }
-    if (remaining <= const Duration(days: 7)) {
-      return reminders['sevenDay'] != true;
+    if (remaining <= const Duration(seconds: 30)) {
+      return reminders['thirtySeconds'] != true;
     }
     return false;
   }
@@ -3543,7 +3540,7 @@ class _AdoptionProcessScreenState extends State<_AdoptionProcessScreen> {
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 10), (_) {
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() => _now = DateTime.now().toUtc());
     });
   }
@@ -4853,7 +4850,7 @@ class _ProtectionWindowScreen extends StatelessWidget {
         foregroundColor: AppColors.primary,
         elevation: 0,
         title: Text(
-          '30-Day Window',
+          '1-Minute Window (Testing Mode)',
           style: const TextStyle(
             color: Color(0xFF111111),
             fontWeight: FontWeight.w900,
@@ -6004,7 +6001,7 @@ class _AdoptionHandoverScreenState extends State<_AdoptionHandoverScreen> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'After you both confirm, the adopter has 30 days to report valid issues. You can still chat during this period.',
+                            'After you both confirm, the adopter has 1 minute to report valid issues. You can still chat during this period.',
                             style: const TextStyle(
                               color: Color(0xFF555555),
                               fontSize: 12,

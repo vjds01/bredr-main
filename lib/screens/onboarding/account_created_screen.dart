@@ -4,6 +4,7 @@ import '../../widgets/breedr_network_image.dart';
 import '../home_screen.dart';
 import '../auth/cabuyao_access_gate_screen.dart';
 import '../pet/pet_registration_screen.dart';
+import '../../widgets/onboarding_background.dart';
 
 class AccountCreatedScreen extends StatelessWidget {
   final String fullName;
@@ -28,13 +29,9 @@ class AccountCreatedScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFFF0F5),
-      body: SafeArea(
+      body: OnboardingBackground(
         child: Stack(
           children: [
-            // Scattered paw marks background
-            const Positioned.fill(child: _PawBackground()),
-
             Column(
               children: [
                 // Back arrow
@@ -43,8 +40,11 @@ class AccountCreatedScreen extends StatelessWidget {
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: IconButton(
-                      icon: const Icon(Icons.arrow_back_ios,
-                          color: AppColors.primary, size: 20),
+                      icon: const Icon(
+                        Icons.arrow_back_ios,
+                        color: AppColors.primary,
+                        size: 20,
+                      ),
                       onPressed: () => Navigator.pop(context),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
@@ -56,15 +56,12 @@ class AccountCreatedScreen extends StatelessWidget {
 
                 // Profile photo circle
                 Container(
-                  width: 130,
-                  height: 130,
+                  width: 125,
+                  height: 125,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: const Color(0xFFFFCDD5),
-                    border: Border.all(
-                      color: AppColors.primary,
-                      width: 3,
-                    ),
+                    border: Border.all(color: AppColors.primary, width: 3),
                     boxShadow: [
                       BoxShadow(
                         color: AppColors.primary.withValues(alpha: 0.2),
@@ -78,7 +75,7 @@ class AccountCreatedScreen extends StatelessWidget {
                   ),
                 ),
 
-                const SizedBox(height: 32),
+                const SizedBox(height: 40),
 
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 40),
@@ -86,8 +83,8 @@ class AccountCreatedScreen extends StatelessWidget {
                     'Welcome to\nBreedr $_firstName!',
                     textAlign: TextAlign.center,
                     style: const TextStyle(
-                      fontSize: 34,
-                      fontWeight: FontWeight.bold,
+                      fontSize: 38,
+                      fontWeight: FontWeight.w800,
                       color: AppColors.primary,
                       height: 1.2,
                     ),
@@ -102,7 +99,7 @@ class AccountCreatedScreen extends StatelessWidget {
                     "Your account is ready. Now let's add your first pet!",
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: 15,
                       color: Color(0xFF555555),
                       height: 1.6,
                     ),
@@ -124,21 +121,23 @@ class AccountCreatedScreen extends StatelessWidget {
                           onPressed: () => Navigator.push(
                             context,
                             MaterialPageRoute(
-                                builder: (_) =>
-                                    const PetRegistrationScreen()),
+                              builder: (_) => const PetRegistrationScreen(),
+                            ),
                           ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primary,
                             foregroundColor: Colors.white,
                             elevation: 0,
                             shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12)),
+                              borderRadius: BorderRadius.circular(30),
+                            ),
                           ),
                           child: const Text(
                             'Register My First Pet →',
                             style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold),
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ),
@@ -153,14 +152,19 @@ class AccountCreatedScreen extends StatelessWidget {
                           onPressed: () => Navigator.pushAndRemoveUntil(
                             context,
                             MaterialPageRoute(
-                                builder: (_) => const CabuyaoAccessGate(child: HomeScreen())),
+                              builder: (_) =>
+                                  const CabuyaoAccessGate(child: HomeScreen()),
+                            ),
                             (route) => false,
                           ),
                           style: OutlinedButton.styleFrom(
                             side: const BorderSide(
-                                color: AppColors.primary, width: 1.5),
+                              color: AppColors.primary,
+                              width: 1.5,
+                            ),
                             shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12)),
+                              borderRadius: BorderRadius.circular(30),
+                            ),
                           ),
                           child: const Text(
                             'Skip for now',
@@ -173,7 +177,7 @@ class AccountCreatedScreen extends StatelessWidget {
                         ),
                       ),
 
-                      const SizedBox(height: 32),
+                      const SizedBox(height: 72),
                     ],
                   ),
                 ),
@@ -189,9 +193,7 @@ class AccountCreatedScreen extends StatelessWidget {
 class _ProfilePhoto extends StatelessWidget {
   final String? photoUrl;
 
-  const _ProfilePhoto({
-    this.photoUrl,
-  });
+  const _ProfilePhoto({this.photoUrl});
 
   @override
   Widget build(BuildContext context) {
@@ -217,70 +219,8 @@ class _FallbackProfilePhoto extends StatelessWidget {
     return Image.asset(
       'assets/images/profile.png',
       fit: BoxFit.cover,
-      errorBuilder: (_, _, _) => const Icon(
-        Icons.person,
-        color: AppColors.primary,
-        size: 64,
-      ),
+      errorBuilder: (_, _, _) =>
+          const Icon(Icons.person, color: AppColors.primary, size: 64),
     );
   }
-}
-
-// Scattered paw marks painter
-class _PawBackground extends StatelessWidget {
-  const _PawBackground();
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(painter: _PawsPainter());
-  }
-}
-
-class _PawsPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paws = [
-      // top right trail going diagonally down-left
-      _PawData(Offset(size.width * 0.82, size.height * 0.04), 18, 0.3),
-      _PawData(Offset(size.width * 0.72, size.height * 0.09), 16, 0.25),
-      _PawData(Offset(size.width * 0.62, size.height * 0.14), 20, 0.3),
-      _PawData(Offset(size.width * 0.52, size.height * 0.19), 15, 0.2),
-      _PawData(Offset(size.width * 0.42, size.height * 0.24), 18, 0.28),
-      // left side trail
-      _PawData(Offset(size.width * 0.08, size.height * 0.38), 22, 0.3),
-      _PawData(Offset(size.width * 0.14, size.height * 0.46), 16, 0.22),
-      _PawData(Offset(size.width * 0.06, size.height * 0.54), 20, 0.28),
-    ];
-
-    for (final p in paws) {
-      _drawPaw(canvas, p.offset, p.size, p.opacity);
-    }
-  }
-
-  void _drawPaw(Canvas canvas, Offset center, double r, double opacity) {
-    final paint = Paint()
-      ..color = AppColors.primary.withValues(alpha: opacity)
-      ..style = PaintingStyle.fill;
-
-    // Palm
-    canvas.drawCircle(center, r, paint);
-    // Toe pads
-    final toeR = r * 0.42;
-    canvas.drawCircle(
-        Offset(center.dx - r * 0.65, center.dy - r * 0.85), toeR, paint);
-    canvas.drawCircle(
-        Offset(center.dx, center.dy - r * 1.1), toeR, paint);
-    canvas.drawCircle(
-        Offset(center.dx + r * 0.65, center.dy - r * 0.85), toeR, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _PawData {
-  final Offset offset;
-  final double size;
-  final double opacity;
-  const _PawData(this.offset, this.size, this.opacity);
 }

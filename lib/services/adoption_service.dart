@@ -48,20 +48,16 @@ class AdoptionService {
   AdoptionService._();
 
   static final AdoptionService instance = AdoptionService._();
-  static const Duration protectionWindowDuration = Duration(days: 30);
-  static const int protectionPolicyDays = 30;
-  static const String protectionPolicyVersion = '30_day_v1';
+  static const Duration protectionWindowDuration = Duration(minutes: 1);
+  static const int protectionPolicyMinutes = 1;
+  static const String protectionPolicyVersion = '1_minute_v1';
 
   static DateTime? effectiveProtectionEnd({
     required DateTime? startedAt,
     required DateTime? storedEndsAt,
   }) {
     if (startedAt == null) return storedEndsAt;
-    final policyEnd = startedAt.toUtc().add(protectionWindowDuration);
-    if (storedEndsAt == null || storedEndsAt.toUtc().isBefore(policyEnd)) {
-      return policyEnd;
-    }
-    return storedEndsAt.toUtc();
+    return startedAt.toUtc().add(protectionWindowDuration);
   }
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -1103,7 +1099,8 @@ class AdoptionService {
         process['handoverCompletedAt'] = FieldValue.serverTimestamp();
         process['protectionStartedAt'] = FieldValue.serverTimestamp();
         process['protectionEndsAt'] = Timestamp.fromDate(protectionEndsAt);
-        process['protectionPolicyDays'] = protectionPolicyDays;
+        process.remove('protectionPolicyDays');
+        process['protectionPolicyMinutes'] = protectionPolicyMinutes;
         process['protectionPolicyVersion'] = protectionPolicyVersion;
       }
 
@@ -1186,10 +1183,11 @@ class AdoptionService {
 
       final needsPolicyCorrection =
           storedEndsAt == null ||
-          storedEndsAt.toDate().toUtc().isBefore(effectiveEndsAt);
+          !storedEndsAt.toDate().toUtc().isAtSameMomentAs(effectiveEndsAt);
       if (needsPolicyCorrection) {
         process['protectionEndsAt'] = Timestamp.fromDate(effectiveEndsAt);
-        process['protectionPolicyDays'] = protectionPolicyDays;
+        process.remove('protectionPolicyDays');
+        process['protectionPolicyMinutes'] = protectionPolicyMinutes;
         process['protectionPolicyVersion'] = protectionPolicyVersion;
       }
 
@@ -1197,12 +1195,8 @@ class AdoptionService {
       if (now.isBefore(effectiveEndsAt)) {
         var reminderCreated = false;
         final remaining = effectiveEndsAt.difference(now);
-        final reminderKey = remaining > const Duration(days: 1)
-            ? 'sevenDay'
-            : 'oneDay';
-        final reminderThreshold = reminderKey == 'sevenDay'
-            ? const Duration(days: 7)
-            : const Duration(days: 1);
+        const reminderKey = 'thirtySeconds';
+        const reminderThreshold = Duration(seconds: 30);
         final reminders = Map<String, dynamic>.from(
           process['protectionRemindersSent'] as Map? ?? const {},
         );
@@ -1214,7 +1208,6 @@ class AdoptionService {
             data['petNames'] as Map? ?? const {},
           );
           final petName = petNames.values.firstOrNull?.toString() ?? 'this pet';
-          final label = reminderKey == 'sevenDay' ? 'seven days' : 'one day';
           for (final participantId in participantIds) {
             final notification = _firestore.collection('notifications').doc();
             transaction.set(notification, {
@@ -1223,7 +1216,7 @@ class AdoptionService {
               'type': 'adoption_protection_reminder',
               'title': 'Protection window reminder',
               'message':
-                  'The 30-day protection window for $petName ends in approximately $label.',
+                  'The protection window for $petName ends in less than a minute.',
               'matchId': conversationId,
               'conversationId': conversationId,
               'requestId': data['requestId'],

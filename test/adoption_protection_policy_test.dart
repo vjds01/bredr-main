@@ -4,12 +4,15 @@ import 'package:breedr/services/adoption_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('adoption protection policy is exactly 30 days', () {
-    expect(AdoptionService.protectionWindowDuration, const Duration(days: 30));
-    expect(AdoptionService.protectionPolicyDays, 30);
+  test('adoption protection policy is exactly one minute', () {
+    expect(
+      AdoptionService.protectionWindowDuration,
+      const Duration(minutes: 1),
+    );
+    expect(AdoptionService.protectionPolicyMinutes, 1);
   });
 
-  test('legacy seven-day deadline is extended from its original start', () {
+  test('legacy deadline is replaced by one minute from its original start', () {
     final started = DateTime.utc(2026, 9, 1, 10);
     final legacyEnd = started.add(const Duration(days: 7));
 
@@ -18,11 +21,11 @@ void main() {
         startedAt: started,
         storedEndsAt: legacyEnd,
       ),
-      started.add(const Duration(days: 30)),
+      started.add(const Duration(minutes: 1)),
     );
   });
 
-  test('a longer stored deadline is never shortened', () {
+  test('a longer stored deadline is migrated to the current policy', () {
     final started = DateTime.utc(2026, 9, 1);
     final longerEnd = started.add(const Duration(days: 45));
 
@@ -31,15 +34,14 @@ void main() {
         startedAt: started,
         storedEndsAt: longerEnd,
       ),
-      longerEnd,
+      started.add(const Duration(minutes: 1)),
     );
   });
 
-  test('production adoption UI contains no testing terminology', () {
+  test('one-minute defense window is clearly labeled as testing mode', () {
     final source = File(
       'lib/screens/chat/chats_screen.dart',
     ).readAsStringSync();
-    expect(source.toLowerCase(), isNot(contains('test mode')));
-    expect(source.toLowerCase(), isNot(contains('for testing')));
+    expect(source, contains('1-Minute Window (Testing Mode)'));
   });
 }

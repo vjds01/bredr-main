@@ -7,6 +7,7 @@ import 'package:geocoding/geocoding.dart';
 import '../../services/location_service.dart';
 import '../../services/cabuyao_access_service.dart';
 import '../../widgets/cabuyao_barangay_picker.dart';
+import '../../widgets/onboarding_background.dart';
 
 class LocationPermissionScreen extends StatefulWidget {
   const LocationPermissionScreen({
@@ -168,78 +169,89 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFCECF0),
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Back arrow
-            Padding(
-              padding: const EdgeInsets.only(left: 8, top: 8),
-              child: IconButton(
-                icon: const Icon(
-                  Icons.arrow_back_ios,
-                  color: AppColors.primary,
-                  size: 20,
-                ),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ),
-            const SizedBox(height: 16),
-            // Title - CENTERED
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 28),
-              child: Text(
-                'FIND PETS NEAR YOU IN CABUYAO',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.primary,
-                  height: 1.25,
+      body: OnboardingBackground(
+        safeArea: false,
+        child: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Back arrow
+              Padding(
+                padding: const EdgeInsets.only(left: 8, top: 8),
+                child: IconButton(
+                  icon: const Icon(
+                    Icons.arrow_back_ios,
+                    color: AppColors.primary,
+                    size: 20,
+                  ),
+                  onPressed: () => Navigator.pop(context),
                 ),
               ),
-            ),
-            const Spacer(),
-            // Map illustration
-            Center(child: _MapIllustration()),
-            const Spacer(),
-            // Buttons
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 28),
-              child: Column(
-                children: [
-                  _LocationButton(
-                    label: _isLoading
-                        ? 'Getting Location...'
-                        : 'Enable Location',
-                    filled: true,
-                    onPressed: _isLoading ? null : _enableLocation,
+              const SizedBox(height: 36),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 54),
+                child: Text(
+                  'Find pets near\nyou in Cabuyao',
+                  textAlign: TextAlign.left,
+                  style: TextStyle(
+                    fontSize: 36,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.primary,
+                    height: 1.08,
                   ),
-                  const SizedBox(height: 16),
-                  // "How is my location is use" link
-                  GestureDetector(
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const HowLocationUsedScreen(),
-                      ),
-                    ),
-                    child: const Text(
-                      'How is my location is use',
-                      style: TextStyle(
-                        color: AppColors.primary,
-                        fontSize: 13,
-                        decoration: TextDecoration.underline,
-                        decorationColor: AppColors.primary,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-                ],
+                ),
               ),
-            ),
-          ],
+              const Spacer(flex: 2),
+              const Center(child: _MapIllustration()),
+              const Spacer(flex: 3),
+              // Buttons
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 28),
+                child: Column(
+                  children: [
+                    _LocationButton(
+                      label: _isLoading
+                          ? 'Getting Location...'
+                          : 'Enable Location',
+                      filled: true,
+                      onPressed: _isLoading ? null : _enableLocation,
+                    ),
+                    const SizedBox(height: 16),
+                    _LocationButton(
+                      label: 'Not Now',
+                      filled: false,
+                      onPressed: _isLoading
+                          ? null
+                          : () => Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    widget.destination ?? const LoginScreen(),
+                              ),
+                            ),
+                    ),
+                    const SizedBox(height: 10),
+                    GestureDetector(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const HowLocationUsedScreen(),
+                        ),
+                      ),
+                      child: const Text(
+                        'How is my location used?',
+                        style: TextStyle(
+                          color: AppColors.primary,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 76),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -303,12 +315,14 @@ class _LocationButton extends StatelessWidget {
 }
 
 class _MapIllustration extends StatelessWidget {
+  const _MapIllustration();
+
   @override
   Widget build(BuildContext context) {
     return Image.asset(
-      'assets/images/Location.png',
-      width: 260,
-      height: 260,
+      'assets/images/location_permission_art.png',
+      width: 285,
+      height: 285,
       fit: BoxFit.contain,
     );
   }

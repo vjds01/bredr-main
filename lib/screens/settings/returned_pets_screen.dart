@@ -377,7 +377,7 @@ class _ReturnTimeline extends StatelessWidget {
           ),
           const _TimelineRow(
             title: 'Under review',
-            subtitle: 'Checked against the 30-day protection window',
+            subtitle: 'Checked against the 1-minute protection window',
             active: true,
             showLine: true,
           ),

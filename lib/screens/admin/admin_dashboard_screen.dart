@@ -4922,7 +4922,7 @@ class _ProtectionWindowPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const totalDays = 30;
+    final totalSeconds = AdoptionService.protectionWindowDuration.inSeconds;
     final startMillis = _timestampMillis(
       data['protectionStartedAt'] ??
           data['protectionStartAt'] ??
@@ -4933,19 +4933,18 @@ class _ProtectionWindowPanel extends StatelessWidget {
       data['protectionEndsAt'] ?? data['protectionEndAt'],
     );
     final now = DateTime.now().millisecondsSinceEpoch;
-    var currentDay = 2;
+    var elapsedSeconds = 0;
     if (startMillis > 0) {
-      currentDay = ((now - startMillis) ~/ Duration.millisecondsPerDay) + 1;
+      elapsedSeconds = ((now - startMillis) ~/ Duration.millisecondsPerSecond);
     } else if (endMillis > 0) {
-      final remainingDays = ((endMillis - now) / Duration.millisecondsPerDay)
-          .ceil();
-      currentDay = totalDays - remainingDays + 1;
+      final remainingSeconds = ((endMillis - now) / 1000).ceil();
+      elapsedSeconds = totalSeconds - remainingSeconds;
     }
-    currentDay = currentDay.clamp(1, totalDays).toInt();
-    final progress = (currentDay / totalDays).clamp(0.03, 1.0).toDouble();
+    elapsedSeconds = elapsedSeconds.clamp(0, totalSeconds).toInt();
+    final progress = (elapsedSeconds / totalSeconds).clamp(0.0, 1.0).toDouble();
 
     return _SectionCard(
-      title: '30-Day Protection Window',
+      title: '1-Minute Protection Window (Testing Mode)',
       icon: Icons.hourglass_bottom_outlined,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -4961,7 +4960,7 @@ class _ProtectionWindowPanel extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            'Day $currentDay of $totalDays',
+            '$elapsedSeconds of $totalSeconds seconds elapsed',
             style: const TextStyle(
               color: Color(0xFF8E7F91),
               fontWeight: FontWeight.w800,

@@ -7,6 +7,7 @@ import '../../services/user_session_service.dart';
 import '../../services/cabuyao_barangay_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/cabuyao_barangay_picker.dart';
+import '../../widgets/cabuyao_boundary_map.dart';
 
 class LocationSettingsScreen extends StatefulWidget {
   const LocationSettingsScreen({super.key});
@@ -116,6 +117,8 @@ class _LocationSettingsScreenState extends State<LocationSettingsScreen> {
       return;
     }
 
+    final isApproximateBarangayPoint =
+        location.latitude == 0 && location.longitude == 0;
     var latitude = location.latitude;
     var longitude = location.longitude;
     if (latitude == 0 && longitude == 0) {
@@ -138,6 +141,7 @@ class _LocationSettingsScreenState extends State<LocationSettingsScreen> {
       'city': 'Cabuyao Laguna',
       'latitude': latitude,
       'longitude': longitude,
+      'locationSource': isApproximateBarangayPoint ? 'barangay' : 'gps',
       'updatedAt': FieldValue.serverTimestamp(),
     };
 
@@ -272,6 +276,8 @@ class _LocationSettingsScreenState extends State<LocationSettingsScreen> {
                               locationName: locationName,
                               latitude: latitude,
                               longitude: longitude,
+                              locationSource:
+                                  userData['locationSource'] as String?,
                             ),
                             const SizedBox(height: 28),
                             const _SmallLabel('UPDATE LOCATION'),
@@ -529,11 +535,13 @@ class _LocationMapCard extends StatelessWidget {
   final String locationName;
   final double? latitude;
   final double? longitude;
+  final String? locationSource;
 
   const _LocationMapCard({
     required this.locationName,
     required this.latitude,
     required this.longitude,
+    this.locationSource,
   });
 
   @override
@@ -565,33 +573,117 @@ class _LocationMapCard extends StatelessWidget {
           ClipRRect(
             borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
             child: SizedBox(
-              height: 126,
+              height: 170,
               width: double.infinity,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Image.asset('assets/images/Location.png', fit: BoxFit.cover),
-                  Container(color: Colors.white.withValues(alpha: 0.52)),
-                  const Center(
-                    child: Icon(
-                      Icons.location_on,
-                      color: AppColors.primary,
-                      size: 72,
-                    ),
-                  ),
-                  const Positioned(
-                    left: 12,
-                    bottom: 8,
-                    child: Text(
-                      'Google',
-                      style: TextStyle(
-                        color: Color(0xFF4285F4),
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
+              child: Material(
+                color: const Color(0xFFF5F9FF),
+                child: InkWell(
+                  onTap: () => showDialog<void>(
+                    context: context,
+                    builder: (dialogContext) => Dialog(
+                      insetPadding: const EdgeInsets.all(20),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: SizedBox(
+                          height: MediaQuery.sizeOf(dialogContext).height * .7,
+                          child: Column(
+                            children: [
+                              Row(
+                                children: [
+                                  const Expanded(
+                                    child: Text(
+                                      'Explore Cabuyao barangays',
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                  IconButton(
+                                    onPressed: () =>
+                                        Navigator.pop(dialogContext),
+                                    icon: const Icon(Icons.close),
+                                  ),
+                                ],
+                              ),
+                              Expanded(
+                                child: CabuyaoBoundaryMap(
+                                  locationName: locationName,
+                                  latitude: latitude,
+                                  longitude: longitude,
+                                  locationSource: locationSource,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              const Text(
+                                'Pinch to zoom and drag to pan. This is an offline barangay map, not a live Google map.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.black54,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                ],
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: CabuyaoBoundaryMap(
+                          locationName: locationName,
+                          latitude: latitude,
+                          longitude: longitude,
+                          locationSource: locationSource,
+                          compact: true,
+                        ),
+                      ),
+                      Positioned(
+                        left: 12,
+                        top: 12,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.08),
+                                blurRadius: 6,
+                              ),
+                            ],
+                          ),
+                          child: Text(
+                            CabuyaoBarangayService.canonicalName(
+                                      locationName,
+                                    ) ==
+                                    null
+                                ? 'Cabuyao barangays'
+                                : 'Brgy. ${CabuyaoBarangayService.canonicalName(locationName)}',
+                            style: const TextStyle(
+                              color: Color(0xFFAC3B55),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const Positioned(
+                        right: 12,
+                        bottom: 12,
+                        child: Chip(
+                          avatar: Icon(Icons.touch_app_outlined, size: 17),
+                          label: Text('Explore map'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),

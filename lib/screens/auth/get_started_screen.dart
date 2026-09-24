@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/breedr_logo.dart';
+import '../../widgets/onboarding_background.dart';
 import 'location_permission_screen.dart';
 import 'login_screen.dart';
 
@@ -10,33 +11,27 @@ class GetStartedScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment.center,
-            radius: 1.1,
-            colors: [Colors.white, Color(0xFFFCE4EC)],
-          ),
-        ),
+      body: OnboardingBackground(
+        safeArea: false,
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 36),
             child: Column(
               children: [
-                const Spacer(flex: 2),
+                const Spacer(flex: 3),
                 // Logo PNG
-                const BreedrLogo(size: 160),
-                const SizedBox(height: 20),
+                const BreedrLogo(size: 190),
+                const SizedBox(height: 10),
                 // Wordmark
                 const Text(
                   'Breedr.',
                   style: TextStyle(
-                    fontSize: 38,
-                    fontWeight: FontWeight.bold,
+                    fontSize: 52,
+                    fontWeight: FontWeight.w800,
                     color: AppColors.primary,
                   ),
                 ),
-                const Spacer(flex: 3),
+                const Spacer(flex: 4),
                 // Get Started button
                 SizedBox(
                   width: double.infinity,
@@ -57,7 +52,7 @@ class GetStartedScreen extends StatelessWidget {
                       ),
                     ),
                     child: const Text(
-                      'Get Started 🐾',
+                      'GET STARTED',
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
                         fontSize: 16,
@@ -100,7 +95,7 @@ class GetStartedScreen extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(height: 48),
+                const SizedBox(height: 86),
               ],
             ),
           ),
