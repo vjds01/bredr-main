@@ -2,6 +2,7 @@ package com.example.breedr
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -16,6 +17,14 @@ class MainActivity : FlutterActivity() {
         installSplashScreen()
         pendingNotificationPayload = notificationPayload(intent)
         super.onCreate(savedInstanceState)
+
+        // Protect every Breedr screen from screenshots, screen recordings, and
+        // previews in Android's recent-apps view. Android displays its own
+        // security-policy warning when the user attempts to capture the screen.
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE,
+        )
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {

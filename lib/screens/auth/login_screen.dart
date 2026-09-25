@@ -362,12 +362,13 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
 
                 // Dog-and-cat welcome illustration.
+                const SizedBox(height: 12),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 42),
                   child: Image.asset(
-                    'assets/images/Welcome.png',
+                    'assets/images/login_welcome_pets.png',
                     width: double.infinity,
-                    height: 145,
+                    height: 166,
                     fit: BoxFit.contain,
                   ),
                 ),

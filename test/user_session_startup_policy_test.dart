@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('startup restoration never invokes an interactive Google flow', () {
+  test('startup restoration uses lightweight, not interactive Google auth', () {
     final source = File(
       'lib/services/user_session_service.dart',
     ).readAsStringSync();
@@ -19,10 +19,11 @@ void main() {
     expect(restoreEnd, greaterThan(restoreStart));
 
     final restoreBody = source.substring(restoreStart, restoreEnd);
-    expect(restoreBody, isNot(contains('_googleSignIn')));
-    expect(restoreBody, isNot(contains('_ensureGoogleInitialized')));
     expect(restoreBody, isNot(contains('authenticate(')));
-    expect(restoreBody, isNot(contains('attemptLightweightAuthentication')));
+    expect(restoreBody, contains('_restoreGoogleUser()'));
+
+    expect(source, contains('attemptLightweightAuthentication()'));
+    expect(source, contains('reauthenticationRequired'));
   });
 
   test('known sessions receive a cold-start restoration grace period', () {
@@ -38,5 +39,6 @@ void main() {
     );
     expect(source, contains('.idTokenChanges()'));
     expect(source, contains('restoredUser ?? currentUser'));
+    expect(source, contains("providerHint != 'password'"));
   });
 }

@@ -1865,6 +1865,7 @@ class _ActionButtons extends StatelessWidget {
           child: Container(
             width: 74,
             height: 74,
+            clipBehavior: Clip.antiAlias,
             decoration: const BoxDecoration(
               shape: BoxShape.circle,
               gradient: LinearGradient(
@@ -1880,8 +1881,8 @@ class _ActionButtons extends StatelessWidget {
                 ),
               ],
             ),
-            child: Padding(
-              padding: const EdgeInsets.all(7),
+            child: Transform.scale(
+              scale: 2.45,
               child: Image.asset(
                 'assets/images/like_interested.png',
                 fit: BoxFit.contain,

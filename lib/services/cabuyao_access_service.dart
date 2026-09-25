@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
 enum CabuyaoAccessStatus {
@@ -26,6 +27,9 @@ class CabuyaoAccessService {
   static final CabuyaoAccessService instance = CabuyaoAccessService._();
 
   static const double toleranceMeters = 500;
+  static const Duration freshPositionTimeout = Duration(seconds: 20);
+  static const Duration cachedPositionMaxAge = Duration(minutes: 5);
+  static const double cachedPositionMaxAccuracyMeters = 1500;
 
   // Cabuyao's outer city boundary, simplified for an on-device service-area
   // check. The tolerance below keeps edge locations from being rejected by
@@ -51,9 +55,7 @@ class CabuyaoAccessService {
   }) async {
     try {
       if (!await Geolocator.isLocationServiceEnabled()) {
-        return const CabuyaoAccessResult(
-          CabuyaoAccessStatus.serviceDisabled,
-        );
+        return const CabuyaoAccessResult(CabuyaoAccessStatus.serviceDisabled);
       }
 
       var permission = await Geolocator.checkPermission();
@@ -68,30 +70,96 @@ class CabuyaoAccessService {
       }
 
       if (permission == LocationPermission.denied) {
-        return const CabuyaoAccessResult(
-          CabuyaoAccessStatus.permissionDenied,
-        );
+        return const CabuyaoAccessResult(CabuyaoAccessStatus.permissionDenied);
       }
 
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      ).timeout(const Duration(seconds: 15));
+      final position = await _getReliablePosition();
+      final isInside = isWithinCabuyao(position);
+      debugPrint(
+        'Cabuyao access diagnostic: ${_positionSummary(position)}, '
+        'classification=${isInside ? 'inside' : 'outside'}.',
+      );
 
       return CabuyaoAccessResult(
-        isWithinCabuyao(position)
+        isInside
             ? CabuyaoAccessStatus.allowed
             : CabuyaoAccessStatus.outsideServiceArea,
         position: position,
       );
-    } catch (_) {
-      return const CabuyaoAccessResult(
-        CabuyaoAccessStatus.locationUnavailable,
-      );
+    } catch (error, stackTrace) {
+      debugPrint('Cabuyao access diagnostic: location unavailable: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      return const CabuyaoAccessResult(CabuyaoAccessStatus.locationUnavailable);
     }
   }
 
+  Future<Position> _getReliablePosition() async {
+    Object? freshPositionError;
+    StackTrace? freshPositionStack;
+
+    try {
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: freshPositionTimeout,
+      );
+      debugPrint(
+        'Cabuyao access diagnostic: using fresh ${_positionSummary(position)}.',
+      );
+      return position;
+    } catch (error, stackTrace) {
+      freshPositionError = error;
+      freshPositionStack = stackTrace;
+      debugPrint(
+        'Cabuyao access diagnostic: fresh position failed: $error; '
+        'checking recent cached position.',
+      );
+    }
+
+    try {
+      final cachedPosition = await Geolocator.getLastKnownPosition();
+      if (cachedPosition != null && _isUsableCachedPosition(cachedPosition)) {
+        debugPrint(
+          'Cabuyao access diagnostic: using cached '
+          '${_positionSummary(cachedPosition)}.',
+        );
+        return cachedPosition;
+      }
+      debugPrint(
+        'Cabuyao access diagnostic: cached position missing, stale, or too '
+        'inaccurate${cachedPosition == null ? '' : ' (${_positionSummary(cachedPosition)})'}.',
+      );
+    } catch (error) {
+      debugPrint(
+        'Cabuyao access diagnostic: cached position lookup failed: $error.',
+      );
+    }
+
+    Error.throwWithStackTrace(freshPositionError, freshPositionStack);
+  }
+
+  bool _isUsableCachedPosition(Position position) {
+    final age = DateTime.now().toUtc().difference(position.timestamp.toUtc());
+    final absoluteAge = age.isNegative ? -age : age;
+    return absoluteAge <= cachedPositionMaxAge &&
+        position.accuracy.isFinite &&
+        position.accuracy <= cachedPositionMaxAccuracyMeters;
+  }
+
+  String _positionSummary(Position position) {
+    final age = DateTime.now().toUtc().difference(position.timestamp.toUtc());
+    return 'lat=${position.latitude.toStringAsFixed(6)}, '
+        'lng=${position.longitude.toStringAsFixed(6)}, '
+        'accuracy=${position.accuracy.toStringAsFixed(1)}m, '
+        'age=${age.inSeconds}s, mocked=${position.isMocked}';
+  }
+
   bool isWithinCabuyao(Position position) {
-    final point = _GeoPoint(position.latitude, position.longitude);
+    return isWithinCoordinates(position.latitude, position.longitude);
+  }
+
+  @visibleForTesting
+  bool isWithinCoordinates(double latitude, double longitude) {
+    final point = _GeoPoint(latitude, longitude);
 
     if (_isInsidePolygon(point, _cabuyaoBoundary)) return true;
 
@@ -109,12 +177,15 @@ class CabuyaoAccessService {
   bool _isInsidePolygon(_GeoPoint point, List<_GeoPoint> polygon) {
     var inside = false;
 
-    for (var current = 0, previous = polygon.length - 1;
-        current < polygon.length;
-        previous = current++) {
+    for (
+      var current = 0, previous = polygon.length - 1;
+      current < polygon.length;
+      previous = current++
+    ) {
       final currentPoint = polygon[current];
       final previousPoint = polygon[previous];
-      final intersects = ((currentPoint.latitude > point.latitude) !=
+      final intersects =
+          ((currentPoint.latitude > point.latitude) !=
               (previousPoint.latitude > point.latitude)) &&
           (point.longitude <
               (previousPoint.longitude - currentPoint.longitude) *
@@ -153,8 +224,8 @@ class CabuyaoAccessService {
       );
     }
 
-    final projection = ((pointX - startX) * segmentX +
-            (pointY - startY) * segmentY) /
+    final projection =
+        ((pointX - startX) * segmentX + (pointY - startY) * segmentY) /
         lengthSquared;
     final clampedProjection = projection.clamp(0.0, 1.0).toDouble();
     final closestX = startX + clampedProjection * segmentX;

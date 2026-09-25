@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -17,8 +18,10 @@ class UserSessionService {
 
   bool _googleInitialized = false;
   static const _sessionHintKey = 'breedr_had_authenticated_session';
+  static const _sessionProviderKey = 'breedr_session_provider';
   static const _newSessionRestoreTimeout = Duration(seconds: 3);
   static const _knownSessionRestoreTimeout = Duration(seconds: 15);
+  static const _googleRestoreTimeout = Duration(seconds: 8);
 
   User? get currentUser => _auth.currentUser;
 
@@ -90,21 +93,42 @@ class UserSessionService {
   Future<SessionRestoreResult> restoreSession() async {
     final preferences = await SharedPreferences.getInstance();
     final hadSession = preferences.getBool(_sessionHintKey) == true;
+    final providerHint = preferences.getString(_sessionProviderKey);
 
     try {
-      final restoredUser = await _restoreFirebaseUser(
+      var restoredUser = await _restoreFirebaseUser(
         timeout: hadSession
             ? _knownSessionRestoreTimeout
             : _newSessionRestoreTimeout,
       );
-      if (restoredUser == null) {
-        return hadSession
-            ? SessionRestoreResult.retryableFailure()
-            : const SessionRestoreResult.signedOut();
+
+      if (restoredUser == null && hadSession && providerHint != 'password') {
+        debugPrint(
+          'Session restoration diagnostic: Firebase user unavailable; '
+          'attempting lightweight Google restoration.',
+        );
+        restoredUser = await _restoreGoogleUser();
       }
-      await _rememberAuthenticatedSession();
+
+      if (restoredUser == null) {
+        if (hadSession) {
+          await _clearSessionHints(preferences);
+          debugPrint(
+            'Session restoration diagnostic: saved credentials are no '
+            'longer available; interactive sign-in is required.',
+          );
+          return const SessionRestoreResult.reauthenticationRequired();
+        }
+        return const SessionRestoreResult.signedOut();
+      }
+      await _rememberAuthenticatedSession(provider: _providerFor(restoredUser));
+      debugPrint(
+        'Session restoration diagnostic: restored uid=${restoredUser.uid}, '
+        'provider=${_providerFor(restoredUser)}.',
+      );
       return SessionRestoreResult.authenticated(restoredUser);
     } catch (error) {
+      debugPrint('Session restoration diagnostic: retryable error=$error');
       return hadSession
           ? SessionRestoreResult.retryableFailure(error)
           : const SessionRestoreResult.signedOut();
@@ -134,6 +158,22 @@ class UserSessionService {
     return restoredUser ?? currentUser;
   }
 
+  Future<User?> _restoreGoogleUser() async {
+    await _ensureGoogleInitialized();
+    final restoration = _googleSignIn.attemptLightweightAuthentication();
+    if (restoration == null) return null;
+
+    final googleUser = await restoration.timeout(_googleRestoreTimeout);
+    if (googleUser == null) return null;
+
+    final googleAuth = googleUser.authentication;
+    final idToken = googleAuth.idToken;
+    if (idToken == null) return null;
+
+    final credential = GoogleAuthProvider.credential(idToken: idToken);
+    return (await _auth.signInWithCredential(credential)).user;
+  }
+
   Future<UserCredential> signInWithEmail({
     required String email,
     required String password,
@@ -142,7 +182,7 @@ class UserSessionService {
       email: email,
       password: password,
     );
-    await _rememberAuthenticatedSession();
+    await _rememberAuthenticatedSession(provider: 'password');
     return credential;
   }
 
@@ -165,7 +205,7 @@ class UserSessionService {
     );
 
     final firebaseCredential = await _auth.signInWithCredential(credential);
-    await _rememberAuthenticatedSession();
+    await _rememberAuthenticatedSession(provider: 'google');
     return firebaseCredential;
   }
 
@@ -179,16 +219,37 @@ class UserSessionService {
 
     await _auth.signOut();
     final preferences = await SharedPreferences.getInstance();
-    await preferences.remove(_sessionHintKey);
+    await _clearSessionHints(preferences);
   }
 
-  Future<void> _rememberAuthenticatedSession() async {
+  Future<void> _rememberAuthenticatedSession({String? provider}) async {
     final preferences = await SharedPreferences.getInstance();
     await preferences.setBool(_sessionHintKey, true);
+    if (provider != null) {
+      await preferences.setString(_sessionProviderKey, provider);
+    }
+  }
+
+  Future<void> _clearSessionHints(SharedPreferences preferences) async {
+    await preferences.remove(_sessionHintKey);
+    await preferences.remove(_sessionProviderKey);
+  }
+
+  String _providerFor(User user) {
+    return user.providerData.any(
+          (provider) => provider.providerId == 'google.com',
+        )
+        ? 'google'
+        : 'password';
   }
 }
 
-enum SessionRestoreStatus { authenticated, signedOut, retryableFailure }
+enum SessionRestoreStatus {
+  authenticated,
+  signedOut,
+  reauthenticationRequired,
+  retryableFailure,
+}
 
 class SessionRestoreResult {
   final SessionRestoreStatus status;
@@ -200,6 +261,9 @@ class SessionRestoreResult {
   const SessionRestoreResult.signedOut()
     : this._(SessionRestoreStatus.signedOut);
 
+  const SessionRestoreResult.reauthenticationRequired()
+    : this._(SessionRestoreStatus.reauthenticationRequired);
+
   factory SessionRestoreResult.authenticated(User user) =>
       SessionRestoreResult._(SessionRestoreStatus.authenticated, user: user);
 
@@ -210,5 +274,7 @@ class SessionRestoreResult {
       );
 
   bool get isAuthenticated => status == SessionRestoreStatus.authenticated;
+  bool get requiresReauthentication =>
+      status == SessionRestoreStatus.reauthenticationRequired;
   bool get shouldRetry => status == SessionRestoreStatus.retryableFailure;
 }

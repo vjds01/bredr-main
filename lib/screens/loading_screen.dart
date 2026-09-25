@@ -10,6 +10,7 @@ import '../widgets/onboarding_background.dart';
 import 'admin/admin_dashboard_screen.dart';
 import 'veterinary/veterinary_dashboard_screen.dart';
 import 'auth/get_started_screen.dart';
+import 'auth/login_screen.dart';
 import 'auth/cabuyao_access_gate_screen.dart';
 import 'auth/moderation_gate_screen.dart';
 import 'auth/welcome_screen.dart';
@@ -48,6 +49,11 @@ class _LoadingScreenState extends State<LoadingScreen>
 
       if (restoration.shouldRetry) {
         nextScreen = const _SessionRecoveryScreen();
+      } else if (restoration.requiresReauthentication) {
+        nextScreen = const LoginScreen(
+          initialMessage:
+              'Your saved session expired. Please sign in again to continue.',
+        );
       } else if (restoration.isAuthenticated) {
         var hasProfile = true;
         try {
