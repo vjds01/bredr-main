@@ -7,6 +7,7 @@ import '../../models/onboarding_data.dart';
 import '../../services/location_service.dart';
 import '../../services/user_session_service.dart';
 import '../../widgets/registration_error_dialog.dart';
+import '../../widgets/policy_agreement_text.dart';
 import '../auth/location_permission_screen.dart';
 
 //done 5/28
@@ -523,33 +524,7 @@ class _Step1AboutYouState extends State<Step1AboutYou> {
                     const SizedBox(height: 14),
 
                     // Terms note
-                    Center(
-                      child: RichText(
-                        textAlign: TextAlign.center,
-                        text: const TextSpan(
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Color(0xFF999999),
-                          ),
-                          children: [
-                            TextSpan(
-                              text: "By signing up, you agree to Breedr's ",
-                            ),
-                            TextSpan(
-                              text: 'Terms of Service and Privacy Policy',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF666666),
-                              ),
-                            ),
-                            TextSpan(
-                              text:
-                                  '. Your Google account will only be used for authentication.',
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+                    const PolicyAgreementText(),
 
                     const SizedBox(height: 20),
                   ],

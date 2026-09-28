@@ -15,6 +15,7 @@ import 'cabuyao_access_gate_screen.dart';
 import 'location_permission_screen.dart';
 import 'moderation_gate_screen.dart';
 import '../../widgets/onboarding_background.dart';
+import '../../widgets/policy_agreement_text.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, this.initialMessage});
@@ -639,33 +640,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       const SizedBox(height: 16),
 
                       // Terms note
-                      Center(
-                        child: RichText(
-                          textAlign: TextAlign.center,
-                          text: const TextSpan(
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Color(0xFF999999),
-                            ),
-                            children: [
-                              TextSpan(
-                                text: "By signing up, you agree to Breedr's ",
-                              ),
-                              TextSpan(
-                                text: 'Terms of Service and Privacy Policy',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF666666),
-                                ),
-                              ),
-                              TextSpan(
-                                text:
-                                    '. Your Google account will only be used for authentication.',
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
+                      const PolicyAgreementText(),
 
                       const SizedBox(height: 32),
                     ],

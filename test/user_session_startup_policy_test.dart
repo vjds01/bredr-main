@@ -20,9 +20,9 @@ void main() {
 
     final restoreBody = source.substring(restoreStart, restoreEnd);
     expect(restoreBody, isNot(contains('authenticate(')));
-    expect(restoreBody, contains('_restoreGoogleUser()'));
+    expect(restoreBody, contains('_restoreGoogleUser('));
 
-    expect(source, contains('attemptLightweightAuthentication()'));
+    expect(source, contains('attemptLightweightAuthentication('));
     expect(source, contains('reauthenticationRequired'));
   });
 
@@ -37,8 +37,28 @@ void main() {
         'static const _knownSessionRestoreTimeout = Duration(seconds: 15)',
       ),
     );
-    expect(source, contains('.idTokenChanges()'));
+    expect(source, contains('.authStateChanges().first'));
     expect(source, contains('restoredUser ?? currentUser'));
-    expect(source, contains("providerHint != 'password'"));
+    expect(source, contains("providerHint == 'google'"));
+  });
+
+  test('multi-account restoration requires explicit account confirmation', () {
+    final serviceSource = File(
+      'lib/services/user_session_service.dart',
+    ).readAsStringSync();
+    final loadingSource = File(
+      'lib/screens/loading_screen.dart',
+    ).readAsStringSync();
+
+    expect(serviceSource, contains('_sessionUidKey'));
+    expect(serviceSource, contains('_sessionEmailKey'));
+    expect(serviceSource, contains('reportAllExceptions: true'));
+    expect(serviceSource, contains('requiresGoogleConfirmation'));
+    expect(serviceSource, contains('_matchesSavedEmail'));
+    expect(
+      loadingSource,
+      contains("'Confirm your Google account'"),
+    );
+    expect(loadingSource, contains('confirmSavedGoogleSession()'));
   });
 }

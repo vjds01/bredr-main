@@ -304,8 +304,11 @@ class PetPublishedScreen extends StatelessWidget {
                           onPressed: () => Navigator.pushAndRemoveUntil(
                             context,
                             MaterialPageRoute(
-                              builder: (_) =>
-                                  const CabuyaoAccessGate(child: HomeScreen()),
+                              builder: (_) => CabuyaoAccessGate(
+                                child: HomeScreen(
+                                  initialTabIndex: isAdoption ? 1 : 0,
+                                ),
+                              ),
                             ),
                             (route) => false,
                           ),

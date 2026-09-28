@@ -1,8 +1,34 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 
-class TermsScreen extends StatelessWidget {
-  const TermsScreen({super.key});
+class TermsScreen extends StatefulWidget {
+  final bool openAtPrivacyPolicy;
+
+  const TermsScreen({super.key, this.openAtPrivacyPolicy = false});
+
+  @override
+  State<TermsScreen> createState() => _TermsScreenState();
+}
+
+class _TermsScreenState extends State<TermsScreen> {
+  final GlobalKey _privacyPolicyKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.openAtPrivacyPolicy) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final privacyContext = _privacyPolicyKey.currentContext;
+        if (!mounted || privacyContext == null) return;
+        Scrollable.ensureVisible(
+          privacyContext,
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeOutCubic,
+          alignment: 0.08,
+        );
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -15,7 +41,11 @@ class TermsScreen extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(left: 8, top: 8),
               child: IconButton(
-                icon: const Icon(Icons.arrow_back_ios, color: AppColors.primary, size: 20),
+                icon: const Icon(
+                  Icons.arrow_back_ios,
+                  color: AppColors.primary,
+                  size: 20,
+                ),
                 onPressed: () => Navigator.pop(context),
               ),
             ),
@@ -27,30 +57,60 @@ class TermsScreen extends StatelessWidget {
                   children: [
                     const Center(
                       child: Text(
-                        'Terms and Services',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textDark),
+                        'Terms of Service',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textDark,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 12),
                     const Text(
                       'By creating an account and using Breedr and using Breedr, you agree to the following rules and guidelines of the platform.',
                       textAlign: TextAlign.justify,
-                      style: TextStyle(fontSize: 13, color: AppColors.textDark, height: 1.6),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textDark,
+                        height: 1.6,
+                      ),
                     ),
                     const SizedBox(height: 16),
-                    _term('1. User Responsibility.', 'User must provide accurate information when creating profiles, listing pets or interacting with other members.'),
-                    _term('2. Responsible Breeding and Adoption.', 'Breedr promotes ethical and responsible breeding. Users must not post illegal activities, animal abuse or misleading pet listing .'),
-                    _term('3. Proper use of Platform.', 'Users must communicate respectfully and must not use the platform for fraud, scams or harmful behavior.'),
-                    _term('4. Account Security.', 'Users are responsible for maintaining the security of their accounts and login credentials.'),
-                    _term('5. Third Party Services.', 'Breedr may use trusted services such as Google for authentication maps, or location-based features.'),
-                    _term('6. Policy Updates.', 'Breedr may update these terms when necessary to improve platform and user experience.'),
+                    _term(
+                      '1. User Responsibility.',
+                      'User must provide accurate information when creating profiles, listing pets or interacting with other members.',
+                    ),
+                    _term(
+                      '2. Responsible Breeding and Adoption.',
+                      'Breedr promotes ethical and responsible breeding. Users must not post illegal activities, animal abuse or misleading pet listing .',
+                    ),
+                    _term(
+                      '3. Proper use of Platform.',
+                      'Users must communicate respectfully and must not use the platform for fraud, scams or harmful behavior.',
+                    ),
+                    _term(
+                      '4. Account Security.',
+                      'Users are responsible for maintaining the security of their accounts and login credentials.',
+                    ),
+                    _term(
+                      '5. Third Party Services.',
+                      'Breedr may use trusted services such as Google for authentication maps, or location-based features.',
+                    ),
+                    _term(
+                      '6. Policy Updates.',
+                      'Breedr may update these terms when necessary to improve platform and user experience.',
+                    ),
                     const SizedBox(height: 20),
-                    _section('Privacy Policy'),
+                    _section('Privacy Policy', key: _privacyPolicyKey),
                     const SizedBox(height: 6),
                     const Text(
                       'Breedr respects your privacy and protects your personal information.',
                       textAlign: TextAlign.justify,
-                      style: TextStyle(fontSize: 13, color: AppColors.textDark, height: 1.6),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textDark,
+                        height: 1.6,
+                      ),
                     ),
                     const SizedBox(height: 16),
                     _section('Information Collected'),
@@ -58,7 +118,11 @@ class TermsScreen extends StatelessWidget {
                     const Text(
                       'The app may collect basic information such as name, email, and location to provide services',
                       textAlign: TextAlign.justify,
-                      style: TextStyle(fontSize: 13, color: AppColors.textDark, height: 1.6),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textDark,
+                        height: 1.6,
+                      ),
                     ),
                     const SizedBox(height: 16),
                     _section('How Information is Used'),
@@ -66,7 +130,11 @@ class TermsScreen extends StatelessWidget {
                     const Text(
                       'Collected data is used to improve matchmaking, show nearby Breeders or pets, and enhances platform features.',
                       textAlign: TextAlign.justify,
-                      style: TextStyle(fontSize: 13, color: AppColors.textDark, height: 1.6),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textDark,
+                        height: 1.6,
+                      ),
                     ),
                     const SizedBox(height: 16),
                     _section('Data Protection'),
@@ -74,7 +142,33 @@ class TermsScreen extends StatelessWidget {
                     const Text(
                       'Some feature may rely on trusted providers such as Google for location and authentication services.',
                       textAlign: TextAlign.justify,
-                      style: TextStyle(fontSize: 13, color: AppColors.textDark, height: 1.6),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textDark,
+                        height: 1.6,
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: FilledButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(28),
+                          ),
+                        ),
+                        child: const Text(
+                          'I Agree',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -92,9 +186,16 @@ class TermsScreen extends StatelessWidget {
       child: RichText(
         textAlign: TextAlign.justify,
         text: TextSpan(
-          style: const TextStyle(fontSize: 13, color: AppColors.textDark, height: 1.6),
+          style: const TextStyle(
+            fontSize: 13,
+            color: AppColors.textDark,
+            height: 1.6,
+          ),
           children: [
-            TextSpan(text: '$title ', style: const TextStyle(fontWeight: FontWeight.bold)),
+            TextSpan(
+              text: '$title ',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
             TextSpan(text: body),
           ],
         ),
@@ -102,7 +203,15 @@ class TermsScreen extends StatelessWidget {
     );
   }
 
-  Widget _section(String title) {
-    return Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textDark));
+  Widget _section(String title, {Key? key}) {
+    return Text(
+      title,
+      key: key,
+      style: const TextStyle(
+        fontSize: 15,
+        fontWeight: FontWeight.bold,
+        color: AppColors.textDark,
+      ),
+    );
   }
 }

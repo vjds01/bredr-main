@@ -49,6 +49,10 @@ class _LoadingScreenState extends State<LoadingScreen>
 
       if (restoration.shouldRetry) {
         nextScreen = const _SessionRecoveryScreen();
+      } else if (restoration.requiresGoogleConfirmation) {
+        nextScreen = _GoogleSessionConfirmationScreen(
+          expectedEmail: restoration.expectedEmail,
+        );
       } else if (restoration.requiresReauthentication) {
         nextScreen = const LoginScreen(
           initialMessage:
@@ -197,6 +201,133 @@ class _LoadingScreenState extends State<LoadingScreen>
                 );
               },
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GoogleSessionConfirmationScreen extends StatefulWidget {
+  final String? expectedEmail;
+
+  const _GoogleSessionConfirmationScreen({this.expectedEmail});
+
+  @override
+  State<_GoogleSessionConfirmationScreen> createState() =>
+      _GoogleSessionConfirmationScreenState();
+}
+
+class _GoogleSessionConfirmationScreenState
+    extends State<_GoogleSessionConfirmationScreen> {
+  bool _working = false;
+
+  Future<void> _confirmAccount() async {
+    if (_working) return;
+    setState(() => _working = true);
+    try {
+      await UserSessionService.instance.confirmSavedGoogleSession();
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const LoadingScreen()),
+      );
+    } on SavedGoogleAccountMismatch catch (error) {
+      if (!mounted) return;
+      final expected = error.expectedEmail;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            expected == null || expected.isEmpty
+                ? 'Please select the Google account previously used in Breedr.'
+                : 'Please select $expected to restore this Breedr session.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'We could not confirm that Google account. Please try again.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
+  Future<void> _useAnotherAccount() async {
+    if (_working) return;
+    setState(() => _working = true);
+    await UserSessionService.instance.signOut();
+    if (!mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const GetStartedScreen()),
+      (_) => false,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final expectedEmail = widget.expectedEmail;
+    return Scaffold(
+      backgroundColor: const Color(0xFFFFF7FC),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.manage_accounts_outlined,
+                size: 64,
+                color: AppColors.primary,
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Confirm your Google account',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                expectedEmail == null || expectedEmail.isEmpty
+                    ? 'This phone has multiple Google accounts. Select the account you previously used with Breedr.'
+                    : 'This phone has multiple Google accounts. Select $expectedEmail to continue.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFF666666),
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 26),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: _working ? null : _confirmAccount,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                  ),
+                  child: _working
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Choose Google account'),
+                ),
+              ),
+              TextButton(
+                onPressed: _working ? null : _useAnotherAccount,
+                child: const Text('Use another Breedr account'),
+              ),
+            ],
           ),
         ),
       ),

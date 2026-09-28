@@ -43,14 +43,16 @@ import 'pet/pet_registration_screen.dart';
 import 'pet/edit_pet_listing_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final int initialTabIndex;
+
+  const HomeScreen({super.key, this.initialTabIndex = 0});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _selectedIndex = 0;
+  late int _selectedIndex;
   bool _showGuide = false;
   bool _checkedModeration = false;
   bool _checkingModerationNavigation = false;
@@ -199,6 +201,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _selectedIndex = widget.initialTabIndex.clamp(0, 4);
     RealtimeNotificationService.instance.tappedNotificationId.addListener(
       _handleLocalNotificationTap,
     );
@@ -227,6 +230,7 @@ class _HomeScreenState extends State<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkModerationStatus();
       _handleLocalNotificationTap();
+      _triggerActivationForTab(_selectedIndex);
     });
   }
 
@@ -1652,7 +1656,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                         ),
                         _SettingsTile(
                           icon: Icons.description_outlined,
-                          label: 'Terms and Services',
+                          label: 'Terms of Service',
                           subtitle:
                               'Platform rules, privacy policy, and data use',
                           onTap: () => Navigator.push(

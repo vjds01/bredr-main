@@ -19,6 +19,8 @@ class UserSessionService {
   bool _googleInitialized = false;
   static const _sessionHintKey = 'breedr_had_authenticated_session';
   static const _sessionProviderKey = 'breedr_session_provider';
+  static const _sessionUidKey = 'breedr_session_uid';
+  static const _sessionEmailKey = 'breedr_session_email';
   static const _newSessionRestoreTimeout = Duration(seconds: 3);
   static const _knownSessionRestoreTimeout = Duration(seconds: 15);
   static const _googleRestoreTimeout = Duration(seconds: 8);
@@ -94,6 +96,8 @@ class UserSessionService {
     final preferences = await SharedPreferences.getInstance();
     final hadSession = preferences.getBool(_sessionHintKey) == true;
     final providerHint = preferences.getString(_sessionProviderKey);
+    final expectedUid = preferences.getString(_sessionUidKey);
+    final expectedEmail = preferences.getString(_sessionEmailKey);
 
     try {
       var restoredUser = await _restoreFirebaseUser(
@@ -102,20 +106,32 @@ class UserSessionService {
             : _newSessionRestoreTimeout,
       );
 
-      if (restoredUser == null && hadSession && providerHint != 'password') {
+      if (restoredUser == null && hadSession && providerHint == 'google') {
         debugPrint(
           'Session restoration diagnostic: Firebase user unavailable; '
           'attempting lightweight Google restoration.',
         );
-        restoredUser = await _restoreGoogleUser();
+        try {
+          restoredUser = await _restoreGoogleUser(
+            expectedUid: expectedUid,
+            expectedEmail: expectedEmail,
+          );
+        } on GoogleSessionConfirmationRequired catch (error) {
+          debugPrint(
+            'Session restoration diagnostic: Google account confirmation '
+            'required (${error.reason}).',
+          );
+          return SessionRestoreResult.googleConfirmationRequired(
+            expectedEmail: expectedEmail,
+          );
+        }
       }
 
       if (restoredUser == null) {
         if (hadSession) {
-          await _clearSessionHints(preferences);
           debugPrint(
-            'Session restoration diagnostic: saved credentials are no '
-            'longer available; interactive sign-in is required.',
+            'Session restoration diagnostic: Firebase credentials are no '
+            'longer available; reauthentication is required.',
           );
           return const SessionRestoreResult.reauthenticationRequired();
         }
@@ -147,31 +163,106 @@ class UserSessionService {
     final existingUser = currentUser;
     if (existingUser != null) return existingUser;
 
-    // On some Android devices Firebase finishes restoring its encrypted auth
-    // state several seconds after a cold process start. idTokenChanges emits
-    // when that persisted credential becomes usable; importantly, this never
-    // launches Google's interactive account chooser.
-    final restoredUser = await _auth
-        .idTokenChanges()
-        .firstWhere((user) => user != null)
-        .timeout(timeout, onTimeout: () => null);
+    // Firebase's first auth-state event is emitted after native persisted
+    // credentials have been initialized. Unlike filtering for a non-null
+    // event, this does not turn a legitimate signed-out state into a long
+    // timeout before the Google fallback is considered.
+    final restoredUser = await _auth.authStateChanges().first.timeout(
+      timeout,
+      onTimeout: () => currentUser,
+    );
     return restoredUser ?? currentUser;
   }
 
-  Future<User?> _restoreGoogleUser() async {
+  Future<User?> _restoreGoogleUser({
+    String? expectedUid,
+    String? expectedEmail,
+  }) async {
     await _ensureGoogleInitialized();
-    final restoration = _googleSignIn.attemptLightweightAuthentication();
-    if (restoration == null) return null;
+    final restoration = _googleSignIn.attemptLightweightAuthentication(
+      reportAllExceptions: true,
+    );
+    if (restoration == null) {
+      throw const GoogleSessionConfirmationRequired(
+        'lightweight authentication is unavailable',
+      );
+    }
 
-    final googleUser = await restoration.timeout(_googleRestoreTimeout);
-    if (googleUser == null) return null;
+    GoogleSignInAccount? googleUser;
+    try {
+      googleUser = await restoration.timeout(_googleRestoreTimeout);
+    } catch (error) {
+      throw GoogleSessionConfirmationRequired(error.toString());
+    }
+    if (googleUser == null) {
+      throw const GoogleSessionConfirmationRequired(
+        'no unambiguous saved Google account was returned',
+      );
+    }
+
+    if (!_matchesSavedEmail(googleUser.email, expectedEmail)) {
+      await _googleSignIn.signOut();
+      throw const GoogleSessionConfirmationRequired(
+        'the lightweight account did not match the saved account',
+      );
+    }
 
     final googleAuth = googleUser.authentication;
     final idToken = googleAuth.idToken;
-    if (idToken == null) return null;
+    if (idToken == null) {
+      throw const GoogleSessionConfirmationRequired(
+        'Google did not return an ID token',
+      );
+    }
 
     final credential = GoogleAuthProvider.credential(idToken: idToken);
-    return (await _auth.signInWithCredential(credential)).user;
+    final restoredUser = (await _auth.signInWithCredential(credential)).user;
+    if (restoredUser == null ||
+        (expectedUid != null &&
+            expectedUid.isNotEmpty &&
+            restoredUser.uid != expectedUid)) {
+      await _auth.signOut();
+      throw const GoogleSessionConfirmationRequired(
+        'the restored Firebase account did not match the saved account',
+      );
+    }
+    return restoredUser;
+  }
+
+  Future<User> confirmSavedGoogleSession() async {
+    final preferences = await SharedPreferences.getInstance();
+    final expectedUid = preferences.getString(_sessionUidKey);
+    final expectedEmail = preferences.getString(_sessionEmailKey);
+
+    await _ensureGoogleInitialized();
+    final googleUser = await _googleSignIn.authenticate();
+    if (!_matchesSavedEmail(googleUser.email, expectedEmail)) {
+      await _googleSignIn.signOut();
+      throw SavedGoogleAccountMismatch(expectedEmail: expectedEmail);
+    }
+
+    final idToken = googleUser.authentication.idToken;
+    if (idToken == null) {
+      throw Exception('Google did not return an ID token.');
+    }
+
+    final credential = GoogleAuthProvider.credential(idToken: idToken);
+    final firebaseUser = (await _auth.signInWithCredential(credential)).user;
+    if (firebaseUser == null ||
+        (expectedUid != null &&
+            expectedUid.isNotEmpty &&
+            firebaseUser.uid != expectedUid)) {
+      await _auth.signOut();
+      throw SavedGoogleAccountMismatch(expectedEmail: expectedEmail);
+    }
+
+    await _rememberAuthenticatedSession(provider: 'google');
+    return firebaseUser;
+  }
+
+  bool _matchesSavedEmail(String actual, String? expected) {
+    if (expected == null || expected.trim().isEmpty) return true;
+    return actual.trim().toLowerCase() == expected.trim().toLowerCase();
   }
 
   Future<UserCredential> signInWithEmail({
@@ -228,11 +319,21 @@ class UserSessionService {
     if (provider != null) {
       await preferences.setString(_sessionProviderKey, provider);
     }
+    final user = currentUser;
+    if (user != null) {
+      await preferences.setString(_sessionUidKey, user.uid);
+      final email = user.email?.trim();
+      if (email != null && email.isNotEmpty) {
+        await preferences.setString(_sessionEmailKey, email.toLowerCase());
+      }
+    }
   }
 
   Future<void> _clearSessionHints(SharedPreferences preferences) async {
     await preferences.remove(_sessionHintKey);
     await preferences.remove(_sessionProviderKey);
+    await preferences.remove(_sessionUidKey);
+    await preferences.remove(_sessionEmailKey);
   }
 
   String _providerFor(User user) {
@@ -248,6 +349,7 @@ enum SessionRestoreStatus {
   authenticated,
   signedOut,
   reauthenticationRequired,
+  googleConfirmationRequired,
   retryableFailure,
 }
 
@@ -255,8 +357,14 @@ class SessionRestoreResult {
   final SessionRestoreStatus status;
   final User? user;
   final Object? error;
+  final String? expectedEmail;
 
-  const SessionRestoreResult._(this.status, {this.user, this.error});
+  const SessionRestoreResult._(
+    this.status, {
+    this.user,
+    this.error,
+    this.expectedEmail,
+  });
 
   const SessionRestoreResult.signedOut()
     : this._(SessionRestoreStatus.signedOut);
@@ -267,6 +375,13 @@ class SessionRestoreResult {
   factory SessionRestoreResult.authenticated(User user) =>
       SessionRestoreResult._(SessionRestoreStatus.authenticated, user: user);
 
+  factory SessionRestoreResult.googleConfirmationRequired({
+    String? expectedEmail,
+  }) => SessionRestoreResult._(
+    SessionRestoreStatus.googleConfirmationRequired,
+    expectedEmail: expectedEmail,
+  );
+
   factory SessionRestoreResult.retryableFailure([Object? error]) =>
       SessionRestoreResult._(
         SessionRestoreStatus.retryableFailure,
@@ -276,5 +391,19 @@ class SessionRestoreResult {
   bool get isAuthenticated => status == SessionRestoreStatus.authenticated;
   bool get requiresReauthentication =>
       status == SessionRestoreStatus.reauthenticationRequired;
+  bool get requiresGoogleConfirmation =>
+      status == SessionRestoreStatus.googleConfirmationRequired;
   bool get shouldRetry => status == SessionRestoreStatus.retryableFailure;
+}
+
+class GoogleSessionConfirmationRequired implements Exception {
+  final String reason;
+
+  const GoogleSessionConfirmationRequired(this.reason);
+}
+
+class SavedGoogleAccountMismatch implements Exception {
+  final String? expectedEmail;
+
+  const SavedGoogleAccountMismatch({this.expectedEmail});
 }
